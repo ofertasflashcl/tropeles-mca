@@ -2517,6 +2517,15 @@ public class ProspectingTask extends AbstractChoreTask {
         return !Mining.outdoors(world, feet) && feet.isWithinDistance(bed, 6.0) && Math.abs(feet.getY() - bed.getY()) <= 1;
     }
 
+    /**
+     * Its home (a bed or a chest) out under the sky. Both are blocks themselves, so the roof over them is never the
+     * block itself: it is the cell above that has the sky or a ceiling. Read off the chest cell, every chest looked
+     * like a house and a miner with its chest out in the yard hopped round on top of it for minutes before it stored.
+     */
+    private static boolean casaAbierta(net.minecraft.world.World world, BlockPos target) {
+        return Mining.outdoors(world, Mining.passable(world, target) ? target : target.up());
+    }
+
     /** A cell it knows: of its mine, walked, touching one of those, with a floor its eye saw, or in its own house. */
     private boolean conoce(Recuerdos r, VisualMemory vista, BlockPos c) {
         if (mina.has(c) || r.recuerda(c)) {
@@ -2928,7 +2937,7 @@ public class ProspectingTask extends AbstractChoreTask {
         double d2 = dx * dx + dz * dz;
         // its bed under a roof: home is inside, past the door, on the floor of the bed; the wall outside it, the porch
         // or the ground under the house are not home yet. A bed in the open (a camp): a hop up from it is there
-        boolean indoors = !camping && !Mining.outdoors(world, target);
+        boolean indoors = !camping && !casaAbierta(world, target);
         boolean there = indoors ? enCasa(world, villager, target) || homeOutside && d2 <= 36 && dy <= 2 && dy >= -3
                 : d2 <= 16 && dy <= 1 && dy >= -3;
         if (!digging && there && villager.isOnGround()) {
@@ -3046,7 +3055,7 @@ public class ProspectingTask extends AbstractChoreTask {
                     placeTicks++;
                     double hx = target.getX() + 0.5 - villager.getX();
                     double hz = target.getZ() + 0.5 - villager.getZ();
-                    if (!camping && !homeOutside && !Mining.outdoors(world, target) && !enCasa(world, villager, target) && placeTicks <= 600) {
+                    if (!camping && !homeOutside && !casaAbierta(world, target) && !enCasa(world, villager, target) && placeTicks <= 600) {
                         // the chest of its things goes inside its house, by its bed: not by the tree it cut the wood
                         // from, not on the porch. In through the door first
                         if (placeTicks == 1) {
