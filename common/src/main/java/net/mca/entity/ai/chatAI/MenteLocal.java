@@ -67,13 +67,25 @@ public final class MenteLocal {
             + "shields?|bows?|ladders?|chestplates?|helmets?|leggings|boots";
 
     private static final Map<String, String> ERRANDS = Map.of("start-chopping", "TALAR", "start-fishing", "PESCAR", "start-harvesting", "COSECHAR",
-            "start-hunting", "CAZAR", "craft-item", "HACER", "stop-working", "PARAR", "stop", "PARAR");
+            "start-hunting", "CAZAR", "craft-item", "HACER", "stop-working", "PARAR", "stop", "PARAR", "build-house", "OBRA", "cancel-house", "OBRA");
+
+    /** A house, as said in "constrúyeme una casa" (never "vuelve a tu casa": that is going home). */
+    private static final String CASA = "casa|casita|casota|hogar|cabana|refugio|house|home|hut|cabin";
 
     /**
      * Orders, most specific first: "no me sigas" must win over "sigueme", and "sal de la mina" or "deja de minar
      * y sube" (climb out and go home) over "deja de minar" (stop right where it is).
      */
     private static final List<Map.Entry<String, Pattern>> ORDERS = List.of(
+            // a house of its own making ({@link Voluntad#construir}): given up for good, or built (or gone on with)
+            order("cancel-house", "(ya )?no (hagas|construyas|sigas( con)?|termines|armes|levantes) (la|esa|mi|tu|una|nuestra) (casa|obra|construccion)|"
+                    + "cancela (la|esa|tu|mi|nuestra) (casa|obra|construccion)|olvida(te de)? (la|esa) (casa|obra)|abandona (la|esa|tu) (casa|obra)|"
+                    + "cancel (the|that|my|your) (house|build(ing)?|construction)|forget (about )?the house|give up (on )?the house|"
+                    + "(don'?t|do not) build (the|that|a|my) house"),
+            order("build-house", "(construye|construyeme|construyenos|construir|construyas|construirme|haz|hazme|haznos|hacer|hacerme|haceme|arma|armame|"
+                    + "armar|levanta|levantame|edifica|edificame|crea|creame|build|make)(?![a-z]).{0,30}(?<![a-z])(" + CASA + ")(?![a-z])|"
+                    + "(sigue|segui|continua|termina|retoma)( con)? (la|tu|mi|esa|nuestra) (casa|obra|construccion)|"
+                    + "(keep|go on|carry on) (building|with the house)|finish the house|resume (building|the house)"),
             order("eat-break", "(ve|anda|sal|salte|sube|subete|vete|andate)( de (la )?mina| de ahi( abajo)?)? (a|para) comer( algo)?|"
                     + "buscar? comida|come algo|tienes que comer|go (eat|get (some )?food)|get some food|grab (some food|a bite)|eat something"),
             order("come-up", "sal de (la )?mina|salte de (la )?mina|sal de ahi( abajo)?|sal del (hoyo|pozo|tunel)|sal afuera|sube( ya)?|subete|"
@@ -239,6 +251,9 @@ public final class MenteLocal {
             order("hungry", "tienes hambre|tienes comida|te queda comida|has comido|are you hungry|do you have (any )?food|have you eaten"),
             order("found", "(encontraste|has encontrado|hallaste|conseguiste) (algo|algun|minerales|diamantes|hierro)|que (encontraste|has encontrado|conseguiste)|"
                     + "found anything|what did you find|did you find"),
+            order("obra", "como (va|vas con) (la|tu|mi|esa|nuestra) (casa|obra|construccion)|cuanto (te )?falta( para| de)? (la|tu|mi|esa) (casa|obra)|"
+                    + "cuanto te falta|que te falta( para la casa)?|que (mas )?necesitas( para la casa)?|como vas con la casa|"
+                    + "how'?s the house( going)?|how is the house( going)?|how much (is )?left|what do you need( for the house)?|how far along"),
             order("doing", "que (estas haciendo|haces|andas haciendo)|en que andas|en que estas|what are you doing|what('re| are) you up to"),
             order("bag", "que (tienes|llevas|traes|cargas)|tu inventario|tu mochila|que hay en tu mochila|what do you have|what are you carrying|your inventory|your bag"),
             // what it hears, and how light it is where it stands ({@link Ahora})
@@ -287,7 +302,9 @@ public final class MenteLocal {
             order("start-mining", "voy a minar|me voy a minar|bajo a la mina|me pongo a minar|i('?ll| will) go mining|off to the mine|"
                     + "i('?ll| will) start mining"),
             order("start-chopping", "voy a talar|me pongo a talar|i('?ll| will) (go )?chop"),
-            order("start-fishing", "voy a pescar|me voy a pescar|i('?ll| will) go fishing")
+            order("start-fishing", "voy a pescar|me voy a pescar|i('?ll| will) go fishing"),
+            order("build-house", "te (hago|construyo|armo|levanto) (una|la|tu) casa|voy a (hacer|construir|armar|levantar)(te)? (una|la|tu) casa|"
+                    + "sigo con (la|tu) casa|i('?ll| will) (build|make) (you )?(a|the|your) house|building (you )?(a|the|your) house")
     );
 
     /**
@@ -500,7 +517,8 @@ public final class MenteLocal {
             }
             m.reset();
             if (m.find()) {
-                if ((entry.getKey().startsWith("start-") || entry.getKey().equals("craft-item")) && NEGATED_START.matcher(t).find()) {
+                if ((entry.getKey().startsWith("start-") || entry.getKey().equals("craft-item") || entry.getKey().equals("build-house"))
+                        && NEGATED_START.matcher(t).find()) {
                     continue; // "no vayas a la mina" is not an order to go
                 }
                 String argument = "";
@@ -598,6 +616,11 @@ public final class MenteLocal {
                     : new String[]{"See you, " + name + "!", "Bye! Take care.", "Later, " + name + "."});
             case "hungry" -> hungry(villager, es);
             case "found" -> found(villager, es);
+            case "obra" -> {
+                String s = Voluntad.obraEstado(villager, es);
+                yield s != null ? s : es ? "No estoy construyendo ninguna casa ahora. Si quieres una, pídemela: «constrúyeme una casa aquí»."
+                        : "I'm not building any house right now. If you want one, ask me: \"build me a house here\".";
+            }
             case "thanks" -> pick(villager, es ? new String[]{"¡De nada!", "Cuando quieras.", "Para eso estamos."}
                     : new String[]{"You're welcome!", "Any time.", "No problem."});
             case "greet" -> pick(villager, es ? new String[]{"¡Hola, " + name + "!", "¡Buenas, " + name + "! ¿Qué necesitas?", "Hola. " + doing(villager, true)}
@@ -714,6 +737,10 @@ public final class MenteLocal {
                 case ENCARGO -> {
                     String on = Voluntad.haciendo(villager, es);
                     yield on != null ? on : es ? "Terminando lo que me pediste." : "Finishing what you asked.";
+                }
+                case OBRA -> {
+                    String on = Voluntad.obraEstado(villager, es);
+                    yield on != null ? on : es ? "Construyendo tu casa." : "Building your house.";
                 }
                 default -> es ? "Estoy quieto, esperando que me digas qué pasa." : "Standing still, waiting for you to tell me what's going on.";
             };
@@ -1144,8 +1171,8 @@ public final class MenteLocal {
     }
 
     private static String help(boolean es) {
-        return es ? "Puedo seguirte, quedarme aquí, detenerme si me dices «cuidado», ir a minar (dime qué buscar) y subir cuando me llames, talar, pescar, cosechar, cazar, darte cosas o guardarlas en mi cofre, y decirte mis coordenadas exactas."
-                : "I can follow you, stay here, stop dead when you say \"careful\", go mining (tell me what to look for) and come up when you call, chop trees, fish, harvest, hunt, hand you things or store them in my chest, and tell you my exact coordinates.";
+        return es ? "Puedo seguirte, quedarme aquí, detenerme si me dices «cuidado», ir a minar (dime qué buscar) y subir cuando me llames, talar, pescar, cosechar, cazar, darte cosas o guardarlas en mi cofre, construirte una casa con mis manos (dime «constrúyeme una casa aquí»), y decirte mis coordenadas exactas."
+                : "I can follow you, stay here, stop dead when you say \"careful\", go mining (tell me what to look for) and come up when you call, chop trees, fish, harvest, hunt, hand you things or store them in my chest, build you a house with my own hands (say \"build me a house here\"), and tell you my exact coordinates.";
     }
 
     /** The food in its own bag. */

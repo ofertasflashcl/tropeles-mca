@@ -38,7 +38,7 @@ import java.util.Map;
 public final class Explorar {
     /** What it is looking for: it changes which way looks most promising. */
     public enum Busca {
-        ARBOLES("árboles"), COMIDA("comida"), SITIO("un sitio para cavar");
+        ARBOLES("árboles"), COMIDA("comida"), SITIO("un sitio para cavar"), ARENA("arena");
 
         public final String palabra;
 

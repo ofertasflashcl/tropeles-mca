@@ -58,6 +58,16 @@ public class ServerInteractionManager {
         net.mca.server.command.Pruebas.tick();
         GameSpeed.onTick(server);
         try {
+            net.mca.entity.ai.obra.Proyeccion.tick(server);
+        } catch (RuntimeException e) {
+            // the see-through plans must never take the server down
+            long now = System.currentTimeMillis();
+            if (now - lastPresenceError > 60_000L) {
+                lastPresenceError = now;
+                MCA.LOGGER.error("[Tropeles] no se pudo enviar el plano fantasma de las obras", e);
+            }
+        }
+        try {
             ProspectorPresence.tick(server);
         } catch (RuntimeException e) {
             // how a prospector is shown must never take the server down
@@ -102,6 +112,7 @@ public class ServerInteractionManager {
         // the prospecting villagers are "online" too, and a sped-up world says so
         ProspectorPresence.onPlayerJoin(player);
         GameSpeed.onPlayerJoin(player);
+        net.mca.entity.ai.obra.Proyeccion.olvidarJugador(player);
     }
 
     /**

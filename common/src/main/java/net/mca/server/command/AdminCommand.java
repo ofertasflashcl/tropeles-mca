@@ -44,6 +44,7 @@ public class AdminCommand {
         OjoCommand.register(dispatcher);
         Pruebas.register(dispatcher);
         VelocidadCommand.register(dispatcher);
+        ObraCommand.register(dispatcher);
         dispatcher.register(CommandManager.literal("mca-admin")
                 .then(register("help", AdminCommand::displayHelp))
                 .then(register("clearLoadedVillagers", AdminCommand::clearLoadedVillagers))

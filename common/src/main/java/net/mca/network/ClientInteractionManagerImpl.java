@@ -249,4 +249,9 @@ public class ClientInteractionManagerImpl implements ClientInteractionManager {
             civilRegistryBook.receive(response.getIndex(), response.getLines());
         }
     }
+
+    @Override
+    public void handleFantasma(FantasmaMessage message) {
+        net.mca.client.render.Fantasmas.recibir(message);
+    }
 }

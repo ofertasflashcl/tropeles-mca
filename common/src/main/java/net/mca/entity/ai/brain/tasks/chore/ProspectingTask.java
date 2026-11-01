@@ -506,6 +506,20 @@ public class ProspectingTask extends AbstractChoreTask {
         }
         return task;
     }
+
+    /** Its gearing up and its exploring, for a will that drives the body (a building under way). */
+    public Progreso progreso() {
+        return progreso;
+    }
+
+    public Explorar explorar() {
+        return explorar;
+    }
+
+    /** Night at home with a bed to go to: it would go to sleep now. */
+    public boolean quiereDormir(ServerWorld world, VillagerEntityMCA villager) {
+        return wantsSleep(world, villager);
+    }
     /** A trip home it decided on itself after someone suggested it: true = hungry. */
     private static final Map<VillagerEntityMCA, Boolean> DECIDED = new WeakHashMap<>();
     /** When someone last suggested going back, and how many times in a row, to tell a passing remark from insisting. */
@@ -833,6 +847,11 @@ public class ProspectingTask extends AbstractChoreTask {
         Atasco atasco = Voluntad.of(villager).atasco();
         if (!motor.midStep(villager) && Voluntad.of(villager).manda(world, villager, this)) {
             metabolism(world, villager);
+            return;
+        }
+        // a house it is building (and was not told to leave): back to it once it is fed and rested, from the surface
+        if (!motor.midStep(villager) && (villager.age % 40) == 7 && (phase == Phase.SEEK || phase == Phase.REST || phase == Phase.SURFACE_WORK)
+                && Voluntad.volverAObra(world, villager, this, Entorno.bajoTierra(world, villager))) {
             return;
         }
         if (look) {

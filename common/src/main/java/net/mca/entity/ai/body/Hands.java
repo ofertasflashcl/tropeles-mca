@@ -475,7 +475,8 @@ public final class Hands {
 
     /** A building block from the bag, or empty. The stack is the live one in the inventory. */
     public static ItemStack buildingBlock(VillagerEntityMCA villager) {
-        int slot = findSlot(villager.getInventory(), Hands::isBuildingBlock);
+        // what a house under way keeps for its walls is never a step, a bridge or a plug
+        int slot = findSlot(villager.getInventory(), s -> isBuildingBlock(s) && !net.mca.entity.ai.obra.Constructor.reservado(villager, s));
         return slot < 0 ? ItemStack.EMPTY : villager.getInventory().getStack(slot);
     }
 
@@ -485,7 +486,7 @@ public final class Hands {
         SimpleInventory inventory = villager.getInventory();
         for (int i = 0; i < inventory.size(); i++) {
             ItemStack stack = inventory.getStack(i);
-            if (isBuildingBlock(stack)) {
+            if (isBuildingBlock(stack) && !net.mca.entity.ai.obra.Constructor.reservado(villager, stack)) {
                 count += stack.getCount();
             }
         }

@@ -44,4 +44,6 @@ public interface ClientInteractionManager {
     void handleCustomSkinsChangedMessage(CustomSkinsChangedMessage message);
 
     void handleCivilRegistryResponse(CivilRegistryResponse response);
+
+    void handleFantasma(net.mca.network.s2c.FantasmaMessage message);
 }

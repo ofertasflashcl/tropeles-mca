@@ -15,6 +15,12 @@ import net.mca.entity.ai.sense.Entorno;
 import net.mca.entity.ai.sense.Mirada;
 import net.mca.entity.ai.sense.Retina;
 import net.mca.entity.ai.sense.VisualMemory;
+import net.mca.entity.ai.obra.Constructor;
+import net.mca.entity.ai.obra.Obra;
+import net.mca.entity.ai.obra.ObrasMundo;
+import net.mca.entity.ai.obra.Plano;
+import net.mca.entity.ai.obra.Proyeccion;
+import net.mca.entity.ai.obra.Sitio;
 import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.SpawnGroup;
@@ -67,7 +73,9 @@ public final class Voluntad {
         ESPERANDO("esperando", "waiting right here as you were asked"),
         CONOCIENDO("conociendo", "meeting $player: you just looked them over from head to toe, said hello and asked their name, and you"
                 + " take in the place while they answer"),
-        ENCARGO("encargo", "doing what $player asked of you, with your own hands");
+        ENCARGO("encargo", "doing what $player asked of you, with your own hands"),
+        OBRA("obra", "building a house for $player with your own hands: you find, chop, dig, craft, smelt and set every block yourself,"
+                + " following the plan they can see as a see-through ghost");
 
         private final String palabra;
         private final String english;
@@ -165,6 +173,18 @@ public final class Voluntad {
     private String dichoEn = "";
     private String dichoClave = "";
     private long dichoMs;
+    /** It leaves its house by itself (hunger, the night): no pause the player set, it goes back to it on its own. */
+    private boolean pausaInterna;
+    private long llamadoObra = Long.MIN_VALUE / 2;
+    /** What it goes back to once the house is done (an errand in the middle of it has its own {@link #tras}). */
+    private Modo obraTras = Modo.LIBRE;
+    @Nullable
+    private UUID obraTrasQuien;
+    @Nullable
+    private BlockPos obraTrasEspera;
+    /** "Aquí", "ahí", "here": the house goes where the player is looking. */
+    private static final Pattern AQUI = Pattern.compile("(?<![a-z])(aqui|aquí|aca|acá|ahi|ahí|alli|allí|alla|allá|here|there|este sitio|ese sitio|"
+            + "donde miro|donde estoy|donde apunto|right here)(?![a-z])");
 
     /** Things for a player: what, for whom, whether it hands them over by itself, and what it says then. */
     private record Entrega(UUID para, Map<Item, Integer> cosas, boolean auto, String es, String en) {
@@ -310,6 +330,14 @@ public final class Voluntad {
         if (w.encargo != null) {
             mode += ": " + w.encargo.english() + "; after it you go back to " + (w.tras == Modo.SIGUIENDO ? "their side" : w.tras == Modo.ESPERANDO
                     ? "wait where you were" : "your own life");
+        }
+        if (villager.getWorld() instanceof ServerWorld sw && (w.modo == Modo.OBRA || w.modo == Modo.ALERTA && w.debajo == Modo.OBRA
+                || w.modo == Modo.LIBRE)) {
+            Obra o = ObrasMundo.get(sw).de(villager.getUuid());
+            if (o != null) {
+                mode += ". The house you are building for " + (o.paraNombre.isEmpty() ? "someone" : o.paraNombre) + (o.pausaJugador ? " (paused: they told you"
+                        + " to do something else; \"sigue con la casa\" resumes it)" : "") + ": " + Constructor.estado(sw, villager, o, false);
+            }
         }
         if (w.oferta != null && villager.getWorld().getTime() <= w.ofertaHasta) {
             mode += ". You just offered " + Encargo.palabras(w.oferta.cosas(), false) + " to " + player + ": a yes from them means hand it over";
@@ -459,6 +487,7 @@ public final class Voluntad {
                 }
                 case CONOCIENDO -> meetTick(world, villager);
                 case ENCARGO -> encargoTick(world, villager, task);
+                case OBRA -> obraTick(world, villager, task);
                 case ALERTA -> alertTick(world, villager);
                 case ESPERANDO -> waitTick(world, villager);
                 default -> backTick(world, villager, task);
@@ -584,7 +613,8 @@ public final class Voluntad {
         w.dicho(tipo.name(), line[0], line[1]);
         return "You set off at once to do it yourself, with your own hands, still connected: " + e.english() + ". When it is done you "
                 + (e.traer ? "bring it to " + name + " and hand it over, then " : "tell " + name + " what you got and offer it, then ")
-                + (base == Modo.SIGUIENDO ? "go back to their side." : base == Modo.ESPERANDO ? "go back to wait where you were." : "go back to your own life.");
+                + (base == Modo.SIGUIENDO ? "go back to their side." : base == Modo.ESPERANDO ? "go back to wait where you were."
+                : base == Modo.OBRA ? "go back to building the house." : "go back to your own life.");
     }
 
     /**
@@ -611,6 +641,13 @@ public final class Voluntad {
             return "You dropped the errand at once" + (got.isEmpty() ? "" : " (you offer them the " + Encargo.palabras(got, false) + " you got so far)")
                     + " and went back to " + (w.modo == Modo.SIGUIENDO ? "their side" : w.modo == Modo.ESPERANDO ? "wait where you were" : "your own life")
                     + ". You are still connected.";
+        }
+        if (w.modo == Modo.OBRA || w.modo == Modo.ALERTA && w.debajo == Modo.OBRA) {
+            w.change(villager, Modo.SIGUIENDO, player, null, name + " me dijo que deje la casa por ahora");
+            w.dicho("PARAR", "Vale, dejo la casa por ahora y voy contigo. Cuando quieras, dime que siga con la casa.",
+                    "Okay, I'll leave the house for now and come with you. Whenever you want, tell me to go on with the house.");
+            return "You left the house for now (it waits, paused, until they tell you to go on with it) and are at " + name
+                    + "'s side, following them. You are still connected.";
         }
         if (w.modo == Modo.LIBRE) {
             w.change(villager, Modo.SIGUIENDO, player, null, name + " me dijo que deje lo que hacía");
@@ -764,6 +801,274 @@ public final class Voluntad {
         }
     }
 
+    /**
+     * One tick of the house: a fight first if one comes, its eyes always on, then its hands on the building
+     * ({@link Constructor}). Starving with nothing to eat, or night with a bed to go to, it leaves the house for a
+     * while by itself (down from any scaffold first) and comes back to it on its own ({@link #volverAObra}).
+     */
+    private void obraTick(ServerWorld world, VillagerEntityMCA villager, @Nullable ProspectingTask task) {
+        Obra o = ObrasMundo.get(world).de(villager.getUuid());
+        if (o == null || task == null) {
+            volverTras(world, villager, "ya no tengo ninguna casa que hacer");
+            return;
+        }
+        PlayerEntity player = player(world);
+        if (defend(world, villager, player, DEFEND_WAIT)) {
+            return;
+        }
+        Retina.look(world, villager);
+        Constructor c = Constructor.de(villager);
+        boolean hambre = task.food() <= 4 && ProspectingTask.comidaEnMochila(villager) == 0;
+        boolean sueno = !hambre && (villager.age % 100) == 0 && task.quiereDormir(world, villager);
+        if (hambre || sueno) {
+            if (c.enAndamio(world, villager)) {
+                c.bajarYa(); // off the scaffold first, then the meal or the bed
+            } else {
+                pausaInterna = true;
+                try {
+                    change(villager, Modo.LIBRE, null, null, hambre ? "tengo hambre: dejo la casa un rato para comer" : "se hizo de noche: dejo la casa hasta mañana");
+                } finally {
+                    pausaInterna = false;
+                }
+                contar(villager, hambre ? "Tengo hambre: dejo la casa un rato para buscar comida y vuelvo." : "Se hizo de noche: me voy a dormir y mañana sigo con la casa.",
+                        hambre ? "I'm hungry: I'm leaving the house for a bit to find food, then I'll be back." : "It's night: I'm off to bed, I'll go on with the house tomorrow.");
+                return;
+            }
+        }
+        if (c.tick(world, villager, task, o) == Constructor.Fin.LISTA) {
+            terminarObra(world, villager, o);
+        }
+    }
+
+    /** The last block is set and its things are put away: the house is theirs. */
+    private void terminarObra(ServerWorld world, VillagerEntityMCA villager, Obra o) {
+        ObrasMundo.get(world).quitar(o);
+        Proyeccion.borrar(world, o);
+        Constructor.olvidar(villager.getUuid());
+        String n = o.paraNombre.isEmpty() ? "alguien" : o.paraNombre;
+        MCA.LOGGER.info("[Tropeles] {} termina la casa de {} en {}", villager.getName().getString(), n, o.donde());
+        Recuerdos.anotar(villager, "obra", "terminé la casa de " + n + " en " + o.donde() + ": dos pisos, de " + o.madera.es + ", hecha con mis manos",
+                o.centro());
+        ServerPlayerEntity para = o.para == null ? null : jugador(world, o.para);
+        tras = obraTras;
+        trasQuien = obraTrasQuien;
+        trasEspera = obraTrasEspera;
+        obraTras = Modo.LIBRE;
+        obraTrasQuien = null;
+        obraTrasEspera = null;
+        volverTras(world, villager, "terminé la casa de " + n);
+        hablar(world, villager, para, "¡Lista la casa" + (o.paraNombre.isEmpty() ? "" : ", " + o.paraNombre) + "! Está en " + o.donde() + ". Pasa, es tuya.",
+                "The house is done" + (o.paraNombre.isEmpty() ? "" : ", " + o.paraNombre) + "! It's at " + o.donde() + ". Come in, it's yours.");
+    }
+
+    /**
+     * "Constrúyeme una casa", "hazme una casa aquí", "una casa de abeto", "sigue con la casa": a two-floor house for
+     * {@code player}, all of it by its own hands. A house under way is taken up again (moved to where they look while
+     * almost nothing of it stands); otherwise it picks the spot ("aquí": where they look; else the best ground near
+     * them, the door their way), shows the whole plan as a see-through ghost and sets off for the materials. The
+     * account for a language model; its own words in {@link #dicho}.
+     */
+    public static String construir(VillagerEntityMCA villager, PlayerEntity player, String words, boolean spanish) {
+        Voluntad w = of(villager);
+        oyo(villager, player, spanish);
+        String name = Companero.nombre(villager, player);
+        if (!(villager.getWorld() instanceof ServerWorld world)) {
+            return "You have no way to do that right now.";
+        }
+        ProspectingTask task = ProspectingTask.of(villager);
+        ObrasMundo obras = ObrasMundo.get(world);
+        String low = words == null ? "" : words.toLowerCase(java.util.Locale.ROOT);
+        boolean aqui = AQUI.matcher(low).find();
+        Obra o = obras.de(villager.getUuid());
+        boolean nueva = o == null;
+        String[] why = {"", ""};
+        if (o != null) {
+            if (aqui && o.hechas(world) <= 3) {
+                Sitio.Elegido s = Sitio.buscar(world, villager, o.plano(), Sitio.mirada(player), player.getPos(), 0, 8, o.id, why);
+                if (s != null) {
+                    o.mover(s.origen(), s.frente());
+                }
+            }
+            o.pausaJugador = false;
+        } else {
+            Plano.Madera madera = Plano.Madera.palabra(low);
+            if (madera == null) {
+                madera = maderaDe(villager);
+            }
+            Plano plano = Plano.casa(madera);
+            Sitio.Elegido s = aqui ? Sitio.buscar(world, villager, plano, Sitio.mirada(player), player.getPos(), 0, 8, null, why)
+                    : Sitio.buscar(world, villager, plano, player.getBlockPos(), player.getPos(), 7, 28, null, why);
+            if (s == null) {
+                w.dicho("OBRA", "No encuentro dónde hacer una casa " + (aqui ? "ahí" : "por aquí") + ", " + name + ": " + why[0] + ". ¿Me muestras otro sitio?",
+                        "I can't find anywhere to put a house " + (aqui ? "there" : "around here") + ", " + name + ": " + why[1] + ". Can you show me another spot?");
+                return "You can't find anywhere to build a house " + (aqui ? "where they are looking" : "around here") + ": " + why[1]
+                        + ". Say so, and ask them to look at (or stand on) a flatter, dry, free spot and ask again.";
+            }
+            o = new Obra(UUID.randomUUID().toString().substring(0, 8), villager.getUuid(), villager.getName().getString(), s.origen(), s.frente(), madera);
+            o.creada = world.getTime();
+            obras.poner(o);
+        }
+        o.para = player.getUuid();
+        o.paraNombre = name;
+        obras.cambio();
+        Proyeccion.enviar(world, o);
+        if (w.encargo != null) {
+            task.dejarEncargo(world, villager);
+            w.encargo = null;
+        }
+        if (w.modo != Modo.OBRA && !(w.modo == Modo.ALERTA && w.debajo == Modo.OBRA)) {
+            Modo base = w.modo == Modo.ALERTA ? w.debajo : w.modo;
+            UUID baseQuien = w.modo == Modo.ALERTA ? w.debajoQuien : w.quien;
+            BlockPos baseEspera = w.modo == Modo.ALERTA ? w.debajoEspera : w.espera;
+            if (base == Modo.CONOCIENDO || base == Modo.ENCARGO || base == Modo.OBRA) {
+                base = Modo.SIGUIENDO;
+            }
+            if (base == Modo.SIGUIENDO && baseQuien == null) {
+                baseQuien = player.getUuid();
+            }
+            w.obraTras = base;
+            w.obraTrasQuien = baseQuien;
+            w.obraTrasEspera = baseEspera;
+            w.change(villager, Modo.OBRA, player, null, name + (nueva ? " me pidió una casa" : " me dijo que siga con su casa"));
+        }
+        Plano plano = o.plano();
+        if (nueva) {
+            w.dicho("OBRA", "¡Va, " + name + "! Te hago una casa de dos pisos de " + o.madera.es + " en " + o.donde() + ": ahí ves el plano. La hago toda yo;"
+                            + " necesito " + Constructor.materiales(plano, true) + ", así que primero voy por material.",
+                    "You got it, " + name + "! I'll build you a two-floor " + o.madera.en + " house at " + o.donde() + ": you can see the plan there. I'll do all"
+                            + " of it myself; I need " + Constructor.materiales(plano, false) + ", so I'm off for materials first.");
+            MCA.LOGGER.info("[Tropeles] {} empieza una casa de {} para {} en {} (frente {})", villager.getName().getString(), o.madera.es, name, o.donde(), o.frente);
+            return "You are now building a two-floor " + o.madera.en + " house for " + name + " at " + o.donde() + ", all by your own hands (chopping,"
+                    + " digging stone, finding sand, crafting, smelting): they can see the whole plan as a see-through ghost. You need "
+                    + Constructor.materiales(plano, false) + ". Tell them so, briefly and gladly.";
+        }
+        w.dicho("OBRA", "¡Sigo con tu casa, " + name + "! " + Constructor.faltas(world, villager, o, true),
+                "Back on your house, " + name + "! " + Constructor.faltas(world, villager, o, false));
+        return "You go back to building the house for " + name + ": " + Constructor.estado(world, villager, o, false) + " Say so briefly.";
+    }
+
+    /** "Ya no hagas la casa", "cancela la casa": the house is given up for good; what stands of it stays. */
+    public static String cancelarObra(VillagerEntityMCA villager, PlayerEntity player, boolean spanish) {
+        Voluntad w = of(villager);
+        oyo(villager, player, spanish);
+        String name = Companero.nombre(villager, player);
+        if (!(villager.getWorld() instanceof ServerWorld world)) {
+            return "You have no way to do that right now.";
+        }
+        ObrasMundo obras = ObrasMundo.get(world);
+        Obra o = obras.de(villager.getUuid());
+        if (o == null) {
+            w.dicho("OBRA", "No estoy haciendo ninguna casa, " + name + ".", "I'm not building any house, " + name + ".");
+            return "You are not building any house. Say so.";
+        }
+        int done = o.hechas(world);
+        Constructor c = Constructor.si(villager);
+        if (c != null) {
+            c.soltar(world, villager, ProspectingTask.of(villager));
+        }
+        obras.quitar(o);
+        Proyeccion.borrar(world, o);
+        Constructor.olvidar(villager.getUuid());
+        MCA.LOGGER.info("[Tropeles] {} deja la casa de {} para siempre ({} bloques puestos)", villager.getName().getString(), name, done);
+        if (w.modo == Modo.OBRA || w.modo == Modo.ALERTA && w.debajo == Modo.OBRA) {
+            w.tras = w.obraTras;
+            w.trasQuien = w.obraTrasQuien;
+            w.trasEspera = w.obraTrasEspera;
+            w.volverTras(world, villager, name + " me dijo que ya no haga la casa");
+        }
+        w.dicho("OBRA", done > 0 ? "Vale, ya no hago la casa. Lo que alcancé a poner queda ahí." : "Vale, no hago la casa.",
+                done > 0 ? "Okay, no more house. What I already set stays there." : "Okay, I won't build the house.");
+        return "You gave up the house for good (the " + done + " blocks already set stay where they are) and went back to "
+                + (w.modo == Modo.SIGUIENDO ? "their side" : w.modo == Modo.ESPERANDO ? "wait where you were" : "your own life") + ". You are still connected.";
+    }
+
+    /** It has a house under way (paused or not). */
+    public static boolean tieneObra(VillagerEntityMCA villager) {
+        return villager.getWorld() instanceof ServerWorld world && ObrasMundo.get(world).de(villager.getUuid()) != null;
+    }
+
+    /** How its house is going, in its words, or null when it builds none. */
+    @Nullable
+    public static String obraEstado(VillagerEntityMCA villager, boolean spanish) {
+        if (!(villager.getWorld() instanceof ServerWorld world)) {
+            return null;
+        }
+        Obra o = ObrasMundo.get(world).de(villager.getUuid());
+        return o == null ? null : Constructor.estado(world, villager, o, spanish);
+    }
+
+    /**
+     * From its own life back to the house it was building and not told to leave, once it is fed, rested and up on the
+     * land (from under ground it first goes up and home). True when it took it up again.
+     */
+    public static boolean volverAObra(ServerWorld world, VillagerEntityMCA villager, ProspectingTask task, boolean bajoTierra) {
+        if (!conectado(villager)) {
+            return false;
+        }
+        Voluntad w = of(villager);
+        if (w.modo != Modo.LIBRE) {
+            return false;
+        }
+        Obra o = ObrasMundo.get(world).de(villager.getUuid());
+        if (o == null || o.pausaJugador) {
+            return false;
+        }
+        if (task.food() <= 6 && ProspectingTask.comidaEnMochila(villager) == 0 || task.quiereDormir(world, villager)) {
+            return false;
+        }
+        long now = world.getTime();
+        if (bajoTierra) {
+            if (now - w.llamadoObra > 2400) {
+                w.llamadoObra = now;
+                ProspectingTask.callHome(villager, false);
+                MCA.LOGGER.info("[Tropeles] {} sube para volver a su casa en obra", villager.getName().getString());
+            }
+            return false;
+        }
+        ServerPlayerEntity p = o.para == null ? null : jugador(world, o.para);
+        w.change(villager, Modo.OBRA, p, null, "vuelvo a la casa de " + (o.paraNombre.isEmpty() ? "alguien" : o.paraNombre));
+        if (p == null && o.para != null) {
+            w.quien = o.para;
+            w.quienNombre = o.paraNombre;
+        }
+        contar(villager, "Vuelvo a la casa.", "Back to the house.");
+        return true;
+    }
+
+    /** The wood its house would be of: what it carries most of, else the trees it has seen around, else oak. */
+    private static Plano.Madera maderaDe(VillagerEntityMCA villager) {
+        Map<Plano.Madera, Integer> votes = new java.util.EnumMap<>(Plano.Madera.class);
+        SimpleInventory inv = villager.getInventory();
+        for (int i = 0; i < inv.size(); i++) {
+            ItemStack s = inv.getStack(i);
+            if (!s.isEmpty() && s.getItem() instanceof net.minecraft.item.BlockItem b) {
+                Plano.Madera m = Plano.Madera.de(b.getBlock());
+                if (m != null) {
+                    votes.merge(m, s.getCount(), Integer::sum);
+                }
+            }
+        }
+        if (votes.isEmpty()) {
+            BlockPos feet = Mining.pies(villager);
+            for (VisualMemory.SeenBlock seen : Retina.memory(villager).blocks(b -> b.state != null && b.state.isIn(net.minecraft.registry.tag.BlockTags.LOGS)
+                    && b.pos.isWithinDistance(feet, 48))) {
+                Plano.Madera m = Plano.Madera.de(seen.state.getBlock());
+                if (m != null) {
+                    votes.merge(m, 1, Integer::sum);
+                }
+            }
+        }
+        Plano.Madera best = Plano.Madera.ROBLE;
+        int most = 0;
+        for (Map.Entry<Plano.Madera, Integer> e : votes.entrySet()) {
+            if (e.getValue() > most) {
+                most = e.getValue();
+                best = e.getKey();
+            }
+        }
+        return best;
+    }
+
     /** The errand is over: back to what it was doing for them, with what it got handed over, offered, or explained. */
     private void terminarEncargo(ServerWorld world, VillagerEntityMCA villager, ProspectingTask task, Encargo e, Encargo.Fin fin) {
         Map<Item, Integer> got = e.ganado(villager);
@@ -837,6 +1142,20 @@ public final class Voluntad {
         trasQuien = null;
         trasEspera = null;
         PlayerEntity p = who == null ? null : jugador(world, who);
+        Obra obra = back == Modo.OBRA ? ObrasMundo.get(world).de(villager.getUuid()) : null;
+        if (obra != null) {
+            // an errand in the middle of the house: back to building it
+            obra.pausaJugador = false;
+            ObrasMundo.get(world).cambio();
+            tras = obraTras;
+            trasQuien = obraTrasQuien;
+            trasEspera = obraTrasEspera;
+            change(villager, Modo.OBRA, p, null, why);
+            if (p == null && who != null) {
+                quien = who;
+            }
+            return;
+        }
         if (back == Modo.SIGUIENDO && who != null) {
             change(villager, Modo.SIGUIENDO, p, null, why);
         } else if (back == Modo.ESPERANDO && spot != null) {
@@ -1236,6 +1555,19 @@ public final class Voluntad {
         if (from == Modo.SIGUIENDO && to != Modo.SIGUIENDO && to != Modo.ALERTA) {
             entrega = null;
         }
+        if (from == Modo.OBRA && to != Modo.OBRA && villager.getWorld() instanceof ServerWorld world) {
+            // hands and legs off the house; told something else, it stays paused until they say to go on with it
+            Constructor c = Constructor.si(villager);
+            if (c != null) {
+                c.soltar(world, villager, ProspectingTask.of(villager));
+            }
+            Obra o = ObrasMundo.get(world).de(villager.getUuid());
+            if (o != null && to != Modo.ALERTA && !pausaInterna && !o.pausaJugador) {
+                o.pausaJugador = true;
+                ObrasMundo.get(world).cambio();
+                MCA.LOGGER.info("[Tropeles] {} deja la casa en pausa ({})", villager.getName().getString(), to.palabra());
+            }
+        }
         if (from == Modo.ALERTA || from == Modo.ESPERANDO) {
             if (enemigo != null) {
                 CombatMind.disengage(villager);
@@ -1328,6 +1660,9 @@ public final class Voluntad {
                     : "conozco a " + who + ": lo miré de pies a cabeza, lo saludé y le pregunté su nombre; miro el lugar mientras me contesta";
             case ESPERANDO -> enemigo != null ? "me defiendo de " + enemigo.getName().getString() + " mientras espero"
                     : "espero aquí a " + who + " porque me lo pidió; miro alrededor y me cuido";
+            case OBRA -> enemigo != null ? "me defiendo de " + enemigo.getName().getString() + " y luego sigo con la casa"
+                    : "construyo la casa de " + who + " con mis manos: " + (Constructor.si(villager) == null ? "la retomo" : Constructor.si(villager).haciendo(true))
+                    + "; después " + (obraTras == Modo.SIGUIENDO ? "vuelvo con él" : obraTras == Modo.ESPERANDO ? "vuelvo a esperar donde estaba" : "sigo con lo mío");
             case ENCARGO -> enemigo != null ? "me defiendo de " + enemigo.getName().getString() + " y luego sigo con lo que me pidieron"
                     : encargo == null ? "termino lo que me pidieron" : encargo.pensando() + (recent.isEmpty() ? "" : "; " + recent)
                     + "; después " + (tras == Modo.SIGUIENDO ? "vuelvo con él" : tras == Modo.ESPERANDO ? "vuelvo a esperar donde estaba" : "sigo con lo mío");

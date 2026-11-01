@@ -142,6 +142,17 @@ public class TriggerCommandInfos {
                             + "add \"para ti\" when it is for yourself",
                     (p, v, what) -> Voluntad.encargar(v, p, Encargo.Tipo.HACER, what, spanish(v)),
                     (p, v) -> Voluntad.conectado(v)),
+            new TriggerCommandInfo("build-house", "Build the player a two-floor house with your own hands: you chop the trees, dig the stone, find "
+                    + "the sand, craft and smelt everything and set every block yourself, and they see the whole plan first as a see-through ghost; "
+                    + "also to go on with a house you left. Not for crafting one item (that is craft-item)",
+                    "\"aquí\" when they want it right where they are looking, and the wood if they name one (\"de abeto\", \"spruce\"); else empty",
+                    (p, v, how) -> Voluntad.construir(v, p, how == null ? "" : how, spanish(v)),
+                    (p, v) -> Voluntad.conectado(v)),
+            new TriggerCommandInfo("cancel-house", "Give up the house you are building for good (what is already built stays); to only pause it, "
+                    + "that is stop-working",
+                    null,
+                    (p, v, ignored) -> Voluntad.cancelarObra(v, p, spanish(v)),
+                    (p, v) -> Voluntad.conectado(v) && Voluntad.tieneObra(v)),
             new TriggerCommandInfo("stop-working", "Stop the work or the errand you are doing; not for a quick \"stop!\" or \"careful!\", that is "
                     + "alert. A connected villager never disconnects: it drops the errand (or its digging) and stays with the player",
                     null,

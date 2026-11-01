@@ -47,7 +47,7 @@
   "client": [
     "client.MixinArmorFeatureRenderer", "client.MixinGameRenderer", "client.MixinHeldItemFeatureRenderer",
     "client.MixinLivingEntityRenderer", "client.MixinPlayerEntityClient",
-    "client.MixinPlayerEntityRenderer", "client.MixinSoundLoader", "client.MixinTranslationStorage"
+    "client.MixinPlayerEntityRenderer", "client.MixinSoundLoader", "client.MixinTranslationStorage", "client.MixinWorldRendererFantasma"
   ],
   "injectors": {
     "defaultRequire": 1
