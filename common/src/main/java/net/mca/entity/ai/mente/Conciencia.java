@@ -656,7 +656,7 @@ public final class Conciencia {
         // the one who learned last goes to the end: when there are too many, the one silent the longest goes
         registro.lecciones.remove(villager.getUuid());
         registro.lecciones.put(villager.getUuid(), list);
-        registro.revisiones.merge(villager.getUuid(), 1L, (a, b) -> Math.incrementExact(a));
+        registro.changed(villager.getUuid());
         registro.trim(villager.getUuid());
         registro.markDirty();
         return true;
@@ -679,7 +679,7 @@ public final class Conciencia {
         private static final int MAX_ALDEANOS = 256;
         private static final String ARCHIVO = "lecciones";
         final Map<UUID, List<String>> lecciones = new LinkedHashMap<>();
-        private final Map<UUID, Long> revisiones = new HashMap<>();
+        private final Map<UUID, Long> revisiones = new java.util.HashMap<>();
         private final java.util.Set<UUID> comprobados = new java.util.HashSet<>();
         /** Asked of the archive and not there (not saved): no disk read every time it thinks. */
         private final java.util.Set<UUID> sinArchivo = new java.util.HashSet<>();
@@ -760,6 +760,11 @@ public final class Conciencia {
                 comprobados.remove(first);
                 markDirty();
             }
+        }
+
+        void changed(UUID id) {
+            revisiones.merge(id, 1L, (a, b) -> Math.incrementExact(a));
+            markDirty();
         }
 
         private NbtCompound raw(UUID id, List<String> list) {

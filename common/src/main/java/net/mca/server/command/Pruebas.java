@@ -113,6 +113,7 @@ public final class Pruebas {
                 case "vista-oido" -> start(new VistaOido(world));
                 case "escalera-real" -> start(new EscaleraReal(world));
                 case "bajada-lado" -> start(new BajadaLado(world));
+                case "vida-contratos", "vida-permisos", "vida-red-codecs", "vida-miedo", "vida-vinculo", "archivo-preparar", "archivo-reinicio", "archivo-revisiones", "robo-actor" -> PruebasVida.run(world, which);
                 case "resumen" -> resumen();
                 default -> {
                     ctx.getSource().sendError(Text.literal("ojo | minar | espada | arco | progreso | nombre | obras | robo | regalo | arco-cerca | horno | hogar | cultivos | agua-tunel | agua-pozo | explorar | ia-local | ia-red | resumen"));
@@ -137,7 +138,7 @@ public final class Pruebas {
         RESULTS.put(name, "FALLA");
     }
 
-    private static void check(String name, boolean passed, String detail) {
+    static void check(String name, boolean passed, String detail) {
         if (passed) {
             ok(name, detail);
         } else {
@@ -174,13 +175,13 @@ public final class Pruebas {
         }
     }
 
-    private static void start(Scenario scenario) {
+    static void start(Scenario scenario) {
         RUNNING.add(scenario);
     }
 
     // ------------------------------------------------------------------ arena helpers
 
-    private static void load(ServerWorld world, BlockPos origin, int radius) {
+    static void load(ServerWorld world, BlockPos origin, int radius) {
         for (int cx = (origin.getX() - radius) >> 4; cx <= (origin.getX() + radius) >> 4; cx++) {
             for (int cz = (origin.getZ() - radius) >> 4; cz <= (origin.getZ() + radius) >> 4; cz++) {
                 world.setChunkForced(cx, cz, true);
@@ -189,17 +190,17 @@ public final class Pruebas {
         }
     }
 
-    private static void fill(ServerWorld world, BlockPos a, BlockPos b, BlockState state) {
+    static void fill(ServerWorld world, BlockPos a, BlockPos b, BlockState state) {
         for (BlockPos pos : BlockPos.iterate(a, b)) {
             world.setBlockState(pos, state, 2);
         }
     }
 
-    private static VillagerEntityMCA villager(ServerWorld world, BlockPos feet, Direction facing) {
+    static VillagerEntityMCA villager(ServerWorld world, BlockPos feet, Direction facing) {
         return villager(world, feet, facing, "Prueba");
     }
 
-    private static VillagerEntityMCA villager(ServerWorld world, BlockPos feet, Direction facing, String name) {
+    static VillagerEntityMCA villager(ServerWorld world, BlockPos feet, Direction facing, String name) {
         VillagerEntityMCA villager = VillagerFactory.newVillager(world)
                 .withGender(Gender.MALE)
                 .withAge(0)
@@ -226,7 +227,7 @@ public final class Pruebas {
         entity.prevPitch = pitch;
     }
 
-    private static ZombieEntity zombie(ServerWorld world, Vec3d at, boolean ai) {
+    static ZombieEntity zombie(ServerWorld world, Vec3d at, boolean ai) {
         ZombieEntity zombie = EntityType.ZOMBIE.create(world);
         if (zombie == null) {
             throw new IllegalStateException("no zombie");
@@ -388,7 +389,7 @@ public final class Pruebas {
 
     // ------------------------------------------------------------------ tick-driven checks
 
-    private abstract static class Scenario {
+    abstract static class Scenario {
         final String name;
         final ServerWorld world;
         final int limit;
@@ -3817,14 +3818,14 @@ public final class Pruebas {
 
     // ------------------------------------------------------------------ chests: theft and gifts
 
-    private static net.minecraft.server.network.ServerPlayerEntity fakePlayer(ServerWorld world, String name, Vec3d at) {
+    static net.minecraft.server.network.ServerPlayerEntity fakePlayer(ServerWorld world, String name, Vec3d at) {
         var player = new net.minecraft.server.network.ServerPlayerEntity(world.getServer(), world,
                 new com.mojang.authlib.GameProfile(java.util.UUID.nameUUIDFromBytes(("mca-prueba-" + name).getBytes()), name));
         player.refreshPositionAndAngles(at.x, at.y, at.z, 0, 0);
         return player;
     }
 
-    private static BlockPos chestFor(ServerWorld world, VillagerEntityMCA owner, BlockPos pos) {
+    static BlockPos chestFor(ServerWorld world, VillagerEntityMCA owner, BlockPos pos) {
         world.setBlockState(pos, Blocks.CHEST.getDefaultState(), 3);
         Cofres.claim(world, owner, pos);
         return pos;

@@ -47,6 +47,14 @@ mca-prueba vista-oscuro
 mca-prueba vista-oido
 mca-prueba escalera-real
 mca-prueba bajada-lado
+mca-prueba vida-contratos
+mca-prueba vida-permisos
+mca-prueba vida-red-codecs
+mca-prueba vida-miedo
+mca-prueba vida-vinculo
+mca-prueba archivo-preparar
+mca-prueba archivo-revisiones
+mca-prueba robo-actor
 sleep 320
 mca-prueba resumen
 sleep 2

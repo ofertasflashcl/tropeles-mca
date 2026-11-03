@@ -241,7 +241,7 @@ public final class Cofres {
             if (chest == null) {
                 continue;
             }
-            for (Map.Entry<String, Integer> e : before.entrySet()) {
+            for (Map.Entry<String, Integer> e : chest.snapshot.entrySet()) {
                 Identifier id = Identifier.tryParse(e.getKey());
                 if (id == null || e.getValue() <= 0) {
                     continue;
@@ -317,7 +317,7 @@ public final class Cofres {
         int missing = 0;
         String what = "";
         int most = 0;
-        for (Map.Entry<String, Integer> e : chest.snapshot.entrySet()) {
+        for (Map.Entry<String, Integer> e : before.entrySet()) {
             int gone = e.getValue() - now.getOrDefault(e.getKey(), 0);
             if (gone > 0) {
                 missing += gone;

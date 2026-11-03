@@ -5139,7 +5139,7 @@ public class ProspectingTask extends AbstractChoreTask {
 
     /** Why the mine cannot start where it stands, or null when the ground here is its to cut. */
     @Nullable
-    private String badSpot(ServerWorld world, VillagerEntityMCA villager, BlockPos feet) {
+    public String badSpot(ServerWorld world, VillagerEntityMCA villager, BlockPos feet) {
         // a place where something attacked it: it would rather dig its mine somewhere else (what it lived decides)
         Peligros.Miedo miedo = Peligros.de(world, villager, feet);
         if (miedo.fuerte()) {
