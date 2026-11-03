@@ -297,14 +297,12 @@ public class ChatAI {
             if (offline) {
                 Cerebros.OFFLINE.set(true);
             }
-            net.mca.entity.ai.mente.Interrupcion.turno(turn.received);
-            if (!turn.said.get() && !net.mca.entity.ai.mente.Interrupcion.despues(turn.villagerId, turn.received)) {
+            if (!turn.said.get() && !turn.lease.finished()) {
                 line = answer(turn.speaker, turn.villager, turn.msg, deadline, local -> turn.fallback = local, turn.lease).orElse(null);
             }
         } catch (Throwable t) {
             MCA.LOGGER.error("[Tropeles] la charla con {} falló", turn.villagerName, t);
         } finally {
-            net.mca.entity.ai.mente.Interrupcion.turno(null);
             Cerebros.OFFLINE.set(false);
             pending.decrementAndGet();
         }
@@ -355,11 +353,6 @@ public class ChatAI {
     /** Says the answer once (server thread): the first of the worker and the watchdog wins. */
     private static void say(Turn turn, String line) {
         if (!turn.server.isOnThread() || !turn.lease.complete() || !turn.said.compareAndSet(false, true)) {
-            return;
-        }
-        if (net.mca.entity.ai.mente.Interrupcion.despues(turn.villagerId, turn.received)) {
-            // stopped with "¡para!" after this was asked: what it was about to say no longer fits
-            MCA.LOGGER.info("[Tropeles] {} se detuvo después de «{}»; no dice «{}»", turn.villagerName, turn.msg, line);
             return;
         }
         OpenAIChatAI.remember(turn.villagerId, turn.speakerId, turn.msg, line);
