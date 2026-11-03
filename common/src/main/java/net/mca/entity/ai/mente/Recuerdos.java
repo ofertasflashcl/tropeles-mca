@@ -65,9 +65,8 @@ public final class Recuerdos {
     /** Cells looked at in one search for a way, at most (a long mine and a walk home fit). */
     public static final int SEARCH_NODES = 16000;
     /** Villagers whose memories are kept per world, at most; the one that walked longest ago is forgotten first. */
+    /** Villagers whose memories stay in the world's data file; the rest wait whole in the archive ({@link net.mca.server.world.data.ArchivoTropeles}). */
     private static final int MAX_VILLAGERS = 256;
-    /** Villagers remembered at all (past {@link #MAX_VILLAGERS}, without their walked cells). */
-    private static final int MAX_RESUMIDOS = 2048;
 
     /** One walked cell: when it stood there last, how many times, and what kind of place it was. */
     public static final class Paso {
@@ -1050,7 +1049,9 @@ public final class Recuerdos {
         Recuerdos of(UUID id) {
             Recuerdos r = vivos.get(id);
             if (r == null) {
-                NbtCompound raw = crudos.remove(id);
+                // here or archived, whichever changed last (after a crash the archive may be newer than this file)
+                NbtCompound raw = net.mca.server.world.data.ArchivoTropeles.masNuevo(crudos.remove(id),
+                        world == null ? null : net.mca.server.world.data.ArchivoTropeles.leer(world.getServer(), archivo(), id));
                 try {
                     r = raw == null ? new Recuerdos() : fromNbt(raw);
                 } catch (RuntimeException e) {
@@ -1065,68 +1066,47 @@ public final class Recuerdos {
             return r;
         }
 
+        /** This dimension's folder in the archive. */
+        private String archivo() {
+            return "recuerdos/" + (world == null ? "?" : world.getRegistryKey().getValue().toString());
+        }
+
         /**
-         * Too many villagers with every walked cell: the one untouched the longest keeps its diary, places and marks
-         * but not its trail (walking learns it again). Only past {@value #MAX_RESUMIDOS} villagers is one forgotten.
+         * Over {@value #MAX_VILLAGERS} villagers here: the one untouched the longest goes whole (every walked cell,
+         * diary, places and marks) to its file in the archive and comes back from there. Nothing is cut or forgotten;
+         * if the disk refuses, it stays here.
          */
         private void trim(UUID keep) {
-            while (vivos.size() + completos() > MAX_VILLAGERS) {
+            while (vivos.size() + crudos.size() > MAX_VILLAGERS) {
                 UUID oldest = null;
                 long when = Long.MAX_VALUE;
-                for (Map.Entry<UUID, NbtCompound> e : crudos.entrySet()) {
-                    long t = e.getValue().getLong("tocado");
-                    if (e.getValue().contains("c") && t < when) {
-                        when = t;
-                        oldest = e.getKey();
-                    }
-                }
-                if (oldest != null) {
-                    resumir(crudos.get(oldest));
-                } else {
-                    for (Map.Entry<UUID, Recuerdos> e : vivos.entrySet()) {
-                        if (!e.getKey().equals(keep) && e.getValue().tocado < when) {
-                            when = e.getValue().tocado;
-                            oldest = e.getKey();
-                        }
-                    }
-                    if (oldest == null) {
-                        break;
-                    }
-                    NbtCompound raw = vivos.remove(oldest).toNbt();
-                    resumir(raw);
-                    crudos.put(oldest, raw);
-                }
-                markDirty();
-            }
-            while (vivos.size() + crudos.size() > MAX_RESUMIDOS && !crudos.isEmpty()) {
-                UUID oldest = null;
-                long when = Long.MAX_VALUE;
+                boolean crudo = false;
                 for (Map.Entry<UUID, NbtCompound> e : crudos.entrySet()) {
                     long t = e.getValue().getLong("tocado");
                     if (t < when) {
                         when = t;
                         oldest = e.getKey();
+                        crudo = true;
                     }
                 }
+                for (Map.Entry<UUID, Recuerdos> e : vivos.entrySet()) {
+                    if (!e.getKey().equals(keep) && e.getValue().tocado < when) {
+                        when = e.getValue().tocado;
+                        oldest = e.getKey();
+                        crudo = false;
+                    }
+                }
+                if (oldest == null) {
+                    break;
+                }
+                NbtCompound raw = crudo ? crudos.get(oldest) : vivos.get(oldest).toNbt();
+                if (world == null || !net.mca.server.world.data.ArchivoTropeles.guardar(world.getServer(), archivo(), oldest, raw)) {
+                    break;
+                }
                 crudos.remove(oldest);
+                vivos.remove(oldest);
                 markDirty();
             }
-        }
-
-        private int completos() {
-            int n = 0;
-            for (NbtCompound raw : crudos.values()) {
-                if (raw.contains("c")) {
-                    n++;
-                }
-            }
-            return n;
-        }
-
-        /** Its walked cells go; the diary, named places and marks stay. */
-        private static void resumir(NbtCompound raw) {
-            raw.remove("c");
-            raw.remove("m");
         }
 
         @Override

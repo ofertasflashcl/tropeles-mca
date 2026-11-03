@@ -281,13 +281,6 @@ public final class Mente {
         return p == null ? Long.MIN_VALUE : BlockPos.asLong(p.getX() >> 4, p.getY() >> 4, p.getZ() >> 4);
     }
 
-    /** Leaves RAM for a long while: only the {@code max} incidents that matter most stay (summaries count double). */
-    void compactar(long now, int max) {
-        while (episodios.size() > max) {
-            olvidarUno(now);
-        }
-    }
-
     /** The journal is full: the closed episode that matters least now (salience, certainty, age) goes. */
     private void olvidarUno(long now) {
         int worst = -1;

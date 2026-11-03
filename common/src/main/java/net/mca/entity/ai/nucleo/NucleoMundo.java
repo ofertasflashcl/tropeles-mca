@@ -1,10 +1,13 @@
 package net.mca.entity.ai.nucleo;
 
 import net.mca.MCA;
+import net.mca.server.world.data.ArchivoTropeles;
 import net.mca.util.WorldUtils;
 import net.minecraft.nbt.NbtCompound;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.world.PersistentState;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -12,20 +15,20 @@ import java.util.UUID;
 
 /**
  * Every villager's {@link Mente}, saved with the world (in the overworld, so a villager keeps its mind across
- * dimensions). A mind is read from its saved form only when that villager is first thought about. Leaving RAM loses
- * nothing: a mind not used for the longest goes back to its saved form, keeping its most important incidents; only a
- * world with more than {@value #MAX} remembered villagers forgets the one untouched the longest.
+ * dimensions). At most {@value #MAX_AQUI} minds live here, as objects or as their saved form read only when that
+ * villager is first thought about; the one untouched the longest goes whole to its own file in the
+ * {@link ArchivoTropeles archive} and comes back from there. No mind is ever cut or forgotten, however many villagers
+ * the world has: only RAM and this file are bounded.
  */
 final class NucleoMundo extends PersistentState {
-    /** Minds kept as objects in RAM. */
-    private static final int MAX_VIVAS = 256;
-    /** Identities kept at all. */
-    private static final int MAX = 4096;
-    /** Incidents a mind keeps when it leaves RAM. */
-    private static final int ARCHIVO = 160;
+    private static final String ARCHIVO = "nucleo";
+    /** Minds kept here (as objects or saved form); the rest wait in the archive. */
+    private static final int MAX_AQUI = 256;
 
     final Map<UUID, Mente> vivas = new HashMap<>();
     private final Map<UUID, NbtCompound> crudas = new HashMap<>();
+    @Nullable
+    private MinecraftServer server;
 
     private NucleoMundo() {
     }
@@ -43,13 +46,16 @@ final class NucleoMundo extends PersistentState {
 
     static NucleoMundo get(ServerWorld world) {
         ServerWorld home = world.getServer() == null ? world : world.getServer().getOverworld();
-        return WorldUtils.loadData(home, NucleoMundo::new, w -> new NucleoMundo(), "mca_tropeles_nucleo");
+        NucleoMundo s = WorldUtils.loadData(home, NucleoMundo::new, w -> new NucleoMundo(), "mca_tropeles_nucleo");
+        s.server = world.getServer();
+        return s;
     }
 
     Mente of(UUID id, long now) {
         Mente m = vivas.get(id);
         if (m == null) {
-            NbtCompound raw = crudas.remove(id);
+            // here or archived, whichever changed last (after a crash the archive may be newer than this file)
+            NbtCompound raw = ArchivoTropeles.masNuevo(crudas.remove(id), ArchivoTropeles.leer(server, ARCHIVO, id));
             try {
                 m = raw == null ? new Mente() : Mente.fromNbt(raw);
             } catch (RuntimeException e) {
@@ -59,43 +65,46 @@ final class NucleoMundo extends PersistentState {
             m.mundo = this;
             m.tocado = Math.max(m.tocado, now);
             vivas.put(id, m);
-            recortar(id, now);
+            recortar(id);
         }
         return m;
     }
 
-    private void recortar(UUID keep, long now) {
-        while (vivas.size() > MAX_VIVAS) {
+    /** Over {@value #MAX_AQUI}: the mind untouched the longest goes whole to the archive (kept here if that fails). */
+    private void recortar(UUID keep) {
+        while (vivas.size() + crudas.size() > MAX_AQUI) {
             UUID oldest = null;
             long when = Long.MAX_VALUE;
+            boolean cruda = false;
+            for (Map.Entry<UUID, NbtCompound> e : crudas.entrySet()) {
+                if (e.getValue().getLong("tocado") < when) {
+                    when = e.getValue().getLong("tocado");
+                    oldest = e.getKey();
+                    cruda = true;
+                }
+            }
             for (Map.Entry<UUID, Mente> e : vivas.entrySet()) {
                 if (!e.getKey().equals(keep) && e.getValue().tocado < when) {
                     when = e.getValue().tocado;
                     oldest = e.getKey();
+                    cruda = false;
                 }
             }
             if (oldest == null) {
                 break;
             }
-            Mente m = vivas.remove(oldest);
+            NbtCompound raw;
             try {
-                m.compactar(now, ARCHIVO);
-                crudas.put(oldest, m.toNbt());
+                raw = cruda ? crudas.get(oldest) : vivas.get(oldest).toNbt();
             } catch (RuntimeException e) {
-                MCA.LOGGER.warn("[Tropeles] la mente de {} no se pudo guardar al salir de memoria: {}", oldest, e.toString());
+                MCA.LOGGER.warn("[Tropeles] la mente de {} no se pudo escribir: {}", oldest, e.toString());
+                break;
             }
-            markDirty();
-        }
-        while (vivas.size() + crudas.size() > MAX && !crudas.isEmpty()) {
-            UUID oldest = null;
-            long when = Long.MAX_VALUE;
-            for (Map.Entry<UUID, NbtCompound> e : crudas.entrySet()) {
-                if (e.getValue().getLong("tocado") < when) {
-                    when = e.getValue().getLong("tocado");
-                    oldest = e.getKey();
-                }
+            if (!ArchivoTropeles.guardar(server, ARCHIVO, oldest, raw)) {
+                break; // the disk refused: it stays here rather than be lost, and the bound waits
             }
             crudas.remove(oldest);
+            vivas.remove(oldest);
             markDirty();
         }
     }
