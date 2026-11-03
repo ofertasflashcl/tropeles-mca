@@ -56,7 +56,8 @@ public interface InventoryUtils {
         return match.test(villager.getMainHandStack());
     }
 
-    private static boolean sharesSlot(SimpleInventory inv, ItemStack stack) {
+    /** That very stack object is in the bag (worn or held from it, not a copy). */
+    public static boolean sharesSlot(SimpleInventory inv, ItemStack stack) {
         for (int i = 0; i < inv.size(); i++) {
             if (inv.getStack(i) == stack) {
                 return true;

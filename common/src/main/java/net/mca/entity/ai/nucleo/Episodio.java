@@ -7,8 +7,12 @@ import net.minecraft.entity.EntityType;
 import net.minecraft.entity.SpawnGroup;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.nbt.NbtCompound;
+import net.minecraft.nbt.NbtElement;
+import net.minecraft.nbt.NbtList;
+import net.minecraft.nbt.NbtString;
 import net.minecraft.registry.Registries;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.world.World;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
@@ -149,12 +153,16 @@ public final class Episodio {
     public String cosaEn = "";
     @Nullable
     public BlockPos donde;
+    /** The dimension of {@link #donde} ("" when unknown, as in saves from before it was kept). */
+    public String dim = "";
     public float valencia;
     public float saliencia;
     public float confianza = 1.0F;
     public Modo modo = Modo.VISTO;
     @Nullable
     public Ser fuente;
+    /** Everyone this account came through (the teller and the teller's own sources): hearsay along one chain is one piece of evidence. */
+    final List<String> narradores = new ArrayList<>(2);
     public int saltos;
     /** Independent tellers who said the same thing (corroboration). */
     public int apoyos = 1;
@@ -189,6 +197,75 @@ public final class Episodio {
         return who != null && (quien != null && quien.es(who) || aQuien != null && aQuien.es(who));
     }
 
+    /** Where it happened, in which dimension. */
+    public Episodio en(@Nullable World world, @Nullable BlockPos p) {
+        donde = p == null ? null : p.toImmutable();
+        dim = world == null ? "" : world.getRegistryKey().getValue().toString();
+        return this;
+    }
+
+    /** The place as a key: the same cell in another dimension is another place. */
+    String lugar() {
+        return dim + "@" + Mente.celda(donde);
+    }
+
+    /** "102 64 -31", and the dimension when it is not the overworld. */
+    public String dondeTexto(boolean es) {
+        if (donde == null) {
+            return "";
+        }
+        String xyz = donde.getX() + " " + donde.getY() + " " + donde.getZ();
+        return switch (dim) {
+            case "", "minecraft:overworld" -> xyz;
+            case "minecraft:the_nether" -> xyz + (es ? " en el Nether" : " in the Nether");
+            case "minecraft:the_end" -> xyz + (es ? " en el End" : " in the End");
+            default -> xyz + (es ? " en " : " in ") + dim;
+        };
+    }
+
+    /** This account already came through {@code s}. */
+    boolean oyo(Ser s) {
+        return fuente != null && fuente.mismo(s) || narradores.contains(s.clave());
+    }
+
+    /** Another's account {@code o} came through someone this one came through too: it is no new evidence. */
+    boolean comparte(Episodio o) {
+        if (o.modo != Modo.OIDO) {
+            return false; // a witness's own account is independent
+        }
+        if (o.fuente != null && oyo(o.fuente)) {
+            return true;
+        }
+        for (String k : o.narradores) {
+            if (narradores.contains(k) || fuente != null && fuente.clave().equals(k)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Remembers that {@code teller} told it, and whom the teller had it from. */
+    void anotar(Ser teller, Episodio dicho) {
+        agregar(teller.clave());
+        if (dicho.modo == Modo.OIDO) {
+            if (dicho.fuente != null) {
+                agregar(dicho.fuente.clave());
+            }
+            for (String k : dicho.narradores) {
+                agregar(k);
+            }
+        }
+    }
+
+    private void agregar(String k) {
+        if (!narradores.contains(k)) {
+            narradores.add(k);
+            while (narradores.size() > 8) {
+                narradores.remove(0);
+            }
+        }
+    }
+
     /** The copy a listener keeps when {@code teller} tells it: in the third person, weaker, from that source. */
     Episodio oido(int nuevo, Ser teller, float credibilidad) {
         Episodio c = new Episodio(nuevo, tipo, t0, origen);
@@ -201,11 +278,13 @@ public final class Episodio {
         c.cosa = cosa;
         c.cosaEn = cosaEn;
         c.donde = donde;
+        c.dim = dim;
         c.valencia = valencia * 0.7F;
         c.saliencia = saliencia * 0.8F;
         c.confianza = Math.max(0.05F, Math.min(1.0F, confianza * credibilidad));
         c.modo = Modo.OIDO;
         c.fuente = teller;
+        c.anotar(teller, this);
         c.saltos = saltos + 1;
         c.estado = Estado.CERRADO;
         return c;
@@ -339,12 +418,20 @@ public final class Episodio {
         if (donde != null) {
             n.putLong("p", donde.asLong());
         }
+        if (!dim.isEmpty()) {
+            n.putString("dm", dim);
+        }
         n.putFloat("v", valencia);
         n.putFloat("s", saliencia);
         n.putFloat("k", confianza);
         n.putByte("m", (byte) modo.ordinal());
         if (fuente != null) {
             fuente.escribir(n, "f");
+        }
+        if (!narradores.isEmpty()) {
+            NbtList nr = new NbtList();
+            narradores.forEach(k -> nr.add(NbtString.of(k)));
+            n.put("nr", nr);
         }
         if (saltos != 0) {
             n.putByte("h", (byte) saltos);
@@ -384,6 +471,11 @@ public final class Episodio {
         e.confianza = n.getFloat("k");
         e.modo = Modo.values()[Math.min(Modo.values().length - 1, Math.max(0, n.getByte("m")))];
         e.fuente = Ser.leer(n, "f");
+        e.dim = n.getString("dm");
+        NbtList nr = n.getList("nr", NbtElement.STRING_TYPE);
+        for (int i = 0; i < nr.size() && i < 8; i++) {
+            e.narradores.add(nr.getString(i));
+        }
         e.saltos = n.getByte("h");
         e.apoyos = n.contains("ap") ? n.getByte("ap") : 1;
         e.estado = Estado.values()[Math.min(Estado.values().length - 1, Math.max(0, n.getByte("e")))];

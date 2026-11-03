@@ -114,6 +114,8 @@ public final class Conciencia {
     private String evento = "";
     private long ultimoCambio = Long.MIN_VALUE / 2;
     private long ultimoDicho = Long.MIN_VALUE / 2;
+    /** What the last thought was given (the prompt's state): what it may speak of. */
+    private String ultimoEstado = "";
     private final AtomicReference<Pensamiento> listo = new AtomicReference<>();
 
     Conciencia() {
@@ -205,13 +207,18 @@ public final class Conciencia {
                 minds.add(mind); // MCA's own service is a chat persona: it does not think in JSON
             }
         }
-        if (minds.isEmpty() || !PENSANDO.compareAndSet(false, true)) {
+        if (minds.isEmpty() || PENSANDO.get()) {
             return;
         }
         String villagerName = villager.getName().getString();
         boolean es = cerca == null ? will.spanish() : idioma(cerca, will);
         String sistema = sistema(villagerName, playerName, es);
         String estado = estado(world, villager, will, task, cerca, pasado);
+        // the permit is taken only after everything that could fail here: one bad snapshot must not stop every mind
+        if (!PENSANDO.compareAndSet(false, true)) {
+            return;
+        }
+        ultimoEstado = estado;
         ultimaLlamadaMs = nowMs;
         try {
             HILO.execute(() -> {
@@ -415,17 +422,29 @@ public final class Conciencia {
         MCA.LOGGER.info("[Tropeles] {} piensa ({}): «{}»{}{}", name, p.mente(), p.pienso(),
                 p.quiero().isEmpty() ? "" : "; quiere '" + p.quiero() + (p.argumento().isEmpty() ? "" : " " + p.argumento()) + "'",
                 p.porque().isEmpty() ? "" : " porque " + p.porque());
-        if (!p.leccion().isEmpty() && aprender(world, villager, p.leccion())) {
-            Recuerdos.anotar(villager, "leccion", p.leccion(), at);
+        if (!p.leccion().isEmpty()) {
+            // a lesson becomes knowledge only when it rests on incidents it lived that are about the same thing;
+            // else it is a hunch: written in its diary as such, never kept as a lesson nor given back as one
             boolean grounded = net.mca.entity.ai.nucleo.Nucleo.reflexion(villager, p.leccion(), p.cita());
-            MCA.LOGGER.info("[Tropeles] {} aprendió: «{}»{}", name, p.leccion(), grounded ? " (basado en " + p.cita() + ")" : "");
+            if (!grounded) {
+                Recuerdos.anotar(villager, "corazonada", p.leccion(), at);
+                MCA.LOGGER.info("[Tropeles] {} sospecha sin pruebas: «{}» (no lo guarda como lección)", name, p.leccion());
+            } else if (aprender(world, villager, p.leccion())) {
+                Recuerdos.anotar(villager, "leccion", p.leccion(), at);
+                MCA.LOGGER.info("[Tropeles] {} aprendió: «{}» (basado en {})", name, p.leccion(), p.cita());
+            }
         }
         querer(world, villager, will, task, p, now);
         if (!p.dice().isEmpty() && now - ultimoDicho >= DECIR_TICKS) {
             ServerPlayerEntity to = cercano(world, villager, OIDO);
             if (to != null && !MenteLocal.clearlyNot(p.dice(), idioma(to, will))) {
-                ultimoDicho = now;
-                will.iniciativa.decir(villager, to, p.dice(), now);
+                // what it says on its own passes the same check as its chat: nothing it was not given
+                net.mca.entity.ai.nucleo.Anclaje anclaje = net.mca.entity.ai.nucleo.Anclaje.de(villager, to, ultimoEstado + " " + to.getName().getString());
+                String dice = anclaje == null ? p.dice() : anclaje.filtrar(p.dice());
+                if (dice != null) {
+                    ultimoDicho = now;
+                    will.iniciativa.decir(villager, to, dice, now);
+                }
             }
         }
     }
@@ -630,6 +649,9 @@ public final class Conciencia {
         while (list.size() > MAX_LECCIONES) {
             list.remove(0);
         }
+        // the one who learned last goes to the end: when there are too many, the one silent the longest goes
+        registro.lecciones.remove(villager.getUuid());
+        registro.lecciones.put(villager.getUuid(), list);
         registro.trim(villager.getUuid());
         registro.markDirty();
         return true;
@@ -645,7 +667,7 @@ public final class Conciencia {
 
     /** Every villager's lessons, kept with the overworld so they follow it into any dimension. */
     static final class Registro extends PersistentState {
-        private static final int MAX_ALDEANOS = 256;
+        private static final int MAX_ALDEANOS = 4096;
         final Map<UUID, List<String>> lecciones = new LinkedHashMap<>();
 
         private Registro() {
@@ -671,7 +693,7 @@ public final class Conciencia {
             return WorldUtils.loadData(server.getOverworld(), Registro::new, w -> new Registro(), "mca_tropeles_conciencia");
         }
 
-        /** Too many villagers: the first one written down goes, never {@code keep}. */
+        /** Too many villagers (only in huge worlds): the one who learned nothing for the longest goes, never {@code keep}. */
         void trim(UUID keep) {
             while (lecciones.size() > MAX_ALDEANOS) {
                 UUID first = null;

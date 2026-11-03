@@ -141,6 +141,9 @@ public final class Hands {
 
         @Nullable
         private BlockPos pos;
+        /** The block it started on: another one put there meanwhile is a new target, asked for again from scratch. */
+        @Nullable
+        private Block bloque;
         private float progress;
         private int stage = -1;
         private int ticks;
@@ -161,6 +164,7 @@ public final class Hands {
                 world.setBlockBreakingInfo(miner.getId(), pos, -1);
             }
             pos = null;
+            bloque = null;
             progress = 0;
             stage = -1;
             ticks = 0;
@@ -187,6 +191,9 @@ public final class Hands {
                 reset(world, miner);
                 return FAILED;
             }
+            if (target.equals(pos) && state.getBlock() != bloque) {
+                reset(world, miner); // somebody put another block there while it swung: no old cracks, and asked again
+            }
             if (!target.equals(pos)) {
                 reset(world, miner);
                 // a tree, rock or its own block may go; a house, a player's build or a village wall never
@@ -200,6 +207,7 @@ public final class Hands {
                     return FAILED;
                 }
                 pos = target.toImmutable();
+                bloque = state.getBlock();
                 holdBestTool(miner, state);
             }
             if (!urgent && !miner.isOnGround() && !miner.isTouchingWater() && !miner.isClimbing() && !miner.hasVehicle()) {
@@ -237,6 +245,12 @@ public final class Hands {
             }
             if (progress < 1.0F) {
                 return RUNNING;
+            }
+            // the last swing confirms what the first one asked: it may still break this block (it may have become part of a build)
+            if (!Obras.mayBreak(world, miner, target)) {
+                Retina.memory(miner).doing("no rompe " + state.getBlock().getName().getString() + ": es " + Obras.kind(world, miner, target).label, world.getTime());
+                reset(world, miner);
+                return FAILED;
             }
             finish(world, miner, target, state, tool);
             reset(world, miner);

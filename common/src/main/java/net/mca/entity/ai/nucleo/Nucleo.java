@@ -78,6 +78,7 @@ public final class Nucleo {
     static Mente de(ServerWorld world, VillagerEntityMCA v) {
         Mente m = VIVAS.get(v);
         if (m != null && m.mundo != null && m.mundo.vivas.get(v.getUuid()) == m) {
+            m.tocado = Math.max(m.tocado, world.getTime()); // in use: the last to leave RAM
             return m;
         }
         m = NucleoMundo.get(world).of(v.getUuid(), world.getTime());
@@ -123,7 +124,7 @@ public final class Nucleo {
             e.quien = quien;
             e.cantidad = dano;
             e.valencia = -Mente.clamp(0.3F + dano / 10.0F, 0.3F, 1.0F);
-            e.donde = Mining.pies(v);
+            e.en(v.getWorld(), Mining.pies(v));
             Episodio kept = m.registrar(e, now);
             Ser victima = Ser.de(v);
             if (kept == e) {
@@ -150,7 +151,7 @@ public final class Nucleo {
         we.quien = quien;
         we.aQuien = victima;
         we.cantidad = dano;
-        we.donde = donde;
+        we.en(world, donde);
         float b = vinculo(world, w, wm, victima);
         we.valencia = -Mente.clamp(0.2F + 0.6F * Math.max(0, b) + dano / 20.0F, 0.2F, 1.0F);
         wm.registrar(we, now);
@@ -208,7 +209,7 @@ public final class Nucleo {
         e.aQuien = victima;
         e.quien = asesino;
         e.modo = modo;
-        e.donde = donde;
+        e.en(world, donde);
         e.confianza = modo == Modo.VISTO ? 1.0F : 0.9F;
         List<Integer> causas = new ArrayList<>();
         for (Episodio o : wm.episodios) {
@@ -256,7 +257,7 @@ public final class Nucleo {
             e.cosaEn = stack.getName().getString().toLowerCase(Locale.ROOT);
             e.cantidad = 1;
             e.valencia = mejor ? 0.8F : 0.5F;
-            e.donde = Mining.pies(v);
+            e.en(v.getWorld(), Mining.pies(v));
             m.registrar(e, now);
             m.ultimoSocial = now;
         } catch (RuntimeException ex) {
@@ -281,7 +282,7 @@ public final class Nucleo {
             e.modo = visto ? Modo.VISTO : Modo.DEDUCIDO;
             e.confianza = visto ? 1.0F : 0.85F;
             e.valencia = -Mente.clamp(0.4F + n / 32.0F, 0.4F, 1.0F);
-            e.donde = Mining.pies(v);
+            e.en(v.getWorld(), Mining.pies(v));
             m.registrar(e, now);
         } catch (RuntimeException ex) {
             falla("un robo", v, ex);
@@ -305,7 +306,7 @@ public final class Nucleo {
             Episodio e = m.nuevo(Tipo.HUI, now, v.getUuid());
             e.quien = quien;
             e.cosa = porque;
-            e.donde = Mining.pies(v);
+            e.en(v.getWorld(), Mining.pies(v));
             Episodio hit = m.ultimo(Tipo.HERIDO, null);
             if (hit != null && now - hit.t1 < 600) {
                 e.causas = new int[]{hit.id};
@@ -336,7 +337,7 @@ public final class Nucleo {
             Mente m = de(world, v);
             Episodio e = m.nuevo(t, now, v.getUuid());
             e.cosa = texto.length() > 160 ? texto.substring(0, 160) + "…" : texto;
-            e.donde = donde == null ? null : donde.toImmutable();
+            e.en(villager.getWorld(), donde);
             m.registrar(e, now);
             if (t == Tipo.HALLAZGO) {
                 m.ultimoHallazgo = now;
@@ -359,11 +360,14 @@ public final class Nucleo {
             Mente m = de(world, v);
             List<Integer> ids = new ArrayList<>();
             float conf = 0;
+            java.util.Set<String> raices = raices(leccion);
             java.util.regex.Matcher mm = Pattern.compile("\\d+").matcher(cita);
             while (mm.find() && ids.size() < 6) {
                 try {
                     Episodio e = m.porId(Integer.parseInt(mm.group()));
-                    if (e != null && e.tipo != Tipo.DIJE && !ids.contains(e.id)) {
+                    // citing an incident is not enough: it has to be about what the lesson says (a person, a thing, a deed)
+                    if (e != null && e.tipo != Tipo.DIJE && !ids.contains(e.id)
+                            && !java.util.Collections.disjoint(raices, raices(e.narrar(true) + " " + e.narrar(false) + " " + e.cosa + " " + e.cosaEn))) {
                         ids.add(e.id);
                         conf += e.confianza * (e.estado == Estado.FALSO ? 0.2F : 1.0F);
                     }
@@ -385,6 +389,22 @@ public final class Nucleo {
             falla("una reflexión", v, ex);
             return false;
         }
+    }
+
+    private static final Set<String> VACIAS = Set.of("para", "como", "pero", "esta", "este", "esto", "esas", "esos", "porq", "cuan",
+            "todo", "toda", "algo", "nada", "sien", "tien", "hace", "siem", "nunc", "debo", "debe", "mejo", "much", "poco", "otra", "otro",
+            "with", "that", "this", "have", "from", "when", "they", "what", "will", "just", "been", "abou", "ther", "some", "more", "alwa",
+            "neve", "shou", "vece", "time");
+
+    /** The first four letters of each word of four or more, without the empty ones: enough to tell what a text is about. */
+    private static Set<String> raices(String text) {
+        Set<String> out = new java.util.HashSet<>();
+        for (String w : net.mca.entity.ai.chatAI.Acciones.normalize(text).split("[^a-z0-9]+")) {
+            if (w.length() >= 4 && !VACIAS.contains(w.substring(0, 4))) {
+                out.add(w.substring(0, 4));
+            }
+        }
+        return out;
     }
 
     // ------------------------------------------------------------------ once a second

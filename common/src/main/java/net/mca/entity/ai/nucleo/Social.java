@@ -140,8 +140,8 @@ final class Social {
 
     /**
      * {@code h} hears {@code e} from {@code teller}: kept when it cares for the one it was done to (or trusts the
-     * teller), as believable as the teller is to it, never by the one who did it or had it done; a second teller of the
-     * same thing corroborates it. A death it hears of is mourned as much as it loved them.
+     * teller), as believable as the teller is to it, never by the one who did it or had it done; a second, independent
+     * teller corroborates it (the same teller, or one who has it from the same source, never counts twice). A death it hears of is mourned as much as it loved them.
      */
     static boolean oir(ServerWorld world, VillagerEntityMCA h, Mente hm, Episodio e, Ser teller, float bTeller, long now) {
         if (e.quien != null && e.quien.es(h.getUuid()) || e.aQuien != null && e.aQuien.es(h.getUuid())
@@ -156,14 +156,19 @@ final class Social {
         float cred = Mente.clamp(0.3F + 0.45F * bTeller + 0.4F * (hm.credulidad - 0.5F), 0.1F, 0.95F);
         Episodio ya = hm.porOrigen(e.origen);
         if (ya != null) {
-            if (ya.modo == Modo.OIDO && ya.fuente != null && !ya.fuente.mismo(teller) && ya.estado != Estado.FALSO && ya.apoyos < 5) {
+            // corroboration needs a new, independent account: not a teller heard before, nor one who has it from the same source
+            boolean nueva = ya.modo == Modo.OIDO && ya.estado != Estado.FALSO && ya.apoyos < 5 && !ya.oyo(teller) && !ya.comparte(e);
+            if (ya.modo == Modo.OIDO) {
+                ya.anotar(teller, e);
+                hm.sucio(now);
+            }
+            if (nueva) {
                 ya.apoyos++;
                 ya.confianza = 1.0F - (1.0F - ya.confianza) * (1.0F - Math.min(0.9F, e.confianza * cred * 0.7F));
                 Nucleo.corazones(h, hm, ya, bVict);
-                hm.sucio(now);
                 return true;
             }
-            return false; // it knew already, or saw it itself
+            return false; // it knew already from this chain, or saw it itself
         }
         Episodio c = e.oido(hm.siguiente++, teller, cred);
         hm.anadir(c, now);
@@ -242,12 +247,12 @@ final class Social {
                 nm.ultimoSocial = now;
                 Episodio yo = m.nuevo(Tipo.CONSOLE, now, v.getUuid());
                 yo.aQuien = Ser.de(n);
-                yo.donde = n.getBlockPos();
+                yo.en(world, n.getBlockPos());
                 yo.estado = Estado.CERRADO;
                 m.registrar(yo, now);
                 Episodio ella = nm.nuevo(Tipo.CONSOLE, now, n.getUuid());
                 ella.quien = Ser.de(v);
-                ella.donde = n.getBlockPos();
+                ella.en(world, n.getBlockPos());
                 ella.estado = Estado.CERRADO;
                 nm.registrar(ella, now);
                 nm.hecho("trato:" + v.getUuid(), v.getName().getString(), now).apoyar(true, 0.5F, true, ella.id, now);
@@ -356,7 +361,7 @@ final class Social {
             Episodio e = m.nuevo(Tipo.AVISE, now, v.getUuid());
             e.quien = Ser.de(mob);
             e.aQuien = Ser.de(p);
-            e.donde = mob.getBlockPos();
+            e.en(world, mob.getBlockPos());
             m.registrar(e, now);
             m.proximoAviso = now + 600;
             return;

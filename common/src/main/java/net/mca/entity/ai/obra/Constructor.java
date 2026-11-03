@@ -68,7 +68,13 @@ import java.util.function.Predicate;
  * set in the plan count, and what is thrown near it is picked up. Server thread only.
  */
 public final class Constructor {
-    public enum Fin {SIGUE, LISTA}
+    /** SIGUE: still at it. LISTA: every block of the plan is set. PARCIAL: all it could set is set, the rest is blocked by blocks not its own. */
+    public enum Fin {SIGUE, LISTA, PARCIAL}
+
+    /** At the last PARCIAL: how many cells of the plan were left blocked, and the first of them. */
+    public int faltanBloqueadas;
+    @Nullable
+    public BlockPos primeraBloqueada;
 
     private enum Accion {PENSAR, IR, SUBIR, TRABAJAR, BAJAR, LENA, CANTERA, ARENA, MANO, ESPERAR}
 
@@ -107,6 +113,8 @@ public final class Constructor {
         int hechas;
         int total;
         int bloqueadas;
+        @Nullable
+        BlockPos primera;
 
         int f(Plano.Rol rol) {
             return faltan.getOrDefault(rol, 0);
@@ -360,7 +368,15 @@ public final class Constructor {
         faltanVistos = l.faltan;
         hitos(villager, l);
         if (l.pendientes.isEmpty() && l.estorbos.stream().noneMatch(c -> Obras.mayBreak(world, villager, c.pos()))) {
-            return terminar(world, villager, task);
+            Fin fin = terminar(world, villager, task);
+            // done means the whole plan stands: a cell held by somebody's block, or somebody's thing left in a room, is not done
+            int faltan = l.bloqueadas + l.estorbos.size();
+            if (fin == Fin.LISTA && faltan > 0) {
+                faltanBloqueadas = faltan;
+                primeraBloqueada = l.primera != null ? l.primera : l.estorbos.get(0).pos();
+                return Fin.PARCIAL;
+            }
+            return fin;
         }
         Fuego fuego = fuego(world);
         // the furnace first when it stands idle with work for it: it smelts while the hands do the rest
@@ -431,7 +447,10 @@ public final class Constructor {
             boolean libre = s.isReplaceable();
             if (!libre && !obra.andamios.contains(c.pos()) && !Obras.mayBreak(world, villager, c.pos())) {
                 l.bloqueadas++;
-                continue; // somebody's block where the plan has another: it stays, and the house is done without that one
+                if (l.primera == null) {
+                    l.primera = c.pos();
+                }
+                continue; // somebody's block where the plan has another: it stays, and the house can only be left partial
             }
             l.pendientes.add(c);
             l.faltan.merge(rol, 1, Integer::sum);

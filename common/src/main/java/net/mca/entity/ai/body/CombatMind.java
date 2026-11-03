@@ -443,10 +443,11 @@ public final class CombatMind {
         if (slot < 0) {
             return false;
         }
-        ItemStack shield = inv.removeStack(slot, 1);
+        // the bag's own stack, shared like the main hand's tool: it never leaves the bag, so it drops with it on death
+        ItemStack shield = inv.getStack(slot);
         ItemStack old = villager.getOffHandStack();
         villager.equipStack(EquipmentSlot.OFFHAND, shield);
-        if (!old.isEmpty()) {
+        if (!old.isEmpty() && !net.mca.util.InventoryUtils.sharesSlot(inv, old)) {
             ItemStack rest = inv.addStack(old);
             if (!rest.isEmpty()) {
                 villager.dropStack(rest);

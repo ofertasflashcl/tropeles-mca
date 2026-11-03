@@ -76,8 +76,8 @@ final class Sueno {
             if (e.quien != null && e.quien.clase() == Episodio.BICHO && e.donde != null
                     && (e.tipo == Tipo.HERIDO || e.tipo == Tipo.HUI || e.tipo == Tipo.VIO_HERIR || e.tipo == Tipo.PELEA)) {
                 BlockPos c = e.donde;
-                m.hecho("peligro:" + (c.getX() >> 4) + "," + (c.getY() >> 4) + "," + (c.getZ() >> 4),
-                        e.quien.es() + " cerca de " + c.getX() + " " + c.getY() + " " + c.getZ(), now)
+                m.hecho("peligro:" + (e.dim.isEmpty() ? "" : e.dim + "|") + (c.getX() >> 4) + "," + (c.getY() >> 4) + "," + (c.getZ() >> 4),
+                        e.quien.es() + " cerca de " + e.dondeTexto(true), now)
                         .apoyar(true, e.confianza, e.modo == Modo.VISTO, e.id, now);
             }
         }
@@ -89,7 +89,7 @@ final class Sueno {
                     || e.tipo == Tipo.RESUMEN || e.tipo == Tipo.REFLEXION || e.tipo == Tipo.DIJE || e.tipo == Tipo.MUERTE) {
                 continue;
             }
-            String key = "patron:" + e.tipo.name() + ":" + (e.quien == null ? "-" : e.quien.clave()) + ":" + Mente.celda(e.donde);
+            String key = "patron:" + e.tipo.name() + ":" + (e.quien == null ? "-" : e.quien.clave()) + ":" + e.lugar();
             grupos.computeIfAbsent(key, k -> new ArrayList<>()).add(e);
         }
         int patrones = 0;
@@ -123,6 +123,7 @@ final class Sueno {
                 resumen = m.nuevo(Tipo.RESUMEN, now, v.getUuid());
                 resumen.quien = first.quien;
                 resumen.donde = first.donde;
+                resumen.dim = first.dim;
                 resumen.estado = Estado.CERRADO;
                 resumen.digerido = true;
                 resumen.valencia = Mente.clamp(val / g.getValue().size(), -1.0F, 1.0F);
@@ -164,7 +165,7 @@ final class Sueno {
     /** "Benja me ha pegado 4 veces por 102 64 -31", "me han atacado 3 veces cerca de ...". */
     private static String patron(Episodio e, int veces, boolean es) {
         String q = e.quien == null ? "" : e.quien.nombre(es);
-        String at = e.donde == null ? "" : (es ? " cerca de " : " near ") + e.donde.getX() + " " + e.donde.getY() + " " + e.donde.getZ();
+        String at = e.donde == null ? "" : (es ? " cerca de " : " near ") + e.dondeTexto(es);
         return switch (e.tipo) {
             case HERIDO -> e.quien != null && e.quien.clase() == Episodio.BICHO
                     ? (es ? "me han atacado " + veces + " veces" + at + " (" + q + ")" : "I've been attacked " + veces + " times" + at + " (" + q + ")")

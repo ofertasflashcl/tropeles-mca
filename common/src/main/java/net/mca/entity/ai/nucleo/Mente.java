@@ -203,6 +203,7 @@ public final class Mente {
             igual.saliencia = Math.min(1.0F, Math.max(igual.saliencia, e.saliencia) + 0.04F);
             if (e.donde != null) {
                 igual.donde = e.donde;
+                igual.dim = e.dim;
             }
             if (!e.cosa.isEmpty() && e.tipo.ordinal() > Tipo.AVISE.ordinal()) {
                 // a running account ("la casa va en 40%") keeps its newest words
@@ -256,10 +257,10 @@ public final class Mente {
             return 1.0F;
         }
         float novedad = 1.0F;
-        long cell = celda(e.donde);
+        String lugar = e.lugar();
         for (int i = episodios.size() - 1, seen = 0; i >= 0 && seen < 64; i--, seen++) {
             Episodio o = episodios.get(i);
-            if (now - o.t1 <= 24000 && o.tipo == e.tipo && mismo(o.quien, e.quien) && celda(o.donde) == cell) {
+            if (now - o.t1 <= 24000 && o.tipo == e.tipo && mismo(o.quien, e.quien) && o.lugar().equals(lugar)) {
                 novedad = 0.2F;
                 break;
             }
@@ -278,6 +279,13 @@ public final class Mente {
 
     static long celda(@Nullable BlockPos p) {
         return p == null ? Long.MIN_VALUE : BlockPos.asLong(p.getX() >> 4, p.getY() >> 4, p.getZ() >> 4);
+    }
+
+    /** Leaves RAM for a long while: only the {@code max} incidents that matter most stay (summaries count double). */
+    void compactar(long now, int max) {
+        while (episodios.size() > max) {
+            olvidarUno(now);
+        }
     }
 
     /** The journal is full: the closed episode that matters least now (salience, certainty, age) goes. */

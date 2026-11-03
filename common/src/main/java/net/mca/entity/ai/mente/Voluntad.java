@@ -835,9 +835,43 @@ public final class Voluntad {
                 return;
             }
         }
-        if (c.tick(world, villager, task, o) == Constructor.Fin.LISTA) {
+        Constructor.Fin fin = c.tick(world, villager, task, o);
+        if (fin == Constructor.Fin.LISTA) {
             terminarObra(world, villager, o);
+        } else if (fin == Constructor.Fin.PARCIAL) {
+            obraParcial(world, villager, o, c);
         }
+    }
+
+    /**
+     * All it could set is set, but cells of the plan hold blocks that are not its own (it never breaks those): the house
+     * is not called done. It stays registered and paused with its ghost showing what is missing, the villager says
+     * what blocks it and where, and goes back to what it was doing; "sigue con la casa" takes it up again.
+     */
+    private void obraParcial(ServerWorld world, VillagerEntityMCA villager, Obra o, Constructor c) {
+        o.pausaJugador = true;
+        ObrasMundo.get(world).cambio();
+        Constructor.olvidar(villager.getUuid());
+        String n = o.paraNombre.isEmpty() ? "alguien" : o.paraNombre;
+        BlockPos b = c.primeraBloqueada;
+        String at = b == null ? "" : b.getX() + " " + b.getY() + " " + b.getZ();
+        MCA.LOGGER.info("[Tropeles] {} deja casi lista la casa de {} en {}: {} celdas del plano tienen bloques ajenos (la primera en {})",
+                villager.getName().getString(), n, o.donde(), c.faltanBloqueadas, at);
+        Recuerdos.anotar(villager, "obra", "dejé casi lista la casa de " + n + " en " + o.donde() + ": faltan " + c.faltanBloqueadas
+                + " bloques porque ahí hay cosas que no son mías", o.centro());
+        ServerPlayerEntity para = o.para == null ? null : jugador(world, o.para);
+        tras = obraTras;
+        trasQuien = obraTrasQuien;
+        trasEspera = obraTrasEspera;
+        obraTras = Modo.LIBRE;
+        obraTrasQuien = null;
+        obraTrasEspera = null;
+        volverTras(world, villager, "dejé casi lista la casa de " + n);
+        hablar(world, villager, para, "La casa" + (o.paraNombre.isEmpty() ? "" : " de " + o.paraNombre) + " quedó casi lista en " + o.donde()
+                        + ", pero me faltan " + c.faltanBloqueadas + " bloques: ahí hay cosas que no son mías (la primera en " + at
+                        + "). Si las sacas, dime que siga con la casa y la termino.",
+                "The house" + (o.paraNombre.isEmpty() ? "" : " for " + o.paraNombre) + " is almost done at " + o.donde() + ", but " + c.faltanBloqueadas
+                        + " blocks are missing: there are things there that aren't mine (the first at " + at + "). Clear them and tell me to go on with the house.");
     }
 
     /** The last block is set and its things are put away: the house is theirs. */
