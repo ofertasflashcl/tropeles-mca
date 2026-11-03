@@ -42,6 +42,8 @@ public class SetTargetMessage implements Message {
         if (this.itemIdentifier == null) throw new io.netty.handler.codec.DecoderException("Missing itemIdentifier");
         if (this.targetName == null) throw new io.netty.handler.codec.DecoderException("Missing targetName");
         if (this.targetUUID == null) throw new io.netty.handler.codec.DecoderException("Missing targetUUID");
+        try { UUID.fromString(this.targetUUID); new Identifier(this.itemIdentifier); }
+        catch (IllegalArgumentException e) { throw new io.netty.handler.codec.DecoderException("Invalid target identity", e); }
     }
 
     public static SetTargetMessage decode(net.minecraft.network.PacketByteBuf buffer) { return new SetTargetMessage(buffer); }

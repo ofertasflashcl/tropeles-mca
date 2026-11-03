@@ -22,14 +22,28 @@ public class TriggerModule {
         processTriggers(interaction, player, villager, null);
     }
 
-    public void processTriggers(Interaction interaction, ServerPlayerEntity player, VillagerEntityMCA villager,
+    public String processTriggers(Interaction interaction, ServerPlayerEntity player, VillagerEntityMCA villager,
                                 net.mca.entity.ai.chatAI.ActionTurn lease) {
         for (TriggerEvent event : interaction.outgoingTriggers()) {
-            TriggerCommandInfos.findCommand(event.trigger(), player, villager).ifPresent(command -> {
-                if (lease != null && !lease.claimAction()) return;
-                try { command.run(player, villager, ""); }
-                finally { if (lease != null) lease.acknowledgeAction(); }
-            });
+            var found = TriggerCommandInfos.findCommand(event.trigger(), player, villager);
+            if (found.isEmpty()) continue;
+            var command = found.get();
+            boolean es = net.mca.entity.ai.mente.Voluntad.of(villager).spanish();
+            var permission = net.mca.entity.ai.chatAI.CommandPolicy.check(player, villager, command.command,
+                    net.mca.entity.ai.chatAI.CommandPolicy.Source.MODEL);
+            if (!permission.allowed()) {
+                net.mca.entity.ai.chatAI.CommandPolicy.report(villager, command.command, permission);
+                return permission.line(es);
+            }
+            if (lease != null && !lease.claimAction()) return null;
+            String outcome;
+            try { outcome = command.run(player, villager, ""); }
+            finally { if (lease != null) lease.acknowledgeAction(); }
+            if (outcome != null && outcome.startsWith("You have no")) {
+                return net.mca.entity.ai.chatAI.MenteLocal.answer(player, villager,
+                        new net.mca.entity.ai.chatAI.MenteLocal.Intent(command.command, "", null, es), outcome, null, null, false);
+            }
         }
+        return null;
     }
 }

@@ -17,7 +17,7 @@ logoFile = "mca.png"
 [[dependencies.mca]]
     modId="forge"
     mandatory=true
-    versionRange="[47.0.0,48)"
+    versionRange="[47.4.20,48)"
     ordering="NONE"
     side="BOTH"
 [[dependencies.mca]]

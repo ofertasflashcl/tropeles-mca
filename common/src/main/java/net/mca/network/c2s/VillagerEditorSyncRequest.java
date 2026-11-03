@@ -84,7 +84,7 @@ public class VillagerEditorSyncRequest extends NbtDataMessage implements Message
     public void receive(ServerPlayerEntity player) {
         Entity entity = player.getServerWorld().getEntity(uuid);
         if (entity instanceof VillagerEntityMCA v && !net.mca.entity.ai.chatAI.CommandPolicy.check(player, v, "editor", net.mca.entity.ai.chatAI.CommandPolicy.Source.PACKET).allowed()) return;
-        if (!(entity instanceof VillagerEntityMCA) && !player.hasPermissionLevel(2)) return;
+        if (!(entity instanceof VillagerEntityMCA) && entity != player && !player.hasPermissionLevel(2)) return;
         if (entity instanceof VillagerEntityMCA v) net.mca.entity.ai.mente.Voluntad.nuevaGeneracion(v.getUuid());
         switch (command) {
             case "hair":

@@ -19,6 +19,7 @@ public final class ActionTurn {
     private final ServerPlayerEntity player;
     private final VillagerEntityMCA villager;
     private final UUID villagerId;
+    private final UUID playerId;
     private final long expires;
     private final AtomicBoolean finished = new AtomicBoolean();
     private final AtomicBoolean acted = new AtomicBoolean();
@@ -31,6 +32,7 @@ public final class ActionTurn {
         this.world = (ServerWorld) villager.getWorld();
         this.playerWorld = player.getServerWorld();
         this.villagerId = villager.getUuid();
+        this.playerId = player.getUuid();
         this.generation = Voluntad.generacion(villagerId);
         this.expires = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(Math.max(0, remainingMs));
     }
@@ -51,8 +53,8 @@ public final class ActionTurn {
         else if (System.nanoTime() - expires >= 0) why = "plazo agotado";
         else if (villager.getWorld() != world || server.getWorld(world.getRegistryKey()) != world
                 || player.getServerWorld() != playerWorld) why = "mundo o dimensión cambió";
-        else if (villager.isRemoved() || !villager.isAlive() || world.getEntity(villagerId) != villager) why = "aldeano ausente o sustituido";
-        else if (player.isRemoved() || !player.isAlive() || player.getServer() != server
+        else if (!villager.getUuid().equals(villagerId) || villager.isRemoved() || !villager.isAlive() || world.getEntity(villagerId) != villager) why = "aldeano ausente o sustituido";
+        else if (!player.getUuid().equals(playerId) || player.isRemoved() || !player.isAlive() || player.getServer() != server
                 || player.networkHandler != null && server.getPlayerManager().getPlayer(player.getUuid()) != player) why = "jugador desconectado";
         else if (Voluntad.generacion(villagerId) != generation) why = "intención cambió";
         if (why != null) cancel(why);

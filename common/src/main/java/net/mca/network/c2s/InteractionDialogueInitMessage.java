@@ -23,6 +23,7 @@ public class InteractionDialogueInitMessage implements Message {
     public void receive(ServerPlayerEntity player) {
         Entity v = player.getServerWorld().getEntity(villagerUUID);
         if (v instanceof VillagerEntityMCA villager) {
+            if (!net.mca.entity.ai.chatAI.CommandPolicy.check(player, villager, "dialogue", net.mca.entity.ai.chatAI.CommandPolicy.Source.MENU).allowed()) return;
             Question question = Dialogues.getInstance().getQuestion("root");
             if (question.isAuto()) {
                 Dialogues.getInstance().selectAnswer(villager, player, question.getName(), question.getRandomAnswer().getName());

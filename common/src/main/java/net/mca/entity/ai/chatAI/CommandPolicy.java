@@ -22,11 +22,11 @@ public final class CommandPolicy {
         public String outcome() { return "You have no permission to do that: " + en; }
     }
     private static final Decision YES = new Decision(true, "", "");
-    private static final Set<String> PUBLIC = Set.of("open-trade-window", "trade", "gift", "location", "apologize", "slap");
+    private static final Set<String> PUBLIC = Set.of("open-trade-window", "trade", "gift", "location", "apologize", "slap", "dialogue");
     private static final Set<String> CLOSE = Set.of("give-item", "open-trade-window", "trade");
     private static final Set<String> MENU = Set.of("pick_up", "ridehorse", "sethome", "gohome", "setworkplace", "trade", "inventory",
             "gift", "adopt", "procreate", "divorcePapers", "divorceConfirm", "execute", "pardon", "stay_in_village", "hire_short",
-            "hire_long", "infected", "stopworking", "armor", "profession", "apologize", "location", "slap");
+            "hire_long", "infected", "stopworking", "armor", "profession", "apologize", "location", "slap", "dialogue");
 
     private CommandPolicy() { }
 
@@ -78,6 +78,13 @@ public final class CommandPolicy {
         } else if (TriggerCommandInfos.triggerCommands.stream().noneMatch(c -> c.command.equals(command))) {
             return no("Esa orden no existe.", "That command does not exist.");
         }
+        if ((command.equals("trade") || command.equals("open-trade-window"))
+                && (!Constraint.ADULT.test(villager, player) || !Constraint.TRADER.test(villager, player)))
+            return no("Ahora no puedo comerciar.", "I cannot trade now.");
+        if (command.equals("pick_up") && (!Constraint.NOT_ADULT.test(villager, player) || !Constraint.NOT_TEEN.test(villager, player)))
+            return no("No puedes llevarme así.", "You cannot carry me like that.");
+        if (Chore.byCommand(command).filter(c -> c != Chore.NONE).isPresent() && Constraint.BABY.test(villager, player))
+            return no("Todavía soy demasiado pequeño para trabajar.", "I am too young to work.");
         if (!PUBLIC.contains(command) && !operator && villager.getVillagerBrain().getCurrentJob() != Chore.NONE
                 && villager.getVillagerBrain().getJobAssignerUuid().filter(id -> !id.equals(player.getUuid())).isPresent())
             return no("Ya tengo un compromiso con otra persona.", "Another player assigned my current task.");

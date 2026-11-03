@@ -18,8 +18,10 @@ public class BabyNamingVillagerMessage implements Message {
 
     @Override
     public void receive(ServerPlayerEntity player) {
+        if (slot < 0 || slot >= player.getInventory().size() || name == null || name.isBlank() || name.length() > 32) return;
         ItemStack stack = player.getInventory().getStack(slot);
-        BabyItem.getBabyNbt(stack).putString("babyName", name);
+        if (!(stack.getItem() instanceof BabyItem)) return;
+        BabyItem.getBabyNbt(stack).putString("babyName", name.trim());
     }
 
     private BabyNamingVillagerMessage(net.minecraft.network.PacketByteBuf buffer) {

@@ -100,6 +100,11 @@ final class PruebasVida {
                         && v.getInventory().count(Items.IRON_INGOT) == 2, "Retry repeated effect or response");
                 String key = "ci-duplicate-" + v.getUuid();
                 require(ServerRuntime.accept(world.getServer(), key) && !ServerRuntime.accept(world.getServer(), key), "Delivery not deduplicated");
+                ActionTurn identity = ActionTurn.capture(p, v, 30_000);
+                var originalId = v.getUuid();
+                v.setUuid(java.util.UUID.randomUUID());
+                require(!identity.valid(), "Changed UUID accepted");
+                v.setUuid(originalId);
                 ActionTurn gone = ActionTurn.capture(p, v, 30_000);
                 v.discard();
                 require(!gone.valid(), "Removed actor accepted");
@@ -115,6 +120,7 @@ final class PruebasVida {
                 require(line.contains("desactivadas") && v.getVillagerBrain().getMoveState() == MoveState.STAY, "Local chat bypassed switch");
                 var follow = TriggerCommandInfos.findCommand("follow-player", p, v).orElseThrow();
                 require(follow.run(p, v, "").startsWith("You have no") && v.getVillagerBrain().getMoveState() == MoveState.STAY, "Model bypassed switch");
+                require(CommandPolicy.check(p, v, "dialogue", CommandPolicy.Source.MENU).allowed(), "Legitimate dialogue denied");
                 v.getInteractions().handle(p, "follow");
                 require(v.getVillagerBrain().getMoveState() == MoveState.FOLLOW, "Menu incorrectly tied to chat switch");
                 new net.mca.network.c2s.InteractionVillagerMessage("stay", v.getUuid()).receive(p);
@@ -128,7 +134,9 @@ final class PruebasVida {
         void bond() {
             var stranger = fakePlayer(world, "Sin_Historia", Vec3d.ofBottomCenter(origin.east(4)));
             require(Voluntad.quiere(v, p, Voluntad.Pedido.CASA).si(), "Unknown player initially rejected");
+            v.getVillagerBrain().assignJob(net.mca.entity.ai.Chore.PROSPECT, p);
             Voluntad.seguir(v, p, true);
+            require(Voluntad.conectado(v), "Fixture must have an active connection");
             v.damage(world.getDamageSources().playerAttack(p), 1);
             var grumble = Voluntad.quiere(v, p, Voluntad.Pedido.SEGUIR);
             require(grumble.si() && grumble.es() != null && !Voluntad.quiere(v, p, Voluntad.Pedido.CASA).si(), "One hit did not alter costly choice");

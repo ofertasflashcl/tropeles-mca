@@ -52,8 +52,8 @@ public class InworldAI implements ChatAIStrategy {
         if (response.isEmpty()) return Optional.empty();
         String line = OpenAIChatAI.onServer(server, lease, () -> {
             relationshipModule.updateRelationship(response.get(), player, villager);
-            triggerModule.processTriggers(response.get(), player, villager, lease);
-            return String.join("", response.get().textList());
+            String denial = triggerModule.processTriggers(response.get(), player, villager, lease);
+            return denial != null ? denial : String.join("", response.get().textList());
         });
         return line == null || line.isBlank() ? Optional.empty() : Optional.of(line);
     }

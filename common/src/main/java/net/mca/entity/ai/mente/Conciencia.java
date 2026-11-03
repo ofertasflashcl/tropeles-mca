@@ -681,8 +681,6 @@ public final class Conciencia {
         final Map<UUID, List<String>> lecciones = new LinkedHashMap<>();
         private final Map<UUID, Long> revisiones = new java.util.HashMap<>();
         private final java.util.Set<UUID> comprobados = new java.util.HashSet<>();
-        /** Asked of the archive and not there (not saved): no disk read every time it thinks. */
-        private final java.util.Set<UUID> sinArchivo = new java.util.HashSet<>();
         @Nullable
         private MinecraftServer server;
 
@@ -754,7 +752,6 @@ public final class Conciencia {
                 if (!net.mca.server.world.data.ArchivoTropeles.guardar(server, ARCHIVO, first, n)) {
                     break; // the disk refused: it stays here rather than be lost
                 }
-                sinArchivo.remove(first);
                 lecciones.remove(first);
                 revisiones.remove(first);
                 comprobados.remove(first);

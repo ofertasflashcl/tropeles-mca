@@ -18,6 +18,7 @@ public class AddCustomClothingMessage implements Message {
 
     @Override
     public void receive(ServerPlayerEntity player) {
+        if (!player.hasPermissionLevel(2) && !net.mca.Config.getInstance().allowEveryoneToAddContentGlobally) return;
         if (entry instanceof Clothing clothing) {
             CustomClothingManager.getClothing().addEntry(entry.getIdentifier(), clothing);
         } else if (entry instanceof Hair hair) {

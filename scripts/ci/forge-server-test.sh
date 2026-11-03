@@ -38,6 +38,16 @@ run_phase() {
     sleep 5
     while IFS= read -r line; do
       case "$line" in
+        await-checks*)
+          local expected terminal=0
+          expected=$(awk 'NF && $1 !~ /^#/ {n++} END {print n}' "$manifest")
+          for i in $(seq 1 "${line#await-checks }"); do
+            terminal=$(grep -cE 'PRUEBA (OK|FALLA) ' logs/latest.log || true)
+            if [ "$terminal" -ge "$expected" ]; then break; fi
+            kill -0 "$server_pid" 2>/dev/null || exit 1
+            sleep 1
+          done
+          ;;
         sleep*) sleep "${line#sleep }";;
         ''|'#'*) ;;
         *) echo "$line" >&3;;

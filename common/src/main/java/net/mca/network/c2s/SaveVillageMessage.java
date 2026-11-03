@@ -34,6 +34,7 @@ public class SaveVillageMessage implements Message {
         this.taxes = buffer.readFloat();
         this.populationThreshold = buffer.readFloat();
         this.marriageThreshold = buffer.readFloat();
+        if (!Float.isFinite(taxes) || !Float.isFinite(populationThreshold) || !Float.isFinite(marriageThreshold)) throw new io.netty.handler.codec.DecoderException("Non-finite village data");
     }
 
     public static SaveVillageMessage decode(net.minecraft.network.PacketByteBuf buffer) { return new SaveVillageMessage(buffer); }
