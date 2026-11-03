@@ -194,8 +194,6 @@ public final class Iniciativa {
         return es ? "¡Cuidado, " + name[0] + " " + side + "!" : "Watch out, " + name[1] + " " + side + "!";
     }
 
-    /** "Ojo, hay lava adelante": lava its eyes saw within ten blocks. */
-    @Nullable
     /**
      * Walking with someone into a place where something attacked it (what it lived, {@link Peligros}): it says so, once
      * per place every few minutes.
@@ -222,6 +220,8 @@ public final class Iniciativa {
         return es ? "Cuidado, " + miedo.es() + "." : "Careful, " + miedo.en() + ".";
     }
 
+    /** "Ojo, hay lava adelante": lava its eyes saw within ten blocks. */
+    @Nullable
     private String lava(VillagerEntityMCA villager, PlayerEntity to, boolean es, long now) {
         if (now - lastLava < 2400) {
             return null;
