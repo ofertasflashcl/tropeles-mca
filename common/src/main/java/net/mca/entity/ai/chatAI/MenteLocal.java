@@ -69,6 +69,10 @@ public final class MenteLocal {
     private static final Map<String, String> ERRANDS = Map.of("start-chopping", "TALAR", "start-fishing", "PESCAR", "start-harvesting", "COSECHAR",
             "start-hunting", "CAZAR", "craft-item", "HACER", "stop-working", "PARAR", "stop", "PARAR", "build-house", "OBRA", "cancel-house", "OBRA");
 
+    /** "Perdón", "lo siento": an apology, when the message is nothing else it understands (an order or a question wins). */
+    private static final Pattern SORRY = Pattern.compile("(?<![a-z])(perdon|perdona|perdoname|perdonas|disculpa|disculpame|disculpe|disculpas|"
+            + "lo siento|lo lamento|sorry|forgive me|my bad)(?![a-z])");
+
     /** A house, as said in "constrúyeme una casa" (never "vuelve a tu casa": that is going home). */
     private static final String CASA = "casa|casita|casota|hogar|cabana|refugio|house|home|hut|cabin";
 
@@ -576,6 +580,9 @@ public final class MenteLocal {
                 return new Intent(null, about, entry.getKey(), spanish);
             }
         }
+        if (SORRY.matcher(t).find()) {
+            return new Intent("sorry", "", null, spanish);
+        }
         return new Intent(null, "", null, spanish);
     }
 
@@ -644,6 +651,10 @@ public final class MenteLocal {
                                 @Nullable Acciones.Given given, @Nullable Cofres.Store stored, boolean refused) {
         boolean es = intent.spanish();
         String name = player.getName().getString();
+        if ("sorry".equals(intent.command())) {
+            // heard whatever it thinks of them: what it does with it is the Núcleo's ({@link net.mca.entity.ai.nucleo.Vinculo})
+            return net.mca.entity.ai.nucleo.Nucleo.perdon(villager, player, es);
+        }
         if (refused) {
             return pick(villager, es ? new String[]{"No pienso hacerte caso.", "¿Y por qué tendría que hacerte caso a ti?", "Ni lo sueñes."}
                     : new String[]{"I'm not doing that for you.", "Why would I listen to you?", "Not a chance."});
@@ -706,6 +717,13 @@ public final class MenteLocal {
         if (errand != null && Voluntad.conectado(villager)) {
             // a connected villager took it on itself (or said why it cannot): those are its words
             String own = Voluntad.dicho(villager, errand, es);
+            if (own != null) {
+                return own;
+            }
+        }
+        if (Voluntad.conectado(villager) && ("follow-player".equals(command) || "start-escort".equals(command) || "stay-here".equals(command))) {
+            // it would not, or did it grumbling: its own words ({@link Voluntad#quiere})
+            String own = Voluntad.dicho(villager, "stay-here".equals(command) ? "stay-here" : "follow-player", es);
             if (own != null) {
                 return own;
             }

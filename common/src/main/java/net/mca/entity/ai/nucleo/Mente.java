@@ -216,6 +216,7 @@ public final class Mente {
         e.saliencia = saliencia(e, now);
         episodios.add(e);
         nuevos++;
+        Peligros.anotar(this, e, now);
         while (episodios.size() > MAX_EPISODIOS) {
             olvidarUno(now);
         }
@@ -227,6 +228,7 @@ public final class Mente {
     void anadir(Episodio e, long now) {
         episodios.add(e);
         nuevos++;
+        Peligros.anotar(this, e, now);
         while (episodios.size() > MAX_EPISODIOS) {
             olvidarUno(now);
         }

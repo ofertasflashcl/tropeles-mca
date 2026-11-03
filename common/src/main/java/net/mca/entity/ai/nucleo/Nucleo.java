@@ -126,6 +126,10 @@ public final class Nucleo {
             e.valencia = -Mente.clamp(0.3F + dano / 10.0F, 0.3F, 1.0F);
             e.en(v.getWorld(), Mining.pies(v));
             Episodio kept = m.registrar(e, now);
+            if (atacante instanceof PlayerEntity player) {
+                // what it is doing for them is weighed again now: one hit too many and it stops
+                Voluntad.agraviado(v, player);
+            }
             Ser victima = Ser.de(v);
             if (kept == e) {
                 for (VillagerEntityMCA w : testigos(world, v, 16, 8)) {
@@ -262,6 +266,57 @@ public final class Nucleo {
             m.ultimoSocial = now;
         } catch (RuntimeException ex) {
             falla("un regalo", v, ex);
+        }
+    }
+
+    /** The answer it gave to an apology in this chat turn, so the same turn read twice changes nothing twice. */
+    private static final Map<UUID, Object[]> ULTIMO_PERDON = new HashMap<>();
+
+    /**
+     * "Perdón", "lo siento": {@code player} asks it to forgive them. With nothing to forgive it says so and keeps
+     * nothing; else it is an incident ({@link Tipo#PERDON}) that eases the grudge ({@link Vinculo}), less for each
+     * apology after the first. What it answers, in its own words. Server thread; never throws.
+     */
+    public static String perdon(VillagerEntityMCA v, PlayerEntity player, boolean es) {
+        if (!(v.getWorld() instanceof ServerWorld world)) {
+            return es ? "Está bien." : "It's fine.";
+        }
+        try {
+            long now = world.getTime();
+            Object[] last = ULTIMO_PERDON.get(v.getUuid());
+            if (last != null && player.getUuid().equals(last[0]) && now - (Long) last[1] <= 100) {
+                return es ? (String) last[2] : (String) last[3];
+            }
+            Mente m = de(world, v);
+            Vinculo antes = Vinculo.de(v, m, player.getUuid(), now);
+            String[] line;
+            if (antes.agravio() == null || antes.conflicto() < 0.05F) {
+                line = new String[]{"¿Perdón por qué? No me hiciste nada.", "Sorry for what? You didn't do anything to me."};
+            } else {
+                String que = antes.agravioATi(true);
+                String what = antes.agravioATi(false);
+                line = switch (antes.disculpas()) {
+                    case 0 -> new String[]{"Bueno... te perdono. Pero " + que + ", y no quiero que se repita.",
+                            "Alright... I forgive you. But " + what + ", so don't do it again."};
+                    case 1 -> new String[]{"Ya me pediste perdón. Ahora demuéstralo.", "You already said sorry. Now show me."};
+                    default -> new String[]{"Tantas disculpas ya no me dicen nada.", "So many apologies don't mean much anymore."};
+                };
+                Episodio e = m.nuevo(Tipo.PERDON, now, v.getUuid());
+                e.quien = Ser.de(player);
+                e.en(world, Mining.pies(v));
+                m.registrar(e, now);
+                MCA.LOGGER.info("[Tropeles] {} oye la disculpa de {} ({}, disculpas antes {}): conflicto {} -> {}", v.getName().getString(),
+                        player.getName().getString(), que, antes.disculpas(), String.format(Locale.ROOT, "%.2f", antes.conflicto()),
+                        String.format(Locale.ROOT, "%.2f", Vinculo.de(v, m, player.getUuid(), now).conflicto()));
+            }
+            if (ULTIMO_PERDON.size() > 256) {
+                ULTIMO_PERDON.clear();
+            }
+            ULTIMO_PERDON.put(v.getUuid(), new Object[]{player.getUuid(), now, line[0], line[1]});
+            return es ? line[0] : line[1];
+        } catch (RuntimeException ex) {
+            falla("una disculpa", v, ex);
+            return es ? "Está bien." : "It's fine.";
         }
     }
 
@@ -482,6 +537,7 @@ public final class Nucleo {
         try {
             Mente m = de(world, v);
             impulsos(world, v, m, now);
+            Peligros.seguro(world, v, m, now);
             enfocar(v, m, now);
             Sueno.quizas(world, v, m, now);
             Social.tick(world, v, m, now);
@@ -734,6 +790,7 @@ public final class Nucleo {
         if (m.atencion != null) {
             sb.append("What holds its attention now: ").append(m.atencion.es()).append(". ");
         }
+        sb.append(Vinculo.de(v, m, player.getUuid(), now).paraModelo(player.getName().getString())).append(' ');
         sb.append("Its temperament: ").append(temperamento(m)).append(". ");
         if (!eps.isEmpty()) {
             sb.append("Speak of these as $villager knows them: what it lived or saw, for sure; a rumour, saying who told it and that it is not "

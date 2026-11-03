@@ -1,5 +1,6 @@
 package net.mca.entity.ai.body;
 
+import net.mca.entity.ai.nucleo.Peligros;
 import net.mca.MCA;
 import net.mca.entity.VillagerEntityMCA;
 import net.mca.entity.ai.sense.MapaVisto;
@@ -306,18 +307,29 @@ public final class Explorar {
         }
         double[] score = new double[SECTORS];
         double[] novelty = new double[SECTORS];
+        // the ways where something attacked it weigh against going there (what it lived decides, not only what it sees)
+        double[] miedo = new double[SECTORS];
         int seenAround = 0;
         int best = -1;
+        int feared = -1;
         for (int i = 0; i < SECTORS; i++) {
             float yaw = i * SECTOR;
             novelty[i] = mapa.novelty(feet, yaw, NEAR, FAR);
             if (novelty[i] < SEEN) {
                 seenAround++;
             }
-            score[i] = score(mapa, feet, yaw, novelty[i], now);
+            miedo[i] = Peligros.rumbo(world, villager, feet, yaw, NEAR + 8, FAR);
+            if (miedo[i] >= 0.3 && (feared < 0 || miedo[i] > miedo[feared])) {
+                feared = i;
+            }
+            score[i] = score(mapa, feet, yaw, novelty[i], now) - 2.0 * miedo[i];
             if (best < 0 || score[i] > score[best]) {
                 best = i;
             }
+        }
+        if (feared >= 0) {
+            MCA.LOGGER.info("[Tropeles] {} no quiere explorar hacia el {}: le da miedo (miedo {}%)", name(villager), rumbo(feared * SECTOR),
+                    Math.round(miedo[feared] * 100));
         }
         double covered = coverage(mapa);
         if (covered >= COVERED || seenAround >= SECTORS - 2 || score[best] < -1.5) {
@@ -331,7 +343,7 @@ public final class Explorar {
             // the same choice again with the wider ring, now that the far side of it counts
             best = 0;
             for (int i = 0; i < SECTORS; i++) {
-                score[i] = score(mapa, feet, i * SECTOR, novelty[i], now);
+                score[i] = score(mapa, feet, i * SECTOR, novelty[i], now) - 2.0 * miedo[i];
                 if (score[i] > score[best]) {
                     best = i;
                 }

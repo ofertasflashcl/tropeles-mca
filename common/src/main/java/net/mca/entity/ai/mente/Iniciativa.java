@@ -3,7 +3,9 @@ package net.mca.entity.ai.mente;
 import net.mca.MCA;
 import net.mca.entity.VillagerEntityMCA;
 import net.mca.entity.ai.brain.tasks.chore.ProspectingTask;
+import net.mca.entity.ai.body.Mining;
 import net.mca.entity.ai.chatAI.ChatAI;
+import net.mca.entity.ai.nucleo.Peligros;
 import net.mca.entity.ai.sense.Entorno;
 import net.mca.entity.ai.sense.Escena;
 import net.mca.entity.ai.sense.Lugar;
@@ -45,6 +47,8 @@ public final class Iniciativa {
     private long lastSaid = Long.MIN_VALUE / 2;
     private final Map<Integer, Long> warnedMonsters = new HashMap<>();
     private final Set<Long> announced = new HashSet<>();
+    /** Places (cells of 16 blocks) it already warned about, and when. */
+    private final Map<Long, Long> warnedPlaces = new HashMap<>();
     private long lastNightDay = -1;
     private long lastHungry = Long.MIN_VALUE / 2;
     private long lastBag = Long.MIN_VALUE / 2;
@@ -84,6 +88,9 @@ public final class Iniciativa {
         }
         if (line == null && !free && now - lastCave > 2400 && (villager.age % 100) == 7) {
             line = cave(world, villager, to, es, now);
+        }
+        if (line == null && !free) {
+            line = feared(world, villager, es, now);
         }
         if (line == null) {
             line = night(world, villager, es);
@@ -189,6 +196,32 @@ public final class Iniciativa {
 
     /** "Ojo, hay lava adelante": lava its eyes saw within ten blocks. */
     @Nullable
+    /**
+     * Walking with someone into a place where something attacked it (what it lived, {@link Peligros}): it says so, once
+     * per place every few minutes.
+     */
+    @Nullable
+    private String feared(ServerWorld world, VillagerEntityMCA villager, boolean es, long now) {
+        if ((villager.age % 60) != 7) {
+            return null;
+        }
+        BlockPos feet = Mining.pies(villager);
+        long cell = BlockPos.asLong(feet.getX() >> 4, feet.getY() >> 4, feet.getZ() >> 4);
+        Long said = warnedPlaces.get(cell);
+        if (said != null && now - said < 3600) {
+            return null;
+        }
+        Peligros.Miedo miedo = Peligros.de(world, villager, feet);
+        if (!miedo.fuerte()) {
+            return null;
+        }
+        if (warnedPlaces.size() > 64) {
+            warnedPlaces.values().removeIf(t -> now - t >= 3600);
+        }
+        warnedPlaces.put(cell, now);
+        return es ? "Cuidado, " + miedo.es() + "." : "Careful, " + miedo.en() + ".";
+    }
+
     private String lava(VillagerEntityMCA villager, PlayerEntity to, boolean es, long now) {
         if (now - lastLava < 2400) {
             return null;

@@ -72,6 +72,41 @@ public final class Encargo {
     /** How it ended (or that it goes on). */
     public enum Fin {SIGUE, LISTO, NADA, LLENO, NOCHE, FALTA, HAMBRE, TIEMPO}
 
+    /**
+     * How an errand came out, for its memory, the log and the tests (section 8.3 of Sol's report). The effect is what
+     * it really got, counted in its bag against what it had before, never what it said. HECHO: all of it. PARCIAL: some,
+     * and why not the rest. BLOQUEADO: nothing yet, and what stands in the way (nothing left around, no material, the
+     * night, hunger). CANCELADO: the player called it off, gave it another, or it stopped for a reason of its own.
+     * VENCIDO: an order that came too late, after things changed. DENEGADO: it did not want to (or was not allowed).
+     * FALLIDO: it tried for too long and got nothing.
+     */
+    public enum Resultado {
+        HECHO, PARCIAL, BLOQUEADO, CANCELADO, VENCIDO, DENEGADO, FALLIDO;
+
+        /** The end of an errand it worked on, by why it stopped and whether it got anything. */
+        public static Resultado de(Fin fin, boolean algo) {
+            return switch (fin) {
+                case LISTO, SIGUE -> HECHO;
+                case TIEMPO -> algo ? PARCIAL : FALLIDO;
+                default -> algo ? PARCIAL : BLOQUEADO;
+            };
+        }
+
+        /** Whether it did something real for them: what its memory keeps as a kept errand. */
+        public boolean cumplido() {
+            return this == HECHO || this == PARCIAL;
+        }
+    }
+
+    /**
+     * The line every errand's end leaves in the log, the same shape always:
+     * {@code [Tropeles] resultado PARCIAL talar 6/10 para Benja (de Rosa): no encontré más árboles por aquí; consiguió: 6 troncos}.
+     */
+    public void anotar(VillagerEntityMCA villager, Resultado r, String motivo, Map<Item, Integer> got) {
+        net.mca.MCA.LOGGER.info("[Tropeles] resultado {} {} {}/{} para {} (de {}): {}; consiguió: {}", r.name(), tipo.palabra, Math.max(0, hecho), cuanto,
+                paraNombre, villager.getName().getString(), motivo, got.isEmpty() ? "nada" : palabras(got, true));
+    }
+
     public final Tipo tipo;
     public final int cuanto;
     public final boolean traer;

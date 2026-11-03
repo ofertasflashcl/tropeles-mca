@@ -36,6 +36,8 @@ public final class Episodio {
         REGALO(0.5F, 0.4F, 1200, true, "regalo"),
         ROBO(-0.7F, 0.65F, 2400, true, "robo"),
         CONSOLE(0.45F, 0.4F, 2400, true, "consuelo"),
+        /** Someone asked it to forgive them: words, not deeds, so it eases a grudge and builds no trust ({@link Vinculo}). */
+        PERDON(0.2F, 0.3F, 600, false, "disculpa"),
         HUI(-0.35F, 0.3F, 400, false, "huida"),
         AVISE(0.2F, 0.25F, 600, false, "aviso"),
         PELEA(-0.25F, 0.3F, 1200, false, "pelea"),
@@ -313,6 +315,7 @@ public final class Episodio {
                     : aQuien == null ? (es ? q + " me acompañó en mi pena" : q + " kept me company in my grief")
                     : (es ? q + " acompañó a " + a + " en su pena" : q + " kept " + a + " company in their grief");
             case HUI -> (es ? "huí de " + q : "I ran from " + q) + (c.isEmpty() ? "" : es ? " porque " + c : " because " + c);
+            case PERDON -> es ? q + " me pidió perdón" : q + " said sorry to me";
             case AVISE -> es ? "le avisé a " + a + " de " + q : "I warned " + a + " about " + q;
             default -> c;
         };
@@ -329,6 +332,7 @@ public final class Episodio {
             case REGALO -> aQuien == null ? (es ? "me regalaste " + c : "you gave me " + c) : (es ? "le regalaste " + c + " a " + a : "you gave " + a + " " + c);
             case ROBO -> aQuien == null ? (es ? "me robaste del cofre" : "you stole from my chest") : (es ? "le robaste a " + a : "you stole from " + a);
             case CONSOLE -> es ? "acompañaste a " + a + " en su pena" : "you kept " + a + " company in their grief";
+            case PERDON -> es ? "me pediste perdón" : "you said sorry";
             default -> narrar(es);
         };
     }

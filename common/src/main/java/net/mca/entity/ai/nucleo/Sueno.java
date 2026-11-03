@@ -6,7 +6,6 @@ import net.mca.entity.ai.nucleo.Episodio.Estado;
 import net.mca.entity.ai.nucleo.Episodio.Modo;
 import net.mca.entity.ai.nucleo.Episodio.Tipo;
 import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.math.BlockPos;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -73,13 +72,8 @@ final class Sueno {
                 m.hecho("trato:" + e.quien.id(), e.quien.es(), now)
                         .apoyar(e.valencia > 0, Math.abs(e.valencia) * e.confianza, e.modo == Modo.VISTO, e.id, now);
             }
-            if (e.quien != null && e.quien.clase() == Episodio.BICHO && e.donde != null
-                    && (e.tipo == Tipo.HERIDO || e.tipo == Tipo.HUI || e.tipo == Tipo.VIO_HERIR || e.tipo == Tipo.PELEA)) {
-                BlockPos c = e.donde;
-                m.hecho("peligro:" + (e.dim.isEmpty() ? "" : e.dim + "|") + (c.getX() >> 4) + "," + (c.getY() >> 4) + "," + (c.getZ() >> 4),
-                        e.quien.es() + " cerca de " + e.dondeTexto(true), now)
-                        .apoyar(true, e.confianza, e.modo == Modo.VISTO, e.id, now);
-            }
+            // danger in places: already counted when it happened ({@link Peligros#anotar}); a journal from before that counts now
+            Peligros.anotar(m, e, now);
         }
 
         // 3. patterns: the same thing, by the same one, in the same place

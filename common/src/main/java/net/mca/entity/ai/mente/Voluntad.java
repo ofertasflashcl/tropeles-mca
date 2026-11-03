@@ -21,6 +21,7 @@ import net.mca.entity.ai.obra.ObrasMundo;
 import net.mca.entity.ai.obra.Plano;
 import net.mca.entity.ai.obra.Proyeccion;
 import net.mca.entity.ai.obra.Sitio;
+import net.mca.entity.ai.nucleo.Vinculo;
 import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.SpawnGroup;
@@ -255,6 +256,9 @@ public final class Voluntad {
     public static void olvidar(VillagerEntityMCA villager) {
         nuevaGeneracion(villager.getUuid());
         Voluntad w = ALL.remove(villager);
+        if (w != null && w.encargo != null) {
+            w.encargo.anotar(villager, Encargo.Resultado.CANCELADO, "me desconectaron", w.encargo.ganado(villager));
+        }
         if (w != null) {
             w.leave(villager, w.modo, Modo.LIBRE);
         }
@@ -387,24 +391,172 @@ public final class Voluntad {
         return esConocido ? es : !(MCA.language != null && MCA.language.startsWith("en"));
     }
 
+    // ------------------------------------------------------------------ whether it wants to: what it lived with them decides (V21)
+
+    /** What it is asked, by what it costs it: following or waiting little, an errand more, its own things or a whole house most. */
+    public enum Pedido {
+        SEGUIR(0.3F, "seguir a", "follow them"),
+        ESPERAR(0.2F, "esperar a", "wait for them"),
+        ENCARGO(0.5F, "hacerle un encargo a", "do that errand for them"),
+        COSAS(0.7F, "hacerle algo con mis cosas a", "make that for them out of your own things"),
+        CASA(0.9F, "construirle una casa a", "build them a house");
+
+        final float costo;
+        final String es;
+        final String english;
+
+        Pedido(float costo, String es, String english) {
+            this.costo = costo;
+            this.es = es;
+            this.english = english;
+        }
+    }
+
+    /** Its answer: whether it does it; its words when it refuses or grumbles (null for a plain yes); why, as it keeps it. */
+    public record Gana(boolean si, @Nullable String es, @Nullable String en, String porque) {
+        public static final Gana SI = new Gana(true, null, null, "");
+    }
+
+    /**
+     * Whether it wants to do this for {@code player}, from what the two of them lived ({@link Vinculo}): still angry
+     * (a hit, a theft, someone it loved hurt) it does nothing for them; sore, the little things grumbling and nothing
+     * that costs it; with proof that they treat it badly, nothing made from its own things; with someone it does not
+     * like, nothing costly. With no history at all it does what it is asked, as before. Being asked is no reason to
+     * like anyone more. Server thread.
+     */
+    public static Gana quiere(VillagerEntityMCA villager, PlayerEntity player, Pedido pedido) {
+        if (!(villager.getWorld() instanceof ServerWorld world)) {
+            return Gana.SI;
+        }
+        Vinculo b = Vinculo.de(world, villager, player.getUuid());
+        String name = Companero.nombre(villager, player);
+        String que = b.agravioATi(true);
+        String what = b.agravioATi(false);
+        Gana g;
+        if (b.conflicto() >= Vinculo.NO_TODO && b.agravio() != null) {
+            g = new Gana(false, "No, " + name + ". " + cap(que) + ", y no voy a hacer nada por ti hasta que lo arregles.",
+                    "No, " + name + ". " + cap(what) + ", and I'm doing nothing for you until you make up for it.", "estoy enojado: " + que);
+        } else if (b.conflicto() >= Vinculo.NO_CARO && b.agravio() != null && pedido.costo >= 0.5F) {
+            g = new Gana(false, "No, todavía estoy molesto: " + que + ".", "No, I'm still upset: " + what + ".", "todavía estoy molesto: " + que);
+        } else if (b.conflicto() >= Vinculo.NO_CARO && b.agravio() != null) {
+            g = new Gana(true, (pedido == Pedido.ESPERAR ? "Ya, te espero. " : "Ya, voy. ") + "Pero " + que + ", y no se me olvida.",
+                    (pedido == Pedido.ESPERAR ? "Fine, I'll wait. " : "Fine, I'm coming. ") + "But " + what + ", and I haven't forgotten.",
+                    "lo hago a regañadientes: " + que);
+        } else if (pedido.costo >= 0.7F && b.confianza() < 0.35F && b.pruebas() >= 1.5F) {
+            g = new Gana(false, "No, " + name + ". No te tengo confianza para eso.", "No, " + name + ". I don't trust you with that.",
+                    "no le tengo confianza (" + Math.round(b.confianza() * 100) + "%)");
+        } else if (pedido.costo >= 0.5F && b.carino() <= -0.3F) {
+            g = new Gana(false, "No. No me caes tan bien como para eso.", "No. I don't like you that much.", "no me cae bien");
+        } else {
+            return Gana.SI;
+        }
+        MCA.LOGGER.info("[Tropeles] {} {} {} {}: {} (conflicto {}, confianza {}, cariño {})", villager.getName().getString(),
+                g.si() ? "acepta a regañadientes" : "no quiere", pedido.es, player.getName().getString(), g.porque(), dos(b.conflicto()),
+                dos(b.confianza()), dos(b.carino()));
+        return g;
+    }
+
+    private static String dos(float v) {
+        return String.format(java.util.Locale.ROOT, "%.2f", v);
+    }
+
+    private static String cap(String s) {
+        return s.isEmpty() ? s : Character.toUpperCase(s.charAt(0)) + s.substring(1);
+    }
+
+    /** It will not: its words wait to be said ({@link #dicho}), its memory keeps why, and a model is told to say no. */
+    private String negarse(VillagerEntityMCA villager, PlayerEntity player, String clave, Gana g, Pedido pedido) {
+        dicho(clave, g.es() == null ? "No." : g.es(), g.en() == null ? "No." : g.en());
+        Recuerdos.anotar(villager, "plan", "no quise " + pedido.es + " " + player.getName().getString() + " (porque " + g.porque() + ")", Mining.pies(villager));
+        // "You have no ..." is how the chat knows nothing was done: its own words answer, so no model can dress it up as a yes
+        return "You have no wish to " + pedido.english + ": " + g.en() + " Say no in your own words, briefly, with that reason, and do not do it.";
+    }
+
+    /** What it was going to say about an earlier order is no longer what it says. */
+    private void callar() {
+        dichoClave = "";
+    }
+
+    /**
+     * {@code player} just hit it (Núcleo, server thread): while it follows them, waits for them, works an errand or a
+     * house for them, one hit too many ({@link Vinculo#NO_TODO}) and it stops, says why, and goes back to its own life.
+     */
+    public static void agraviado(VillagerEntityMCA villager, PlayerEntity player) {
+        Voluntad w = ALL.get(villager);
+        if (w == null || !conectado(villager) || !(villager.getWorld() instanceof ServerWorld world)) {
+            return;
+        }
+        UUID id = player.getUuid();
+        boolean paraEl = id.equals(w.quien) && w.modo != Modo.LIBRE || w.encargo != null && id.equals(w.encargo.para)
+                || w.modo == Modo.ALERTA && id.equals(w.debajoQuien);
+        if (!paraEl) {
+            return;
+        }
+        Vinculo b = Vinculo.de(world, villager, id);
+        if (b.conflicto() < Vinculo.NO_TODO || b.agravio() == null) {
+            return;
+        }
+        String name = Companero.nombre(villager, player);
+        String que = b.agravioATi(true);
+        String what = b.agravioATi(false);
+        if (w.encargo != null) {
+            Encargo e = w.encargo;
+            e.anotar(villager, Encargo.Resultado.CANCELADO, name + " me pegó", e.ganado(villager));
+            ProspectingTask.of(villager).dejarEncargo(world, villager);
+            w.encargo = null;
+            w.retomar = false;
+        }
+        w.entrega = null;
+        w.oferta = null;
+        w.tras = Modo.LIBRE;
+        w.trasQuien = null;
+        w.trasEspera = null;
+        Obra o = ObrasMundo.get(world).de(villager.getUuid());
+        if (o != null && id.equals(o.para) && !o.pausaJugador) {
+            o.pausaJugador = true; // its house for them waits; it does not go back to it by itself
+            ObrasMundo.get(world).cambio();
+        }
+        w.change(villager, Modo.LIBRE, null, null, "dejo de hacer cosas por " + name + ": " + que);
+        w.hablar(world, villager, player, "¡Oye! " + cap(que) + ". Así no voy contigo.", "Hey! " + cap(what) + ". I'm not going with you like this.");
+        Recuerdos.anotar(villager, "plan", "dejé de hacer cosas por " + player.getName().getString() + " (porque " + que + ")", Mining.pies(villager));
+    }
+
     // ------------------------------------------------------------------ orders from the chat, each with its account
 
     /** "Sígueme": at the player's side, still connected; its job and its mine wait. */
     public static String seguir(VillagerEntityMCA villager, PlayerEntity player, boolean spanish) {
         Voluntad w = of(villager);
         oyo(villager, player, spanish);
-        w.change(villager, Modo.SIGUIENDO, player, null, player.getName().getString() + " me pidió que lo siga");
+        w.callar();
+        Gana g = quiere(villager, player, Pedido.SEGUIR);
+        if (!g.si()) {
+            return w.negarse(villager, player, "follow-player", g, Pedido.SEGUIR);
+        }
+        w.change(villager, Modo.SIGUIENDO, player, null, player.getName().getString() + " me pidió que lo siga" + (g.es() == null ? "" : " (" + g.porque() + ")"));
+        if (g.es() != null) {
+            w.dicho("follow-player", g.es(), g.en());
+        }
         return "You are following " + player.getName().getString() + " now, at their side, fighting whatever threatens them. You are still "
-                + "living your own life: your mine, your chest and your plans wait until you are told to go back to them.";
+                + "living your own life: your mine, your chest and your plans wait until you are told to go back to them."
+                + (g.en() == null ? "" : " You do it grumbling: " + g.en());
     }
 
     /** "Quédate aquí", "espérame": it waits on this spot. */
     public static String esperar(VillagerEntityMCA villager, PlayerEntity player, boolean spanish) {
         Voluntad w = of(villager);
         oyo(villager, player, spanish);
-        w.change(villager, Modo.ESPERANDO, player, Mining.pies(villager).toImmutable(), player.getName().getString() + " me pidió que lo espere aquí");
+        w.callar();
+        Gana g = quiere(villager, player, Pedido.ESPERAR);
+        if (!g.si()) {
+            return w.negarse(villager, player, "stay-here", g, Pedido.ESPERAR);
+        }
+        w.change(villager, Modo.ESPERANDO, player, Mining.pies(villager).toImmutable(), player.getName().getString() + " me pidió que lo espere aquí"
+                + (g.es() == null ? "" : " (" + g.porque() + ")"));
+        if (g.es() != null) {
+            w.dicho("stay-here", g.es(), g.en());
+        }
         return "You stay right here and wait for " + player.getName().getString() + ", looking around and keeping yourself safe, until they call you "
-                + "or send you back to your own things.";
+                + "or send you back to your own things." + (g.en() == null ? "" : " You do it grumbling: " + g.en());
     }
 
     /** "Haz lo tuyo": back to its own life, where it left it. */
@@ -600,10 +752,20 @@ public final class Voluntad {
             w.dicho(tipo.name(), "Eso no sé hacerlo todavía, " + name + ".", "I don't know how to make that yet, " + name + ".");
             return "You have no idea how to make that: it is nothing you know how to craft. Say so, in a few words.";
         }
+        if (!(e.tipo == Encargo.Tipo.HACER && !e.traer)) {
+            // something it makes for itself it does gladly; what is for them depends on what the two lived
+            Pedido pedido = e.tipo == Encargo.Tipo.HACER ? Pedido.COSAS : Pedido.ENCARGO;
+            Gana g = quiere(villager, player, pedido);
+            if (!g.si()) {
+                e.anotar(villager, Encargo.Resultado.DENEGADO, "no quise: " + g.porque(), Map.of());
+                return w.negarse(villager, player, tipo.name(), g, pedido);
+            }
+        }
         String[] no = task.noPuede(world, villager, e);
         if (no != null) {
             w.dicho(tipo.name(), no[0], no[1]);
             MCA.LOGGER.info("[Tropeles] {} no puede el encargo de {} ({}): {}", villager.getName().getString(), name, tipo.palabra, no[0]);
+            e.anotar(villager, Encargo.Resultado.BLOQUEADO, no[0], Map.of());
             return "You have no way to do it right now: " + no[1] + " Say so in your own words, briefly.";
         }
         Modo base;
@@ -615,6 +777,7 @@ public final class Voluntad {
             baseQuien = w.trasQuien;
             baseEspera = w.trasEspera;
             if (w.encargo != null) {
+                w.encargo.anotar(villager, Encargo.Resultado.CANCELADO, name + " me pidió otra cosa", w.encargo.ganado(villager));
                 task.dejarEncargo(world, villager);
                 w.encargo = null;
             }
@@ -659,6 +822,7 @@ public final class Voluntad {
         if (w.encargo != null && villager.getWorld() instanceof ServerWorld world) {
             Encargo e = w.encargo;
             Map<Item, Integer> got = e.ganado(villager);
+            e.anotar(villager, Encargo.Resultado.CANCELADO, name + " me dijo que lo deje", got);
             ProspectingTask.of(villager).dejarEncargo(world, villager);
             w.encargo = null;
             w.retomar = false;
@@ -779,11 +943,13 @@ public final class Voluntad {
         switch (state) {
             case FOLLOW -> {
                 seguir(villager, player, es);
-                w.alMenu(villager, player, "¡Vamos, " + n + "! Voy contigo.", "Let's go, " + n + "! I'm with you.");
+                boolean propio = dicho(villager, "follow-player", es) != null; // a no, or a yes grumbling
+                w.alMenu(villager, player, propio ? w.dichoEs : "¡Vamos, " + n + "! Voy contigo.", propio ? w.dichoEn : "Let's go, " + n + "! I'm with you.");
             }
             case STAY -> {
                 esperar(villager, player, es);
-                w.alMenu(villager, player, "Vale, aquí te espero.", "Okay, I'll wait right here for you.");
+                boolean propio = dicho(villager, "stay-here", es) != null;
+                w.alMenu(villager, player, propio ? w.dichoEs : "Vale, aquí te espero.", propio ? w.dichoEn : "Okay, I'll wait right here for you.");
             }
             default -> {
                 libre(villager, player, es);
@@ -947,6 +1113,10 @@ public final class Voluntad {
         String name = Companero.nombre(villager, player);
         if (!(villager.getWorld() instanceof ServerWorld world)) {
             return "You have no way to do that right now.";
+        }
+        Gana g = quiere(villager, player, Pedido.CASA);
+        if (!g.si()) {
+            return w.negarse(villager, player, "OBRA", g, Pedido.CASA);
         }
         ProspectingTask task = ProspectingTask.of(villager);
         ObrasMundo obras = ObrasMundo.get(world);
@@ -1154,7 +1324,11 @@ public final class Voluntad {
         String whatEn = Encargo.palabras(got, false);
         String[] why = porQue(e, fin, falta);
         MCA.LOGGER.info("[Tropeles] {} termina el encargo de {} ({}, {}): {}", villager.getName().getString(), n, e.tipo.palabra, fin, hay ? whatEs : "nada");
-        Recuerdos.anotar(villager, "encargo", "terminé lo que me pidió " + n + " (" + e.tipo.palabra + "): " + why[0]
+        Encargo.Resultado r = Encargo.Resultado.de(fin, hay);
+        e.anotar(villager, r, why[0], got);
+        // only an errand that brought something real is an errand kept ({@code encargo} in its memory is a good deed)
+        Recuerdos.anotar(villager, r.cumplido() ? "encargo" : "encargo-sin", (r.cumplido() ? "terminé lo que me pidió " : "dejé sin hacer lo que me pidió ")
+                + n + " (" + e.tipo.palabra + ", " + r.name().toLowerCase(java.util.Locale.ROOT) + "): " + why[0]
                 + (hay ? " Conseguí " + whatEs + "." : " No conseguí nada."), Mining.pies(villager));
         ServerPlayerEntity para = jugador(world, e.para);
         if (hay && e.traer && para != null) {

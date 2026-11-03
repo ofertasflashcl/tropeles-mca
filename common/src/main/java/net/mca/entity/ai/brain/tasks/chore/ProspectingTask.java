@@ -20,6 +20,7 @@ import net.mca.entity.ai.body.Progreso;
 import net.mca.entity.ai.mente.Atasco;
 import net.mca.entity.ai.mente.Recuerdos;
 import net.mca.entity.ai.mente.Voluntad;
+import net.mca.entity.ai.nucleo.Peligros;
 import net.mca.entity.ai.relationship.AgeState;
 import net.mca.entity.ai.sense.Entorno;
 import net.mca.entity.ai.sense.Lugar;
@@ -432,6 +433,8 @@ public class ProspectingTask extends AbstractChoreTask {
     /** Exploring for a spot: the eye showed no natural land away from buildings. */
     private boolean siteExploring;
     private final Map<Long, Long> badSites = new HashMap<>();
+    /** When it last said that a place scares it (once a minute at most). */
+    private long miedoDicho = Long.MIN_VALUE / 2;
 
     // watchdog
     @Nullable
@@ -4409,7 +4412,8 @@ public class ProspectingTask extends AbstractChoreTask {
             if (same < 2 || penned(world, animal.getBlockPos()) || Obras.inVillageBuilding(world, animal.getBlockPos())) {
                 continue;
             }
-            double distance = animal.squaredDistanceTo(villager);
+            // one grazing where it was attacked looks much farther away than it is: another one first, if there is one
+            double distance = animal.squaredDistanceTo(villager) * (1.0 + 6.0 * Peligros.de(world, villager, animal.getBlockPos()).cuanto());
             if (distance < bestDistance) {
                 bestDistance = distance;
                 best = animal;
@@ -5136,6 +5140,17 @@ public class ProspectingTask extends AbstractChoreTask {
     /** Why the mine cannot start where it stands, or null when the ground here is its to cut. */
     @Nullable
     private String badSpot(ServerWorld world, VillagerEntityMCA villager, BlockPos feet) {
+        // a place where something attacked it: it would rather dig its mine somewhere else (what it lived decides)
+        Peligros.Miedo miedo = Peligros.de(world, villager, feet);
+        if (miedo.fuerte()) {
+            long now = world.getTime();
+            if (now - miedoDicho > 1200) {
+                miedoDicho = now;
+                Voluntad.contar(villager, "Aquí no empiezo la mina: " + miedo.es() + ".", "I'm not starting my mine here: " + miedo.en() + ".",
+                        "me da miedo este lugar: " + miedo.es());
+            }
+            return "le da miedo: " + miedo.es() + " (miedo " + Math.round(miedo.cuanto() * 100) + "%)";
+        }
         if (Obras.inVillageBuilding(world, feet)) {
             return "está dentro de una casa del pueblo";
         }
@@ -5189,6 +5204,9 @@ public class ProspectingTask extends AbstractChoreTask {
             if (until != null && until > now || (mapa.flags(top.getX(), top.getZ()) & (MapaVisto.WATER | MapaVisto.LAVA | MapaVisto.BUILT)) != 0
                     || builtNear(mapa, top)) {
                 continue;
+            }
+            if (Peligros.de(world, villager, top).cuanto() >= 0.4F) {
+                continue; // something attacked it around there: another spot
             }
             if (++tries > 24) {
                 break; // a look at the nearest few is enough; the village test below is not free
