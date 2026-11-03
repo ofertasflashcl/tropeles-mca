@@ -299,22 +299,48 @@ public final class MenteLocal {
 
     /**
      * What a language model said it will do, in its own words, when it forgot to put the order in its answer.
-     * Only clear first-person promises count.
+     * Only clear first-person promises count, in the present, the future or "voy a": "te sigo", "te seguiré",
+     * "caminaré a tu lado", "vamos juntos".
      */
     private static final List<Map.Entry<String, Pattern>> PROMISES = List.of(
-            order("follow-player", "te sigo|voy contigo|me voy contigo|te acompano|camino (a tu lado|contigo)|voy detras de ti|"
-                    + "i('?ll| will) follow( you)?|following you|coming with you|i('?ll| will) come with you|right behind you|lead the way|"
-                    + "i('?ll| will) walk with you"),
-            order("stay-here", "me quedo (aqui|aca|quieto|quieta)|aqui te espero|te espero aqui|i('?ll| will) (stay|wait) (here|right here)"),
-            order("come-up", "ya subo|salgo de la mina|voy subiendo|coming up|i('?ll| will) come up|i'?m coming up|climbing out"),
-            order("try-go-home", "me voy a casa|vuelvo a casa|i'?m heading home|i('?ll| will) go home"),
-            order("start-mining", "voy a minar|me voy a minar|bajo a la mina|me pongo a minar|i('?ll| will) go mining|off to the mine|"
-                    + "i('?ll| will) start mining"),
-            order("start-chopping", "voy a talar|me pongo a talar|i('?ll| will) (go )?chop"),
-            order("start-fishing", "voy a pescar|me voy a pescar|i('?ll| will) go fishing"),
+            order("follow-player", "te sigo|te seguire|te voy a seguir|voy a seguirte|(voy|ire|vengo|me voy|me ire|voy a ir|me vengo) contigo|"
+                    + "te acompano|te acompanare|te voy a acompanar|voy a acompanarte|"
+                    + "(camino|caminare|voy a caminar|ando|andare|voy|ire|sigo|seguire|me quedo|me quedare|me mantengo) "
+                    + "(contigo|a tu lado|junto a ti|al lado tuyo|cerca de ti|pegad[oa] a ti)|"
+                    + "(voy|ire|camino|caminare|ando|sigo|seguire) (detras de ti|detras tuyo|tras de ti|tras tuyo)|"
+                    + "vamos juntos|vamonos juntos|caminemos juntos|nos vamos juntos|"
+                    // "yo te cuido" by one asked to walk along is guarding them on the way, never "te cuido la casa"
+                    + "(te cuido|te protejo|te cubro|te escolto|te cuidare|te protegere|te cubrire|te escoltare|te voy a (cuidar|proteger|escoltar))"
+                    + "(?! (la|el|los|las|mis?|tus?|sus?|est[aeo]s?|es[aeo]s?|un|una|unos|unas|al|del) )|"
+                    + "i('?ll| will) follow( you)?|following you|coming with you|i('?ll| will) come (with you|along)|right behind you|lead the way|"
+                    + "i('?ll| will) (walk|go|stay|stick) (with you|beside you|by your side|next to you|alongside you|close to you)|"
+                    + "i('?m| am) (right )?(by your side|beside you)|let'?s go together|i('?ll| will) (escort|accompany|protect|guard) you|"
+                    + "i('?ve| have)? got your back"),
+            order("stay-here", "(me quedo|me quedare|me voy a quedar) (aqui|aca|quiet[oa]|esperando)|(aqui|aca) te (espero|esperare)|"
+                    + "te (espero|esperare) (aqui|aca)|i('?ll| will) (stay|wait) (here|right here)|i('?m| am) staying (here|put)"),
+            order("come-up", "ya subo|subire|ya salgo|salgo de la mina|saldre de la mina|voy subiendo|voy (para|pa) arriba|coming up|"
+                    + "i('?ll| will) come up|i'?m coming up|climbing out"),
+            order("try-go-home", "(me voy|me ire|vuelvo|volvere|regreso|regresare) (a|para|pa) (la |mi )?casa|i'?m heading home|"
+                    + "i('?ll| will) (go|head) home"),
+            order("start-mining", "voy a minar|me voy a minar|ire a minar|bajo a la mina|bajare a la mina|me voy a la mina|me pongo a minar|"
+                    + "me pondre a minar|i('?ll| will) go mining|off to the mine|i('?ll| will) start mining"),
+            order("start-chopping", "voy a talar|ire a talar|me pongo a talar|me pondre a talar|i('?ll| will) (go )?chop"),
+            order("start-fishing", "voy a pescar|me voy a pescar|ire a pescar|me pondre a pescar|i('?ll| will) go fishing"),
             order("build-house", "te (hago|construyo|armo|levanto) (una|la|tu) casa|voy a (hacer|construir|armar|levantar)(te)? (una|la|tu) casa|"
                     + "sigo con (la|tu) casa|i('?ll| will) (build|make) (you )?(a|the|your) house|building (you )?(a|the|your) house")
     );
+
+    /**
+     * A "no" that takes nothing back, gone before a promise is weighed: "no te preocupes, te sigo", "no hay problema",
+     * "¿por qué no?", "ni modo", "no queda otra", the Chilean "no más" ("camino contigo no más": just that).
+     */
+    private static final Pattern NOT_NEGATING = Pattern.compile("(?<![a-z])(no te (preocupes|preocupis|preocupi|asustes|asusti|apures|aflijas|agobies|"
+            + "pongas nervios[oa])|no (temas|tengas miedo|pasa nada|importa|mas|hay (problema|drama|rollo|cuidado|de que|lio|apuro|atao)|"
+            + "es (nada|molestia|problema)|(me )?queda otra)|nomas|ni modo|como no|por que no|"
+            + "don'?t (worry|be afraid|fret|panic)|no (worries|problem|prob)|why not|not a problem)(?![a-z])");
+
+    /** Said right after a promise, these take it back: "te sigo, pero no ahora", "I'll follow you, but not now". */
+    private static final Pattern BUT_NOT = Pattern.compile("^(pero|aunque|but)( (ahora|ahorita|todavia|aun|ya|hoy))? (no|not)(?![a-z])");
 
     /**
      * A promise with one of these just before it is a refusal: "no puedo seguirte", "I can't follow you". ("puedo"
@@ -553,29 +579,54 @@ public final class MenteLocal {
         return new Intent(null, "", null, spanish);
     }
 
-    /** The order a model's own words promise ("¡Claro, te sigo!"), or null; never one said with a "no" before it. */
+    /**
+     * The order a model's own words promise ("¡Claro, te sigo!"), or null. Weighed sentence by sentence and clause by
+     * clause, so the "no" of "no te preocupes, te sigo" refuses nothing. A promise does not count with a "no" just
+     * before it in its own clause ("no te sigo"), asked ("¿te sigo?"), for later ("mañana te sigo") or taken back
+     * ("te sigo, pero no ahora"); the last one that counts is what it means ("no te sigo, me quedo aquí" stays).
+     */
     @Nullable
     public static String promise(String said) {
-        String t = clean(said);
+        // "," ends a clause and ". ! ?" a sentence: each kept as its own mark, "?" apart for the questions
+        String t = Acciones.normalize(said).replaceAll("[,;:()\"]+", " , ").replaceAll("\\?+", " ? ").replaceAll("[.!\u00a1\u00bf\u2026\\n]+", " . ")
+                .replaceAll("[^a-z0-9',.? ]", " ");
+        t = NOT_NEGATING.matcher(t).replaceAll(" ").replaceAll("\\s+", " ").trim();
+        String best = null;
+        int bestAt = -1;
         for (Map.Entry<String, Pattern> entry : PROMISES) {
             Matcher m = entry.getValue().matcher(t);
-            if (m.find()) {
-                String[] before = t.substring(0, m.start()).trim().split(" ");
-                for (int i = Math.max(0, before.length - 3); i < before.length; i++) {
-                    if (NEGATIONS.contains(before[i])) {
-                        return null;
-                    }
+            while (m.find()) {
+                if (m.start() > bestAt && stands(t, m.start(), m.end())) {
+                    best = entry.getKey();
+                    bestAt = m.start();
                 }
-                String[] after = t.substring(m.end()).trim().split(" ");
-                String around = String.join(" ", java.util.Arrays.copyOfRange(before, Math.max(0, before.length - 4), before.length))
-                        + " | " + String.join(" ", java.util.Arrays.copyOfRange(after, 0, Math.min(3, after.length)));
-                if (LATER.matcher(around).find()) {
-                    return null;
-                }
-                return entry.getKey();
             }
         }
-        return null;
+        return best;
+    }
+
+    /** Whether the promise at {@code start..end} of {@code t} (marked by {@link #promise}) is one: see there. */
+    private static boolean stands(String t, int start, int end) {
+        String head = t.substring(0, start);
+        String sentence = head.substring(Math.max(head.lastIndexOf('.'), head.lastIndexOf('?')) + 1);
+        String[] clause = sentence.substring(sentence.lastIndexOf(',') + 1).trim().split(" ");
+        for (int i = Math.max(0, clause.length - 3); i < clause.length; i++) {
+            if (NEGATIONS.contains(clause[i])) {
+                return false;
+            }
+        }
+        String rest = t.substring(end);
+        int dot = rest.indexOf('.');
+        int ask = rest.indexOf('?');
+        if (ask >= 0 && (dot < 0 || ask < dot)) {
+            return false; // a question: "¿te sigo?"
+        }
+        rest = (dot >= 0 ? rest.substring(0, dot) : rest).replace(",", " ").replaceAll("\\s+", " ").trim();
+        String[] before = sentence.replace(",", " ").trim().split("\\s+");
+        String[] after = rest.split(" ");
+        String around = String.join(" ", java.util.Arrays.copyOfRange(before, Math.max(0, before.length - 4), before.length))
+                + " | " + String.join(" ", java.util.Arrays.copyOfRange(after, 0, Math.min(3, after.length)));
+        return !LATER.matcher(around).find() && !BUT_NOT.matcher(rest).find();
     }
 
     /** When nothing better can be said: it heard something, but did not get it. */

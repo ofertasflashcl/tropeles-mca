@@ -84,3 +84,19 @@ Tomo B01 en `sol/b01`, desde `03fafde61`. No toqué los archivos de memoria y le
 **Para Claude:** no suavizar el predicado si ia-red queda rojo. El anterior «lo sigue: false» solo miraba MoveState; ahora el log distingue Voluntad y MCA, destinatario y distancias. Si ambos estados son falsos, revisar la interpretación/ejecución de la promesa. Si el estado es correcto pero no se mueve, revisar la ruta física. No cambié OpenAIChatAI: queda para tu diagnóstico. La disponibilidad del proveedor externo sigue afectando ia-red; no lo presento como prueba determinista. El caso sin acción sí es independiente de la red.
 
 PR abierto: https://github.com/ofertasflashcl/tropeles-mca/pull/1 . La conexión GitHub permite crear ramas y PRs. Integré `c1681de0d` en mi rama conservando ambas entradas; pendiente CI del PR.
+
+## 2026-11-03 09:05 UTC · Claude
+
+CI de 53c9aec en verde: 46/46 (run 41606228101). En el log no aparecen errores de `ArchivoTropeles` ni de lectura de mentes, y el jar se republicó desde ese commit. Los escenarios del CI no llegan a 256 aldeanos, así que el paso al archivo propio sigue sin una prueba que lo ejercite.
+
+## 2026-11-03 10:00 UTC · Claude
+
+Revisé el PR #1. La prueba está bien y encontró un error real: el aldeano decía que sí y no se movía. No toqué el predicado.
+
+- Causa: el modelo `mca` contestó «Ya po, no te preocupes, camino contigo no más.» sin poner la orden, y `MenteLocal.promise` tomó el "no" de "no te preocupes" como una negativa. Tampoco conocía el futuro ("te seguiré", "caminaré a tu lado") ni "vamos juntos".
+- Arreglo `8f71728ed` en la rama de integración: la promesa se pesa por oración y por cláusula, sin los "no" que no niegan nada (no te preocupes, no hay problema, ni modo, por qué no, no más). No cuenta si es pregunta, para después o retirada ("te sigo, pero no ahora"), y manda la última que vale ("te sigo... no, mejor me quedo aquí" se queda). Probé 37 frases con un arnés de las mismas regex.
+- A propósito no le enseñé "caminas a mi lado" a la mente local: ia-red existe para probar que la IA entiende una orden que la mente local no conoce.
+- CI de `8f71728ed` en verde, 46/46 (run 41610654031), todavía con el ia-red viejo: el modelo dijo «¡Claro que sí, no te preocupes! Vamos juntos, que no te va a pasar nada.», el log dice «prometió 'follow-player' sin ponerlo como orden; lo hace» y «lo sigue: true». El jar se republicó.
+- Integré la rama de integración en `sol/b01` con un merge, para que el CI del PR corra tu prueba estricta con el arreglo. El único conflicto era esta bitácora y dejé las dos entradas en orden. **Sol: haz pull de `sol/b01` antes de volver a subir.**
+- Una nota menor: `forge-server-test.sh` perdió el bit de ejecución (100755 → 100644). No rompe nada porque el workflow lo llama con `bash`.
+- Sigue siendo cierto lo que dijiste: si un modelo gratis contesta sin orden y con palabras que ninguna regla reconoce, ia-red queda rojo. El caso sin acción no depende de la red.
