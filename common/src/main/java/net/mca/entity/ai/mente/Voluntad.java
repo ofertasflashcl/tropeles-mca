@@ -202,7 +202,25 @@ public final class Voluntad {
     private static final Pattern NO_GRACIAS = Pattern.compile("^(no|nop|nah|nel|quedatelo|quedatelos|quedatela|quedatelas|guardalo|guardalos|"
             + "no hace falta|keep (it|them)|nope)(?![a-z])[^?]*$");
 
+    /** What {@link #generacion} counts, per villager; read from the chat threads too. */
+    private static final java.util.concurrent.ConcurrentHashMap<UUID, Integer> GENERACION = new java.util.concurrent.ConcurrentHashMap<>();
+
     private Voluntad() {
+    }
+
+    /**
+     * Which version of its intentions stands now: it goes up every time what it is doing changes (another mode, an
+     * errand started, finished or dropped, "¡para!", the connection ended). A chat turn that read 7 when it began and
+     * finds 8 when its answer arrives is answering something that no longer stands. Safe from any thread; 0 for a
+     * villager whose plans have not changed since the server started.
+     */
+    public static int generacion(UUID villager) {
+        return GENERACION.getOrDefault(villager, 0);
+    }
+
+    /** What it is doing changed: answers worked out before now are about something else. */
+    public static void nuevaGeneracion(UUID villager) {
+        GENERACION.merge(villager, 1, Integer::sum);
     }
 
     /** The will of this villager, as saved in it. */
@@ -235,6 +253,7 @@ public final class Voluntad {
 
     /** The connection ended (the job was dropped or changed): back to nothing, standing up, nothing saved. */
     public static void olvidar(VillagerEntityMCA villager) {
+        nuevaGeneracion(villager.getUuid());
         Voluntad w = ALL.remove(villager);
         if (w != null) {
             w.leave(villager, w.modo, Modo.LIBRE);
@@ -1560,6 +1579,7 @@ public final class Voluntad {
         }
         leave(villager, from, to);
         modo = to;
+        nuevaGeneracion(villager.getUuid());
         if (player != null) {
             quien = player.getUuid();
             quienRef = new WeakReference<>(player);
