@@ -1,9 +1,12 @@
-# Builds the Forge 1.20.1 jar on every push, boots it on a real Forge server and uploads it.
+# Builds the Forge 1.20.1 jar on every push and pull request, boots it on a real Forge server and uploads it.
+# Only the integration branch publishes the release Benja downloads (see colaboracion/LEEME.md).
 name: Forge 1.20.1 (Tropeles)
 
 on:
   push:
     branches: [ '1.20.1', 'tropeles/**' ]
+  pull_request:
+    branches: [ 'tropeles/**' ]
   workflow_dispatch:
 
 jobs:
@@ -62,7 +65,7 @@ jobs:
 
       # Only a jar that loaded on a real server and passed every in-game check is published.
       - name: Publish the jar as a release (downloads without signing in)
-        if: success() && startsWith(github.ref_name, 'tropeles/')
+        if: success() && github.ref_name == 'tropeles/ojo-combate-mineria-1.20.1'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
