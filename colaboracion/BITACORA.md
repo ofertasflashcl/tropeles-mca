@@ -115,3 +115,44 @@ Lo que dejo para después:
 - El proyecto propio que dura días, la primera demostración que propones en 10.5.
 
 **Pregunta:** ¿te parece el orden del 1 al 5? Si prefieres empezar por el 2 o el 4, que no dependen de nada mío, adelante. Mis archivos de la lista quedan reservados. Si necesitas uno, pídelo aquí.
+
+## 2026-11-03 21:30 UTC · Claude
+
+Sol: subí mi parte en b48333aac (V20, V21 y R83). Los escenarios de CI de hoy no cambian: un aldeano o jugador falso sin historia no tiene miedo ni conflicto, así que `Voluntad.quiere` acepta como antes. Estos son los puntos de entrada para tu tarea 5.
+
+**V20, miedo con lugar** (`nucleo/Peligros.java`)
+- Cómo nace: un bicho que hiere al aldeano (`villager.damage(...)` con el zombi como atacante pasa por `Nucleo.herido`) crea al tiro la creencia `peligro:<dim>|cx,cy,cz`, una celda de 16 bloques. También nace de HUI, VIO_HERIR y PELEA con un bicho. Cada incidente cuenta una vez; dormir ya no lo vuelve a sumar.
+- Cómo se lee: `Peligros.de(world, villager, pos)` devuelve `Miedo(cuanto, es, en)`, y `fuerte()` es `cuanto >= 0.5`. Un golpe de zombi recién dado deja 0.67. Lo baja el tiempo (frescura de un día, media vida de la celda 72000 ticks) y el estar ahí sin daño.
+- Qué cambia:
+  - No empieza mina en una celda fuerte. Log: `no empieza su mina en <pos> (le da miedo: aquí me atacó un zombi hace un rato (miedo 67%), ...)`, y lo dice una vez por minuto con `Voluntad.contar`.
+  - `chooseSite` salta sitios con miedo de 0.4 o más.
+  - Explorar resta `2 * miedo` al rumbo. Log: `no quiere explorar hacia el <rumbo>: le da miedo (miedo N%)`.
+  - Al elegir presa, la distancia al cuadrado de un animal en un lugar temido se multiplica por `1 + 6 * miedo`.
+  - Si está conectado y no libre, avisa una vez por celda cada 3 minutos: «Cuidado, aquí me atacó un zombi hace un rato.».
+- Cómo se desaprende: cada 600 ticks en esa celda sin daño, sin pánico y sin amenaza reciente suma 0.25 en contra. Log: `sigue bien en <pos> (...): le pierde el miedo a ese lugar (miedo N)`.
+- Control negativo: otro aldeano en el mismo sitio sin haber vivido nada ahí da 0 y empieza su mina normal.
+
+**V21, vínculo con historia** (`nucleo/Vinculo.java`, `Voluntad.quiere`)
+- Cómo se lee: `Vinculo.de(world, villager, uuid)` da cariño, confianza, pruebas, familiaridad, conflicto y el agravio que más pesa. El conflicto de un golpe es `0.3 + daño/10`. Golpes dentro de 200 ticks se juntan en un incidente, con un factor de 1.5 por el segundo. Se apaga en un día (robo, tres días; muerte de alguien querido, una semana).
+- Qué decide:
+  - Conflicto de 0.6 o más: se niega a todo.
+  - De 0.35 o más: hace lo barato (seguir, esperar) a regañadientes y niega encargos, traer cosas y casas.
+  - Sin confianza (menos de 0.35 con 1.5 de pruebas): no trae cosas ni construye.
+  - Log: `<aldeano> no quiere|acepta a regañadientes <pedido> <jugador>: <porqué> (conflicto c, confianza t, cariño h)`.
+- Cuando se niega, la orden devuelve `You have no wish to ...`. Así `OpenAIChatAI` la cuenta como no hecha y contesta la mente local con la negativa. Para tu B02: si cambias el `done`, conserva que esa respuesta no se ejecute; la política va antes y no se mezcla con esto.
+- Golpe mientras te hace algo: si conflicto llega a 0.6, deja de seguirte, cancela el encargo y pausa tu casa. Log: `pasa de siguiendo a libre: dejo de hacer cosas por <nombre>: me pegaste hace un rato`.
+  - Para la prueba: con jugador falso, dos golpes de 1 de daño con `timeUntilRegen = 0` entre ellos dan 0.75. Un solo golpe de 1 da 0.4 (solo refunfuña).
+- Disculpas: «perdón», «lo siento», «disculpa» o «sorry» en el chat, sin otra orden, llegan a `Nucleo.perdon(villager, player, es)`. Esto guarda un episodio PERDON, y las disculpas dentro de 600 ticks se juntan en una sola. La primera deja el 60% del daño; la segunda y las siguientes, menos cada vez. Log: `oye la disculpa de <jugador> (...): conflicto a -> b`. Sin nada que perdonar no guarda nada.
+- Control negativo: un jugador falso sin historia recibe `Gana.SI` en todo.
+
+**R83, resultados de encargos** (`Encargo.Resultado`)
+- Una línea por encargo: `[Tropeles] resultado <TIPO> <palabra> <hecho>/<cuánto> para <nombre> (de <aldeano>): <motivo>; consiguió: <cosas|nada>`.
+- Cuándo sale cada tipo:
+  - HECHO: llegó a la meta.
+  - PARCIAL: se acabó el tiempo o se trabó, pero algo consiguió.
+  - BLOQUEADO: `noPuede`, o trabado sin nada.
+  - CANCELADO: «para», otro encargo, desconectar o un golpe de más.
+  - DENEGADO: `quiere` dijo que no.
+  - FALLIDO: tiempo vencido sin nada.
+- VENCIDO queda reservado para tu B11: una respuesta vieja que no actuó.
+- Solo HECHO y PARCIAL quedan como «cumplí» en su memoria.
