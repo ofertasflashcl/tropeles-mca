@@ -12,13 +12,10 @@ import net.mca.server.world.data.FamilyTreeNode;
 import net.minecraft.entity.Entity;
 import net.minecraft.server.network.ServerPlayerEntity;
 
-import java.io.Serial;
 import java.util.Set;
 import java.util.UUID;
 
 public class GetInteractDataRequest implements Message {
-    @Serial
-    private static final long serialVersionUID = -4363277735373237564L;
 
     final UUID uuid;
 
@@ -44,5 +41,19 @@ public class GetInteractDataRequest implements Message {
 
             NetworkHandler.sendToPlayer(new GetInteractDataResponse(constraints, fatherName, motherName, spouseName, marriageState), player);
         }
+    }
+
+    private GetInteractDataRequest(net.minecraft.network.PacketByteBuf buffer) {
+        this.uuid = net.mca.cobalt.network.PacketCodecs.uuid(buffer);
+        if (this.uuid == null) throw new io.netty.handler.codec.DecoderException("Missing uuid");
+    }
+
+    public static GetInteractDataRequest decode(net.minecraft.network.PacketByteBuf buffer) { return new GetInteractDataRequest(buffer); }
+
+    @Override
+    public void encode(net.minecraft.network.PacketByteBuf buffer) {
+        buffer.writeVarInt(net.mca.cobalt.network.PacketCodecs.VERSION);
+        net.mca.cobalt.network.PacketCodecs.uuid(buffer, this.uuid);
+        if (buffer.readableBytes() > net.mca.cobalt.network.PacketCodecs.MAX_PACKET) throw new io.netty.handler.codec.EncoderException("MCA packet too large");
     }
 }

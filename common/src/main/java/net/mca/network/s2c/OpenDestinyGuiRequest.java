@@ -5,11 +5,8 @@ import net.mca.Config;
 import net.mca.cobalt.network.Message;
 import net.minecraft.server.network.ServerPlayerEntity;
 
-import java.io.Serial;
 
 public class OpenDestinyGuiRequest implements Message {
-    @Serial
-    private static final long serialVersionUID = -8912548616237596312L;
 
     public final int player;
     public final boolean allowTeleportation;
@@ -22,5 +19,20 @@ public class OpenDestinyGuiRequest implements Message {
     @Override
     public void receive() {
         ClientProxy.getNetworkHandler().handleDestinyGuiRequest(this);
+    }
+
+    private OpenDestinyGuiRequest(net.minecraft.network.PacketByteBuf buffer) {
+        this.player = buffer.readInt();
+        this.allowTeleportation = buffer.readBoolean();
+    }
+
+    public static OpenDestinyGuiRequest decode(net.minecraft.network.PacketByteBuf buffer) { return new OpenDestinyGuiRequest(buffer); }
+
+    @Override
+    public void encode(net.minecraft.network.PacketByteBuf buffer) {
+        buffer.writeVarInt(net.mca.cobalt.network.PacketCodecs.VERSION);
+        buffer.writeInt(this.player);
+        buffer.writeBoolean(this.allowTeleportation);
+        if (buffer.readableBytes() > net.mca.cobalt.network.PacketCodecs.MAX_PACKET) throw new io.netty.handler.codec.EncoderException("MCA packet too large");
     }
 }

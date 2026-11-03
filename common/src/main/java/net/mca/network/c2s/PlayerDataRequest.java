@@ -8,12 +8,9 @@ import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.server.network.ServerPlayerEntity;
 
-import java.io.Serial;
 import java.util.UUID;
 
 public class PlayerDataRequest implements Message {
-    @Serial
-    private static final long serialVersionUID = -1869959282406697226L;
 
     private final UUID uuid;
 
@@ -31,5 +28,19 @@ public class PlayerDataRequest implements Message {
                 NetworkHandler.sendToPlayer(new PlayerDataMessage(uuid, nbt), player);
             }
         }
+    }
+
+    private PlayerDataRequest(net.minecraft.network.PacketByteBuf buffer) {
+        this.uuid = net.mca.cobalt.network.PacketCodecs.uuid(buffer);
+        if (this.uuid == null) throw new io.netty.handler.codec.DecoderException("Missing uuid");
+    }
+
+    public static PlayerDataRequest decode(net.minecraft.network.PacketByteBuf buffer) { return new PlayerDataRequest(buffer); }
+
+    @Override
+    public void encode(net.minecraft.network.PacketByteBuf buffer) {
+        buffer.writeVarInt(net.mca.cobalt.network.PacketCodecs.VERSION);
+        net.mca.cobalt.network.PacketCodecs.uuid(buffer, this.uuid);
+        if (buffer.readableBytes() > net.mca.cobalt.network.PacketCodecs.MAX_PACKET) throw new io.netty.handler.codec.EncoderException("MCA packet too large");
     }
 }

@@ -22,7 +22,7 @@ public final class MCA {
     public static Map<String, String> translations = new HashMap<>();
     public static String language;
 
-    private static MinecraftServer server;
+    private static volatile MinecraftServer server;
 
     public static Identifier locate(String id) {
         return new Identifier(MOD_ID, id);
@@ -46,7 +46,18 @@ public final class MCA {
     }
 
     public static void setServer(MinecraftServer server) {
-        MCA.server = server;
+        if (MCA.server != server) {
+            if (MCA.server != null) net.mca.entity.ai.chatAI.ServerRuntime.close(MCA.server);
+            net.mca.entity.ai.chatAI.ChatAI.clearSession();
+            MCA.server = server;
+            if (server != null) {
+                java.util.Properties build = new java.util.Properties();
+                try (var in = MCA.class.getResourceAsStream("/tropeles-build.properties")) {
+                    if (in != null) build.load(in);
+                } catch (java.io.IOException e) { LOGGER.warn("[Tropeles] no se pudo leer la identidad del jar", e); }
+                LOGGER.info("[Tropeles] jar {} version {}", build.getProperty("sha", "unknown"), build.getProperty("version", "unknown"));
+            }
+        }
     }
 
     public static Optional<MinecraftServer> getServer() {

@@ -28,16 +28,16 @@ public class NetworkHandlerImpl extends NetworkHandler.Impl {
     }
 
     @Override
-    public <T extends Message> void registerMessage(Class<T> msg) {
+    public <T extends Message> void registerMessage(Class<T> msg, java.util.function.Function<net.minecraft.network.PacketByteBuf, T> decoder, boolean toServer) {
         Identifier id = getMessageIdentifier(msg);
 
-        ServerPlayNetworking.registerGlobalReceiver(id, (server, player, handler, buffer, responder) -> {
-            Message m = Message.decode(buffer);
+        if (toServer) ServerPlayNetworking.registerGlobalReceiver(id, (server, player, handler, buffer, responder) -> {
+            Message m = Message.decode(buffer, msg, decoder);
             server.execute(() -> m.receive(player));
         });
 
-        if (FabricLoader.getInstance().getEnvironmentType() == EnvType.CLIENT) {
-            ClientProxy.register(id);
+        if (!toServer && FabricLoader.getInstance().getEnvironmentType() == EnvType.CLIENT) {
+            ClientProxy.register(id, msg, decoder);
         }
     }
 
@@ -62,9 +62,9 @@ public class NetworkHandlerImpl extends NetworkHandler.Impl {
             throw new RuntimeException("new ClientProxy()");
         }
 
-        public static void register(Identifier id) {
+        public static <T extends Message> void register(Identifier id, Class<T> msg, java.util.function.Function<PacketByteBuf, T> decoder) {
             ClientPlayNetworking.registerGlobalReceiver(id, (client, ignore1, buffer, ignore2) -> {
-                Message m = Message.decode(buffer);
+                Message m = Message.decode(buffer, msg, decoder);
                 client.execute(m::receive);
             });
         }

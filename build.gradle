@@ -9,20 +9,13 @@ architectury {
     minecraft = rootProject.minecraft_version
 }
 
+def sourceSha = providers.exec { commandLine 'git', 'rev-parse', 'HEAD' }.standardOutput.asText.get().trim()
+if (!(sourceSha ==~ /[0-9a-f]{40}/)) throw new GradleException('A git SHA is required to identify Tropeles builds')
+ext.tropelesSha = sourceSha
+
 def getAppVersion = { ->
-    // CI builds pass an explicit version: the nearest tag may not be a version Forge accepts
-    if (project.hasProperty('mod_version')) {
-        return project.property('mod_version')
-    }
-    try {
-        def version = providers.exec {
-            commandLine 'git', 'describe', '--tags', '--abbrev=0'
-        }.standardOutput.asText.get().trim()
-        return version
-    } catch (Exception e) {
-        println "Warning: ${e.message}, is git installed?"
-        return "dev"
-    }
+    def base = project.findProperty('mod_version') ?: '7.6.28-tropeles.1'
+    return "${base}-sha.${sourceSha.take(12)}"
 } as Object
 
 

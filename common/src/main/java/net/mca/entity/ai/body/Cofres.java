@@ -241,7 +241,7 @@ public final class Cofres {
             if (chest == null) {
                 continue;
             }
-            for (Map.Entry<String, Integer> e : chest.snapshot.entrySet()) {
+            for (Map.Entry<String, Integer> e : before.entrySet()) {
                 Identifier id = Identifier.tryParse(e.getKey());
                 if (id == null || e.getValue() <= 0) {
                     continue;
@@ -272,29 +272,44 @@ public final class Cofres {
 
     // ------------------------------------------------------------------ theft
 
-    /** A player closed a container: if it was a villager's chest and things are missing, that is a theft. */
-    public static void closedBy(ServerPlayerEntity player) {
-        if (!(player.getWorld() instanceof ServerWorld world)) {
-            return;
-        }
-        TropelesMundo mundo = TropelesMundo.get(world);
-        List<BlockPos> near = new ArrayList<>();
-        for (var entry : mundo.allChests()) {
-            BlockPos pos = BlockPos.fromLong(entry.getLongKey());
-            if (pos.isWithinDistance(player.getPos(), 8)) {
-                near.add(pos);
+    /** Only inventories present in this handler can be attributed to this click's player. */
+    public record ClickSnapshot(BlockPos pos, Inventory inventory, Map<String, Integer> before) { }
+
+    public static List<ClickSnapshot> beforeClick(ServerPlayerEntity player, net.minecraft.screen.ScreenHandler handler) {
+        ServerWorld world = player.getServerWorld();
+        java.util.Set<Inventory> seen = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        List<ClickSnapshot> result = new ArrayList<>();
+        for (var slot : handler.slots) {
+            Inventory inv = slot.inventory;
+            if (!seen.add(inv)) continue;
+            BlockPos selected = null;
+            java.util.UUID owner = null;
+            boolean ambiguous = false;
+            for (var entry : TropelesMundo.get(world).allChests()) {
+                BlockPos pos = BlockPos.fromLong(entry.getLongKey());
+                if (!pos.isWithinDistance(player.getPos(), 8) || !world.isChunkLoaded(pos.getX() >> 4, pos.getZ() >> 4)) continue;
+                var block = world.getBlockEntity(pos);
+                if (block == inv || inv instanceof net.minecraft.inventory.DoubleInventory both && block instanceof Inventory part && both.isPart(part)) {
+                    if (owner != null && !owner.equals(entry.getValue().owner)) { ambiguous = true; break; }
+                    owner = entry.getValue().owner;
+                    selected = pos;
+                }
             }
+            if (selected != null && !ambiguous) result.add(new ClickSnapshot(selected, inv, contents(inv)));
         }
-        for (BlockPos pos : near) {
-            check(world, pos, player);
+        return result;
+    }
+
+    public static void afterClick(ServerPlayerEntity player, List<ClickSnapshot> snapshots) {
+        for (ClickSnapshot snapshot : snapshots) {
+            check(player.getServerWorld(), snapshot.pos(), player, snapshot.inventory(), snapshot.before());
         }
     }
 
-    /** Compares the chest with what its owner left; anything missing is put down to {@code player}. */
-    public static int check(ServerWorld world, BlockPos pos, PlayerEntity player) {
+    /** Differences are bounded to one synchronous inventory action, never inferred from closing nearby screens. */
+    private static int check(ServerWorld world, BlockPos pos, PlayerEntity player, Inventory inv, Map<String, Integer> before) {
         TropelesMundo mundo = TropelesMundo.get(world);
         TropelesMundo.Chest chest = mundo.chest(pos);
-        Inventory inv = inventory(world, pos);
         if (chest == null || inv == null) {
             return 0;
         }

@@ -9,12 +9,9 @@ import net.mca.resources.data.dialogue.Question;
 import net.minecraft.entity.Entity;
 import net.minecraft.server.network.ServerPlayerEntity;
 
-import java.io.Serial;
 import java.util.UUID;
 
 public class InteractionDialogueInitMessage implements Message {
-    @Serial
-    private static final long serialVersionUID = -8007274573058750406L;
 
     private final UUID villagerUUID;
 
@@ -33,5 +30,19 @@ public class InteractionDialogueInitMessage implements Message {
                 NetworkHandler.sendToPlayer(new InteractionDialogueResponse(question, player, villager), player);
             }
         }
+    }
+
+    private InteractionDialogueInitMessage(net.minecraft.network.PacketByteBuf buffer) {
+        this.villagerUUID = net.mca.cobalt.network.PacketCodecs.uuid(buffer);
+        if (this.villagerUUID == null) throw new io.netty.handler.codec.DecoderException("Missing villagerUUID");
+    }
+
+    public static InteractionDialogueInitMessage decode(net.minecraft.network.PacketByteBuf buffer) { return new InteractionDialogueInitMessage(buffer); }
+
+    @Override
+    public void encode(net.minecraft.network.PacketByteBuf buffer) {
+        buffer.writeVarInt(net.mca.cobalt.network.PacketCodecs.VERSION);
+        net.mca.cobalt.network.PacketCodecs.uuid(buffer, this.villagerUUID);
+        if (buffer.readableBytes() > net.mca.cobalt.network.PacketCodecs.MAX_PACKET) throw new io.netty.handler.codec.EncoderException("MCA packet too large");
     }
 }

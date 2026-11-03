@@ -9,12 +9,9 @@ import net.minecraft.entity.mob.MobEntity;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.server.network.ServerPlayerEntity;
 
-import java.io.Serial;
 import java.util.stream.Stream;
 
 public class GetFamilyRequest implements Message {
-    @Serial
-    private static final long serialVersionUID = -4415670234855916259L;
 
     @Override
     public void receive(ServerPlayerEntity player) {
@@ -42,5 +39,19 @@ public class GetFamilyRequest implements Message {
                 });
 
         NetworkHandler.sendToPlayer(new GetFamilyResponse(familyData), player);
+    }
+
+    public GetFamilyRequest() { }
+
+    private GetFamilyRequest(net.minecraft.network.PacketByteBuf buffer) {
+
+    }
+
+    public static GetFamilyRequest decode(net.minecraft.network.PacketByteBuf buffer) { return new GetFamilyRequest(buffer); }
+
+    @Override
+    public void encode(net.minecraft.network.PacketByteBuf buffer) {
+        buffer.writeVarInt(net.mca.cobalt.network.PacketCodecs.VERSION);
+        if (buffer.readableBytes() > net.mca.cobalt.network.PacketCodecs.MAX_PACKET) throw new io.netty.handler.codec.EncoderException("MCA packet too large");
     }
 }

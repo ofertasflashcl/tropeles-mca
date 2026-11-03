@@ -25,15 +25,12 @@ import net.minecraft.util.Formatting;
 import net.minecraft.util.Identifier;
 import net.minecraft.village.VillagerProfession;
 
-import java.io.Serial;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
 public class VillagerEditorSyncRequest extends NbtDataMessage implements Message {
-    @Serial
-    private static final long serialVersionUID = -5581564927127176555L;
 
     private final String command;
     private final UUID uuid;
@@ -86,6 +83,9 @@ public class VillagerEditorSyncRequest extends NbtDataMessage implements Message
     @Override
     public void receive(ServerPlayerEntity player) {
         Entity entity = player.getServerWorld().getEntity(uuid);
+        if (entity instanceof VillagerEntityMCA v && !net.mca.entity.ai.chatAI.CommandPolicy.check(player, v, "editor", net.mca.entity.ai.chatAI.CommandPolicy.Source.PACKET).allowed()) return;
+        if (!(entity instanceof VillagerEntityMCA) && !player.hasPermissionLevel(2)) return;
+        if (entity instanceof VillagerEntityMCA v) net.mca.entity.ai.mente.Voluntad.nuevaGeneracion(v.getUuid());
         switch (command) {
             case "hair":
                 setHair(player, entity);
@@ -202,5 +202,24 @@ public class VillagerEditorSyncRequest extends NbtDataMessage implements Message
                 });
             }
         }
+    }
+
+    private VillagerEditorSyncRequest(net.minecraft.network.PacketByteBuf buffer) {
+        super(net.mca.cobalt.network.PacketCodecs.nbt(buffer));
+        this.command = net.mca.cobalt.network.PacketCodecs.string(buffer);
+        this.uuid = net.mca.cobalt.network.PacketCodecs.uuid(buffer);
+        if (this.command == null) throw new io.netty.handler.codec.DecoderException("Missing command");
+        if (this.uuid == null) throw new io.netty.handler.codec.DecoderException("Missing uuid");
+    }
+
+    public static VillagerEditorSyncRequest decode(net.minecraft.network.PacketByteBuf buffer) { return new VillagerEditorSyncRequest(buffer); }
+
+    @Override
+    public void encode(net.minecraft.network.PacketByteBuf buffer) {
+        buffer.writeVarInt(net.mca.cobalt.network.PacketCodecs.VERSION);
+        buffer.writeNbt(getData());
+        net.mca.cobalt.network.PacketCodecs.string(buffer, this.command);
+        net.mca.cobalt.network.PacketCodecs.uuid(buffer, this.uuid);
+        if (buffer.readableBytes() > net.mca.cobalt.network.PacketCodecs.MAX_PACKET) throw new io.netty.handler.codec.EncoderException("MCA packet too large");
     }
 }

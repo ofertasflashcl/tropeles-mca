@@ -5,12 +5,9 @@ import net.mca.cobalt.network.Message;
 import net.mca.resources.data.skin.Clothing;
 import net.mca.resources.data.skin.Hair;
 
-import java.io.Serial;
 import java.util.HashMap;
 
 public class SkinListResponse implements Message {
-    @Serial
-    private static final long serialVersionUID = 3523559818338225910L;
 
     private final HashMap<String, Clothing> clothing;
     private final HashMap<String, Hair> hair;
@@ -31,5 +28,20 @@ public class SkinListResponse implements Message {
 
     public HashMap<String, Hair> getHair() {
         return hair;
+    }
+
+    private SkinListResponse(net.minecraft.network.PacketByteBuf buffer) {
+        this.clothing = net.mca.cobalt.network.PacketCodecs.json(buffer, new com.google.gson.reflect.TypeToken<HashMap<String, Clothing>>() {}.getType());
+        this.hair = net.mca.cobalt.network.PacketCodecs.json(buffer, new com.google.gson.reflect.TypeToken<HashMap<String, Hair>>() {}.getType());
+    }
+
+    public static SkinListResponse decode(net.minecraft.network.PacketByteBuf buffer) { return new SkinListResponse(buffer); }
+
+    @Override
+    public void encode(net.minecraft.network.PacketByteBuf buffer) {
+        buffer.writeVarInt(net.mca.cobalt.network.PacketCodecs.VERSION);
+        net.mca.cobalt.network.PacketCodecs.json(buffer, this.clothing, new com.google.gson.reflect.TypeToken<HashMap<String, Clothing>>() {}.getType());
+        net.mca.cobalt.network.PacketCodecs.json(buffer, this.hair, new com.google.gson.reflect.TypeToken<HashMap<String, Hair>>() {}.getType());
+        if (buffer.readableBytes() > net.mca.cobalt.network.PacketCodecs.MAX_PACKET) throw new io.netty.handler.codec.EncoderException("MCA packet too large");
     }
 }

@@ -3862,8 +3862,9 @@ public final class Pruebas {
             Cofres.remember(world, chest);
             var thief = fakePlayer(world, "Ladron", Vec3d.ofBottomCenter(chest.add(1, 0, 1)));
             int before = owner.getVillagerBrain().getMemoriesForPlayer(thief).getHearts();
-            inv.getStack(0).decrement(5);
-            int missing = Cofres.check(world, chest, thief);
+            var handler = net.minecraft.screen.GenericContainerScreenHandler.createGeneric9x3(1, thief.getInventory(), inv);
+            handler.onSlotClick(0, 1, net.minecraft.screen.slot.SlotActionType.PICKUP, thief);
+            int missing = 10 - inv.getStack(0).getCount();
             int after = owner.getVillagerBrain().getMemoriesForPlayer(thief).getHearts();
             boolean pending = !net.mca.server.world.data.TropelesMundo.get(world).theftsAgainst(owner.getUuid()).isEmpty();
             boolean passed = missing == 5 && after < before && !pending;

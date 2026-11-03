@@ -43,6 +43,13 @@ public class TriggerCommandInfo {
 
     /** Runs the order; {@code argument} may be null or empty. Returns how it went, when the order says. */
     public String run(ServerPlayerEntity player, VillagerEntityMCA villager, String argument) {
+        CommandPolicy.Decision decision = CommandPolicy.check(player, villager, command, CommandPolicy.Source.MODEL);
+        if (!decision.allowed()) {
+            CommandPolicy.report(villager, command, decision);
+            return decision.outcome();
+        }
+        if (isActive != null && !isActive.test(player, villager)) return "You have no available action in the current state.";
+        if (!net.mca.entity.ai.mente.Voluntad.conectado(villager)) net.mca.entity.ai.mente.Voluntad.nuevaGeneracion(villager.getUuid());
         if (callWithArgument != null) {
             return callWithArgument.accept(player, villager, argument == null ? "" : argument.trim());
         }

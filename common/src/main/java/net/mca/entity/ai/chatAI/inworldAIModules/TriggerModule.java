@@ -19,11 +19,17 @@ public class TriggerModule {
      * @param villager    Villager in the conversation
      */
     public void processTriggers(Interaction interaction, ServerPlayerEntity player, VillagerEntityMCA villager) {
-        // Get triggers sent from server
-        TriggerEvent[] triggerEvents = interaction.outgoingTriggers();
-        for (TriggerEvent event : triggerEvents) {
-            TriggerCommandInfos.findCommand(event.trigger(), player, villager)
-                    .ifPresent(commandInfo -> commandInfo.call.accept(player, villager));
+        processTriggers(interaction, player, villager, null);
+    }
+
+    public void processTriggers(Interaction interaction, ServerPlayerEntity player, VillagerEntityMCA villager,
+                                net.mca.entity.ai.chatAI.ActionTurn lease) {
+        for (TriggerEvent event : interaction.outgoingTriggers()) {
+            TriggerCommandInfos.findCommand(event.trigger(), player, villager).ifPresent(command -> {
+                if (lease != null && !lease.claimAction()) return;
+                try { command.run(player, villager, ""); }
+                finally { if (lease != null) lease.acknowledgeAction(); }
+            });
         }
     }
 }

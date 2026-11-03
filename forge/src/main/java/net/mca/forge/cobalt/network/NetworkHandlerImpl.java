@@ -9,7 +9,7 @@ import net.minecraftforge.network.PacketDistributor;
 import net.minecraftforge.network.simple.SimpleChannel;
 
 public class NetworkHandlerImpl extends NetworkHandler.Impl {
-    private final String PROTOCOL_VERSION = "1";
+    private final String PROTOCOL_VERSION = "2";
     private final SimpleChannel channel = NetworkRegistry.newSimpleChannel(
             MCA.locate("main"),
             () -> PROTOCOL_VERSION,
@@ -20,10 +20,10 @@ public class NetworkHandlerImpl extends NetworkHandler.Impl {
 
     @SuppressWarnings("unchecked")
     @Override
-    public <T extends Message> void registerMessage(Class<T> msg) {
+    public <T extends Message> void registerMessage(Class<T> msg, java.util.function.Function<net.minecraft.network.PacketByteBuf, T> decoder, boolean toServer) {
         channel.registerMessage(id++, msg,
                 Message::encode,
-                b -> (T) Message.decode(b),
+                b -> (T) Message.decode(b, msg, decoder),
                 (m, ctx) -> {
                     ctx.get().enqueueWork(() -> {
                         ServerPlayerEntity sender = ctx.get().getSender();
@@ -34,7 +34,7 @@ public class NetworkHandlerImpl extends NetworkHandler.Impl {
                         }
                     });
                     ctx.get().setPacketHandled(true);
-                });
+                }, java.util.Optional.of(toServer ? net.minecraftforge.network.NetworkDirection.PLAY_TO_SERVER : net.minecraftforge.network.NetworkDirection.PLAY_TO_CLIENT));
     }
 
     @Override

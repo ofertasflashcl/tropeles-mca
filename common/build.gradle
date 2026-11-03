@@ -23,3 +23,11 @@ publishing {
     }
   }
 }
+
+processResources {
+  inputs.property 'sha', rootProject.tropelesSha
+  inputs.property 'version', project.version.toString()
+  filesMatching('tropeles-build.properties') {
+    expand sha: rootProject.tropelesSha, version: project.version.toString()
+  }
+}

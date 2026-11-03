@@ -31,11 +31,17 @@ abstract class MixinScreenHandler {
         }
     }
 
-    @Inject(method = "onClosed", at = @At("HEAD"))
-    private void mca$onClosed(PlayerEntity player, CallbackInfo info) {
-        if (player instanceof ServerPlayerEntity serverPlayer) {
-            Cofres.closedBy(serverPlayer);
-        }
+    @Unique private java.util.List<Cofres.ClickSnapshot> mca$before = java.util.List.of();
+
+    @Inject(method = "internalOnSlotClick", at = @At("HEAD"))
+    private void mca$beforeClick(int slot, int button, SlotActionType action, PlayerEntity player, CallbackInfo info) {
+        mca$before = player instanceof ServerPlayerEntity p ? Cofres.beforeClick(p, (ScreenHandler)(Object)this) : java.util.List.of();
+    }
+
+    @Inject(method = "internalOnSlotClick", at = @At("RETURN"))
+    private void mca$afterClick(int slot, int button, SlotActionType action, PlayerEntity player, CallbackInfo info) {
+        if (player instanceof ServerPlayerEntity p) Cofres.afterClick(p, mca$before);
+        mca$before = java.util.List.of();
     }
 
     @Unique

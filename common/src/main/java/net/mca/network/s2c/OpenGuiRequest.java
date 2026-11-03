@@ -4,11 +4,8 @@ import net.mca.ClientProxy;
 import net.mca.cobalt.network.Message;
 import net.minecraft.entity.Entity;
 
-import java.io.Serial;
 
 public class OpenGuiRequest implements Message {
-    @Serial
-    private static final long serialVersionUID = -2371116419166251497L;
 
     public final int gui;
 
@@ -49,5 +46,20 @@ public class OpenGuiRequest implements Message {
         NEEDLE_AND_THREAD,
         COMB,
         CLOSE,
+    }
+
+    private OpenGuiRequest(net.minecraft.network.PacketByteBuf buffer) {
+        this.gui = buffer.readInt();
+        this.villager = buffer.readInt();
+    }
+
+    public static OpenGuiRequest decode(net.minecraft.network.PacketByteBuf buffer) { return new OpenGuiRequest(buffer); }
+
+    @Override
+    public void encode(net.minecraft.network.PacketByteBuf buffer) {
+        buffer.writeVarInt(net.mca.cobalt.network.PacketCodecs.VERSION);
+        buffer.writeInt(this.gui);
+        buffer.writeInt(this.villager);
+        if (buffer.readableBytes() > net.mca.cobalt.network.PacketCodecs.MAX_PACKET) throw new io.netty.handler.codec.EncoderException("MCA packet too large");
     }
 }

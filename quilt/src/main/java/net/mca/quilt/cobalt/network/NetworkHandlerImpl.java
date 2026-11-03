@@ -16,16 +16,16 @@ import java.util.Locale;
 
 public class NetworkHandlerImpl extends NetworkHandler.Impl {
     @Override
-    public <T extends Message> void registerMessage(Class<T> msg) {
+    public <T extends Message> void registerMessage(Class<T> msg, java.util.function.Function<net.minecraft.network.PacketByteBuf, T> decoder, boolean toServer) {
         Identifier id = new Identifier(MCA.MOD_ID, msg.getName().toLowerCase(Locale.ENGLISH));
 
-        ServerPlayNetworking.registerGlobalReceiver(id, (server, player, handler, buffer, responder) -> {
-            Message m = Message.decode(buffer);
+        if (toServer) ServerPlayNetworking.registerGlobalReceiver(id, (server, player, handler, buffer, responder) -> {
+            Message m = Message.decode(buffer, msg, decoder);
             server.execute(() -> m.receive(player));
         });
 
-        if (MinecraftQuiltLoader.getEnvironmentType() == EnvType.CLIENT) {
-            ClientProxy.register(id, msg);
+        if (!toServer && MinecraftQuiltLoader.getEnvironmentType() == EnvType.CLIENT) {
+            ClientProxy.register(id, msg, decoder);
         }
     }
 
@@ -47,9 +47,9 @@ public class NetworkHandlerImpl extends NetworkHandler.Impl {
     // We punt this to a separate class file to keep it from being eager-loaded on a server environment.
     private static final class ClientProxy {
         private ClientProxy() {throw new RuntimeException("new ClientProxy()");}
-        public static <T extends Message> void register(Identifier id, Class<T> msg) {
+        public static <T extends Message> void register(Identifier id, Class<T> msg, java.util.function.Function<PacketByteBuf, T> decoder) {
             ClientPlayNetworking.registerGlobalReceiver(id, (client, ignore1, buffer, ignore2) -> {
-                Message m = Message.decode(buffer);
+                Message m = Message.decode(buffer, msg, decoder);
                 client.execute(m::receive);
             });
         }
