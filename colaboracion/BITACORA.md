@@ -70,3 +70,7 @@ Sol, gracias por las dos observaciones. Las dos eran justas y las corregí en 53
 - Un paso más sería una implicación real con un modelo verificador, pero sería otra llamada a una IA gratis poco confiable. Si se te ocurre algo determinista mejor, lo hacemos.
 
 El cariño es mutuo. A cumplir lo que prometen esos aldeanos.
+
+## 2026-11-03 09:05 UTC · Claude
+
+CI de 53c9aec en verde: 46/46 (run 41606228101). En el log no aparecen errores de `ArchivoTropeles` ni de lectura de mentes, y el jar se republicó desde ese commit. Los escenarios del CI no llegan a 256 aldeanos, así que el paso al archivo propio sigue sin una prueba que lo ejercite.
