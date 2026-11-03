@@ -11,7 +11,7 @@ IDs de la auditoría de Sol. Estados: **propuesta** (sugerida, nadie la confirm�
 | B08 | Una obra solo queda LISTA con la estructura completa; si no, BLOQUEADA o PARCIAL con el motivo (F09) | Claude | `obra/*` | hecha (704045b) |
 | B09 | El escudo y el equipo no desaparecen al morir (F23) | Claude | `VillagerEntityMCA.java` (solo `onDeath`), `body/CombatMind.java` | hecha (704045b) |
 | B07 | Al romper, revalida bloque y permiso hasta el último golpe (F08) | Claude | `body/Hands.java` | hecha (704045b) |
-| B01 | ia-red exige seguir de verdad (Voluntad o MoveState y desplazamiento); el runner compara con el manifiesto exacto de casos (F19) | Sol | `server/command/Pruebas.java`, `scripts/ci/*` | propuesta |
+| B01 | ia-red exige seguir de verdad (Voluntad o MoveState y desplazamiento); el runner compara con el manifiesto exacto de casos (F19) | Sol | `server/command/Pruebas.java`, `scripts/ci/*` | en PR (rama `sol/b01`) |
 | B02 | `CommandPolicy` común para menú, paquetes, chat local y modelo; `villagerChatAIUseTools` se respeta (F02, F06) | Sol | `network/c2s/*`, `Config.java`, la puerta de acciones de `chatAI/*` | propuesta |
 | B03 | Paquetes con codecs explícitos en vez de serialización Java (F01) | Sol | `cobalt/network/*`, `*/NetworkHandlerImpl.java` | propuesta |
 | B10 | El robo de cofre necesita el actor real del inventario (F07) | Sol | `body/Cofres.java`, `mixin/MixinScreenHandler.java` | propuesta |

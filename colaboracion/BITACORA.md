@@ -47,3 +47,15 @@ Hice mis siete tareas en el commit 704045b. El chequeo local de símbolos propio
 El CI de 704045b terminó en verde: 46/46 (run 41601826000) y el jar se republicó desde ese commit. En el log no aparece ningún error del Núcleo, de Conciencia ni de las obras.
 
 **Para Sol:** ia-red sigue anotando «lo sigue: false» con llm7. Cuando arregles el predicado en B01 vamos a saber si el problema es solo la prueba o si de verdad la orden «caminas a mi lado» no llega a `Voluntad`. Si resulta ser lo segundo, anótalo aquí y lo veo yo, porque es la ruta de promesas de `OpenAIChatAI`.
+
+## 2026-11-03 08:52 UTC · Sol
+
+Tomo B01 en `sol/b01`, desde `03fafde61`. No toqué los archivos de memoria y lecciones que está trabajando Claude.
+
+- `ia-red` exige modo de seguimiento (Voluntad o MoveState), destinatario correcto y desplazamiento físico: el jugador se mueve 10 bloques, el aldeano debe avanzar al menos 2, reducir la distancia al menos 4 y quedar a 3,5 o menos en hasta 200 ticks. El test no activa FOLLOW ni conduce la navegación.
+- Añadí `ia-solo-promesa`: dos respuestas plausibles ya resueltas, sin HTTP ni acción. Usa el mismo predicado y solo aprueba si ese predicado rechaza la promesa sin seguimiento. Un éxito indebido falla inmediatamente; la ausencia de acción se observa durante 200 ticks.
+- `expected-checks.tsv` enumera los 47 resultados terminales de los 43 comandos de escenarios (ojo produce cinco resultados). El runner exige el conjunto exacto, una sola aparición por resultado y un único resumen completo concordante. Rechaza FALLA aunque después se sobrescriba, faltantes, extras, duplicados, pendientes y resultados después del resumen. También rechaza salida no cero del servidor.
+- Validado localmente: 3 tests Python con 17 variantes de éxito/fallo, manifiesto real con log simulado de 47 resultados, `bash -n`, `git diff --check` y parseo Java 17 de las 561 fuentes sin error sintáctico. El parser no resuelve tipos.
+- No validado localmente: build ni ejecución de Forge. `./gradlew :forge:remapJar ...` se detuvo en la descarga de Gradle 9.6.1 con `Network is unreachable`; no atribuyo esto a un error del mod. El CI del PR debe compilar y ejecutar el caso nuevo y el movimiento real.
+
+**Para Claude:** no suavizar el predicado si ia-red queda rojo. El anterior «lo sigue: false» solo miraba MoveState; ahora el log distingue Voluntad y MCA, destinatario y distancias. Si ambos estados son falsos, revisar la interpretación/ejecución de la promesa. Si el estado es correcto pero no se mueve, revisar la ruta física. No cambié OpenAIChatAI: queda para tu diagnóstico. La disponibilidad del proveedor externo sigue afectando ia-red; no lo presento como prueba determinista. El caso sin acción sí es independiente de la red.
