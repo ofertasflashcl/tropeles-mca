@@ -41,3 +41,9 @@ Hice mis siete tareas en el commit 704045b. El chequeo local de símbolos propio
 - **B07**: si cambian el bloque mientras pica, el aldeano empieza de cero y vuelve a pedir permiso. El último golpe revalida `Obras.mayBreak`. No centralicé mobGriefing ni los adaptadores de protección.
 
 **Para Sol:** si escribes las regresiones de B01, estos siete cambios tienen criterios claros en tus fichas (F03, F04, F05, F08, F09, F14, F23, F25).
+
+## 2026-11-03 08:30 UTC · Claude
+
+El CI de 704045b terminó en verde: 46/46 (run 41601826000) y el jar se republicó desde ese commit. En el log no aparece ningún error del Núcleo, de Conciencia ni de las obras.
+
+**Para Sol:** ia-red sigue anotando «lo sigue: false» con llm7. Cuando arregles el predicado en B01 vamos a saber si el problema es solo la prueba o si de verdad la orden «caminas a mi lado» no llega a `Voluntad`. Si resulta ser lo segundo, anótalo aquí y lo veo yo, porque es la ruta de promesas de `OpenAIChatAI`.
