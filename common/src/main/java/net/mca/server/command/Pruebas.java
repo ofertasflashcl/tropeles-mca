@@ -88,7 +88,8 @@ public final class Pruebas {
                 case "explorar" -> start(new Exploracion(world));
                 case "pelea-muro" -> start(new PeleaMuro(world));
                 case "ia-local" -> start(new IaLocal(world));
-                case "ia-red" -> start(new IaRed(world));
+                case "ia-red" -> start(new IaRed(world, false));
+                case "ia-solo-promesa" -> start(new IaRed(world, true));
                 case "conectar" -> start(new Conectar(world));
                 case "tala" -> start(new Tala(world));
                 case "puente" -> start(new Puente(world));
@@ -4694,15 +4695,28 @@ public final class Pruebas {
         private java.util.concurrent.CompletableFuture<String> order;
         private String minds = "";
         private String chatMind = "";
+        private final boolean promiseOnly;
+        private Vec3d followStart;
+        private double initialDistance;
+        private int followAt;
 
-        IaRed(ServerWorld world) {
-            super("ia-red", world, 3000);
-            BlockPos o = new BlockPos(3600, 100, 0);
-            load(world, o, 8);
-            fill(world, o.add(-5, -1, -5), o.add(5, -1, 5), Blocks.STONE.getDefaultState());
-            fill(world, o.add(-5, 0, -5), o.add(5, 4, 5), Blocks.AIR.getDefaultState());
+        IaRed(ServerWorld world, boolean promiseOnly) {
+            super(promiseOnly ? "ia-solo-promesa" : "ia-red", world, 3000);
+            this.promiseOnly = promiseOnly;
+            BlockPos o = new BlockPos(promiseOnly ? 3650 : 3600, 100, 0);
+            load(world, o.east(8), 24);
+            fill(world, o.add(-5, -1, -5), o.add(24, -1, 5), Blocks.STONE.getDefaultState());
+            fill(world, o.add(-5, 0, -5), o.add(24, 4, 5), Blocks.AIR.getDefaultState());
             v = villager(world, o, Direction.EAST, "Tomás Red");
-            p = fakePlayer(world, "Tropeles_CI", Vec3d.ofBottomCenter(o.east(3)));
+            p = fakePlayer(world, promiseOnly ? "Promesa_CI" : "Tropeles_CI", Vec3d.ofBottomCenter(o.east(3)));
+            // Negative control: plausible words, deliberately no command or network request.
+            // It must go through exactly the same physical success predicate as ia-red.
+            if (promiseOnly) {
+                probe = java.util.concurrent.CompletableFuture.completedFuture(Map.of());
+                chat = java.util.concurrent.CompletableFuture.completedFuture("Hola, llevo pan.");
+                order = java.util.concurrent.CompletableFuture.completedFuture("Claro, caminaré a tu lado.");
+                chatMind = "control-sin-accion";
+            }
             v.getInventory().addStack(new ItemStack(Items.BREAD, 5));
             v.getInventory().addStack(new ItemStack(Items.STONE_PICKAXE));
         }
@@ -4717,6 +4731,10 @@ public final class Pruebas {
 
         @Override
         Boolean step() {
+            if (!v.isAlive()) {
+                fail(name, "el aldeano murió durante la prueba");
+                return Boolean.FALSE;
+            }
             if (ticks < 40) {
                 return null;
             }
@@ -4747,13 +4765,37 @@ public final class Pruebas {
             if (!order.isDone()) {
                 return null;
             }
-            String orderMind = net.mca.entity.ai.chatAI.Cerebros.last(v.getUuid());
-            boolean follows = v.getVillagerBrain().getMoveState() == MoveState.FOLLOW;
-            MCA.LOGGER.info("PRUEBA ia-red orden con " + orderMind + ": «" + order.join() + "», lo sigue: " + follows);
-            boolean passed = !chat.join().isBlank() && !order.join().isBlank();
-            check(name, passed, "mentes gratis que respondieron desde el servidor: " + minds + "; charla con " + chatMind
-                    + "; orden que solo entiende la IA («caminas a mi lado») con " + orderMind + ", lo sigue: " + follows);
-            return passed;
+            if (followStart == null) {
+                followStart = v.getPos();
+                followAt = ticks;
+                // Move only the player. Never set FOLLOW or drive navigation from the check.
+                p.refreshPositionAndAngles(followStart.x + 10, followStart.y, followStart.z, 0, 0);
+                initialDistance = v.distanceTo(p);
+                MCA.LOGGER.info("PRUEBA {} orden: «{}»; observando movimiento real", name, order.join());
+                return null;
+            }
+            var will = net.mca.entity.ai.mente.Voluntad.of(v);
+            boolean willFollows = will.modo() == net.mca.entity.ai.mente.Voluntad.Modo.SIGUIENDO
+                    && p.getUuid().equals(will.quien());
+            boolean mcaFollows = v.getVillagerBrain().getMoveState() == MoveState.FOLLOW
+                    && v.getBrain().getOptionalMemory(MemoryModuleTypeMCA.PLAYER_FOLLOWING.get())
+                    .filter(player -> p.getUuid().equals(player.getUuid())).isPresent();
+            double moved = v.getPos().distanceTo(followStart);
+            double distance = v.distanceTo(p);
+            boolean follows = v.isAlive() && (willFollows || mcaFollows)
+                    && moved >= 2.0 && distance <= 3.5 && initialDistance - distance >= 4.0;
+            // Observe up to 200 ticks; an undesired success fails the negative control immediately.
+            if (ticks - followAt < 200 && !follows) {
+                return null;
+            }
+            String orderMind = promiseOnly ? "control-sin-accion" : net.mca.entity.ai.chatAI.Cerebros.last(v.getUuid());
+            boolean passed = !chat.join().isBlank() && !order.join().isBlank() && follows;
+            check(name, promiseOnly ? !passed : passed, "charla con " + chatMind + "; orden con " + orderMind
+                    + "; Voluntad sigue al jugador " + willFollows + "; MCA sigue al jugador " + mcaFollows
+                    + "; desplazamiento " + fmt(moved) + "; distancia " + fmt(initialDistance) + " -> " + fmt(distance)
+                    + "; seguimiento demostrado " + follows + "; control sin acción " + promiseOnly
+                    + "; mentes que respondieron " + minds);
+            return promiseOnly ? !passed : passed;
         }
 
         @Override
