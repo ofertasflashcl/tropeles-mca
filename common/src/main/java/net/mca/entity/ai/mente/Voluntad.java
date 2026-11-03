@@ -29,6 +29,7 @@ import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.inventory.SimpleInventory;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
+import net.minecraft.nbt.NbtCompound;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.math.BlockPos;
@@ -161,6 +162,10 @@ public final class Voluntad {
     private UUID trasQuien;
     @Nullable
     private BlockPos trasEspera;
+    /** The errand was read back after a restart: its hands are told to go on with it on its first tick ({@link ProspectingTask#retomarEncargo}). */
+    private boolean retomar;
+    /** How far along the errand was when it was last kept in the villager. */
+    private int hechoGuardado = -1;
     /** What it got for someone, to hand over (or offer) once it is at their side. */
     @Nullable
     private Entrega entrega;
@@ -197,7 +202,25 @@ public final class Voluntad {
     private static final Pattern NO_GRACIAS = Pattern.compile("^(no|nop|nah|nel|quedatelo|quedatelos|quedatela|quedatelas|guardalo|guardalos|"
             + "no hace falta|keep (it|them)|nope)(?![a-z])[^?]*$");
 
+    /** What {@link #generacion} counts, per villager; read from the chat threads too. */
+    private static final java.util.concurrent.ConcurrentHashMap<UUID, Integer> GENERACION = new java.util.concurrent.ConcurrentHashMap<>();
+
     private Voluntad() {
+    }
+
+    /**
+     * Which version of its intentions stands now: it goes up every time what it is doing changes (another mode, an
+     * errand started, finished or dropped, "¡para!", the connection ended). A chat turn that read 7 when it began and
+     * finds 8 when its answer arrives is answering something that no longer stands. Safe from any thread; 0 for a
+     * villager whose plans have not changed since the server started.
+     */
+    public static int generacion(UUID villager) {
+        return GENERACION.getOrDefault(villager, 0);
+    }
+
+    /** What it is doing changed: answers worked out before now are about something else. */
+    public static void nuevaGeneracion(UUID villager) {
+        GENERACION.merge(villager, 1, Integer::sum);
     }
 
     /** The will of this villager, as saved in it. */
@@ -230,12 +253,16 @@ public final class Voluntad {
 
     /** The connection ended (the job was dropped or changed): back to nothing, standing up, nothing saved. */
     public static void olvidar(VillagerEntityMCA villager) {
+        nuevaGeneracion(villager.getUuid());
         Voluntad w = ALL.remove(villager);
         if (w != null) {
             w.leave(villager, w.modo, Modo.LIBRE);
         }
         if (!villager.getVillagerBrain().getWill().isEmpty()) {
             villager.getVillagerBrain().setWill("");
+        }
+        if (!villager.getVillagerBrain().getErrand().isEmpty()) {
+            villager.getVillagerBrain().setErrand(new NbtCompound());
         }
     }
 
@@ -528,6 +555,7 @@ public final class Voluntad {
     private void alLado(ServerWorld world, VillagerEntityMCA villager, PlayerEntity player) {
         Entrega en = entrega;
         entrega = null;
+        save(villager);
         String n = Companero.nombre(villager, player);
         if (!en.auto() || !(player instanceof ServerPlayerEntity sp)) {
             hablar(world, villager, player, en.es(), en.en());
@@ -607,8 +635,10 @@ public final class Voluntad {
         w.entrega = null;
         w.oferta = null;
         w.encargo = e;
+        w.retomar = false;
         w.change(villager, Modo.ENCARGO, player, null, name + " me pidió que " + e.pensando());
         task.empezarEncargo(world, villager, e);
+        w.save(villager); // with the count it starts from
         String[] line = e.empiezo();
         w.dicho(tipo.name(), line[0], line[1]);
         return "You set off at once to do it yourself, with your own hands, still connected: " + e.english() + ". When it is done you "
@@ -631,6 +661,7 @@ public final class Voluntad {
             Map<Item, Integer> got = e.ganado(villager);
             ProspectingTask.of(villager).dejarEncargo(world, villager);
             w.encargo = null;
+            w.retomar = false;
             w.volverTras(world, villager, name + " me dijo que lo deje");
             if (!got.isEmpty()) {
                 w.oferta = new Entrega(e.para, got, true, "", "");
@@ -718,6 +749,7 @@ public final class Voluntad {
             }
             // too far to throw it: it brings it, and goes back to what it was doing after
             w.entrega = new Entrega(en.para(), en.cosas(), true, "", "");
+            w.save(villager);
             if (w.modo != Modo.SIGUIENDO || !player.getUuid().equals(w.quien)) {
                 if (w.encargo == null) {
                     w.tras = w.debajo();
@@ -794,10 +826,17 @@ public final class Voluntad {
         if ((villager.age & 1) == 0) {
             Retina.look(world, villager);
         }
+        if (retomar) {
+            retomar = false;
+            task.retomarEncargo(world, villager, e);
+            save(villager);
+        }
         Encargo.Fin fin = task.food() <= 4 && ProspectingTask.comidaEnMochila(villager) == 0 ? Encargo.Fin.HAMBRE
                 : world.getTime() - desde > e.tipo.limite ? Encargo.Fin.TIEMPO : task.encargo(world, villager, e);
         if (fin != Encargo.Fin.SIGUE) {
             terminarEncargo(world, villager, task, e, fin);
+        } else if (e.hecho != hechoGuardado) {
+            save(villager); // how far along it is, so a restart does not start the count over
         }
     }
 
@@ -1122,6 +1161,7 @@ public final class Voluntad {
             // to their side with it, handed over there; then back to what it was doing
             change(villager, Modo.SIGUIENDO, para, null, "le llevo a " + n + " " + whatEs);
             entrega = new Entrega(e.para, got, true, "", "");
+            save(villager);
             if (fin != Encargo.Fin.LISTO) {
                 hablar(world, villager, para, why[0] + " Te llevo " + whatEs + ".", why[1] + " I'm bringing you " + whatEn + ".");
             }
@@ -1139,6 +1179,7 @@ public final class Voluntad {
         String en = (fin == Encargo.Fin.LISTO ? "Done, " + n + "! I got " : why[1] + " I got ") + whatEn + ". Want it?";
         if (modo == Modo.SIGUIENDO && para.getUuid().equals(quien)) {
             entrega = new Entrega(e.para, got, false, es, en); // said at their side
+            save(villager);
         } else {
             hablar(world, villager, para, es, en);
             oferta = new Entrega(e.para, got, true, es, en);
@@ -1538,6 +1579,7 @@ public final class Voluntad {
         }
         leave(villager, from, to);
         modo = to;
+        nuevaGeneracion(villager.getUuid());
         if (player != null) {
             quien = player.getUuid();
             quienRef = new WeakReference<>(player);
@@ -1582,6 +1624,7 @@ public final class Voluntad {
             ProspectingTask.of(villager).dejarEncargo(world, villager);
             MCA.LOGGER.info("[Tropeles] {} deja el encargo de {} ({})", villager.getName().getString(), encargo.paraNombre, encargo.tipo.palabra);
             encargo = null;
+            retomar = false;
             tras = Modo.LIBRE;
             trasQuien = null;
             trasEspera = null;
@@ -1629,27 +1672,70 @@ public final class Voluntad {
         return back;
     }
 
+    /**
+     * Kept in the villager so a restart finds it as it was: following someone, waiting somewhere, or on an errand (what
+     * it is, how far along, what it carried when it started, what it goes back to after it), and the things it is
+     * bringing someone. The house it builds is kept with the world ({@link ObrasMundo}).
+     */
     private void save(VillagerEntityMCA villager) {
         Modo kept = modo == Modo.ALERTA ? debajo : modo;
         UUID who = modo == Modo.ALERTA ? debajoQuien : quien;
         BlockPos spot = modo == Modo.ALERTA ? debajoEspera : espera;
-        if (kept == Modo.ENCARGO) {
-            // a relog ends the errand: it is back to what it was doing for them
+        NbtCompound guardado = new NbtCompound();
+        if (kept == Modo.ENCARGO && encargo != null) {
+            NbtCompound e = encargo.toNbt();
+            e.putLong("desde", desde);
+            e.putString("tras", tras.name());
+            if (trasQuien != null) {
+                e.putUuid("trasQuien", trasQuien);
+            }
+            if (trasEspera != null) {
+                e.putLong("trasEspera", trasEspera.asLong());
+            }
+            guardado.put("encargo", e);
+            hechoGuardado = encargo.hecho;
+        } else if (kept == Modo.ENCARGO) {
+            // no errand after all: it is back to what it was doing for them
             kept = tras;
             who = trasQuien;
             spot = trasEspera;
         }
+        if (entrega != null) {
+            NbtCompound d = new NbtCompound();
+            d.putUuid("para", entrega.para());
+            d.put("cosas", Encargo.cosas(entrega.cosas()));
+            d.putBoolean("auto", entrega.auto());
+            d.putString("es", entrega.es());
+            d.putString("en", entrega.en());
+            guardado.put("entrega", d);
+        }
         String text = switch (kept) {
             case SIGUIENDO, CONOCIENDO -> who == null ? "" : "SIGUIENDO " + who;
             case ESPERANDO -> spot == null ? "" : "ESPERANDO " + spot.getX() + " " + spot.getY() + " " + spot.getZ() + (who == null ? "" : " " + who);
+            case ENCARGO -> "ENCARGO";
             default -> "";
         };
         if (!text.equals(villager.getVillagerBrain().getWill())) {
             villager.getVillagerBrain().setWill(text);
         }
+        if (!guardado.equals(villager.getVillagerBrain().getErrand())) {
+            villager.getVillagerBrain().setErrand(guardado);
+        }
     }
 
     private void load(VillagerEntityMCA villager) {
+        NbtCompound kept = villager.getVillagerBrain().getErrand();
+        if (kept.contains("entrega")) {
+            try {
+                NbtCompound d = kept.getCompound("entrega");
+                Map<Item, Integer> cosas = Encargo.cosas(d.getCompound("cosas"));
+                if (d.containsUuid("para") && !cosas.isEmpty()) {
+                    entrega = new Entrega(d.getUuid("para"), cosas, d.getBoolean("auto"), d.getString("es"), d.getString("en"));
+                }
+            } catch (RuntimeException ignored) {
+                entrega = null;
+            }
+        }
         String text = villager.getVillagerBrain().getWill();
         if (text == null || text.isBlank()) {
             return;
@@ -1663,15 +1749,54 @@ public final class Voluntad {
                 modo = Modo.ESPERANDO;
                 espera = new BlockPos(Integer.parseInt(parts[1]), Integer.parseInt(parts[2]), Integer.parseInt(parts[3]));
                 quien = parts.length >= 5 ? UUID.fromString(parts[4]) : null;
+            } else if (parts[0].equals("ENCARGO")) {
+                loadEncargo(kept.getCompound("encargo"));
             }
             if (modo != Modo.LIBRE) {
-                MCA.LOGGER.info("[Tropeles] {} recuerda que estaba {}", villager.getName().getString(), modo.palabra());
+                MCA.LOGGER.info("[Tropeles] {} recuerda que estaba {}{}", villager.getName().getString(), modo.palabra(),
+                        encargo == null ? "" : ": " + encargo.pensando());
             }
         } catch (RuntimeException e) {
             modo = Modo.LIBRE;
             quien = null;
             espera = null;
+            encargo = null;
         }
+    }
+
+    /** The errand it was on before a restart, or (when it cannot be read back) what it was doing for them before it. */
+    private void loadEncargo(NbtCompound nbt) {
+        Encargo e = Encargo.fromNbt(nbt);
+        Modo back;
+        try {
+            back = Modo.valueOf(nbt.getString("tras"));
+        } catch (IllegalArgumentException wrong) {
+            back = Modo.LIBRE;
+        }
+        if (back == Modo.ENCARGO || back == Modo.ALERTA || back == Modo.CONOCIENDO) {
+            back = Modo.SIGUIENDO;
+        }
+        UUID backWho = nbt.containsUuid("trasQuien") ? nbt.getUuid("trasQuien") : null;
+        BlockPos backSpot = nbt.contains("trasEspera") ? BlockPos.fromLong(nbt.getLong("trasEspera")) : null;
+        if (back == Modo.SIGUIENDO && backWho == null || back == Modo.ESPERANDO && backSpot == null || back == Modo.OBRA) {
+            back = Modo.LIBRE; // a house it was building comes back by itself ({@link #volverAObra})
+        }
+        if (e == null) {
+            modo = back;
+            quien = back == Modo.LIBRE ? null : backWho;
+            espera = back == Modo.ESPERANDO ? backSpot : null;
+            return;
+        }
+        modo = Modo.ENCARGO;
+        encargo = e;
+        quien = e.para;
+        quienNombre = e.paraNombre;
+        desde = nbt.getLong("desde");
+        tras = back;
+        trasQuien = backWho;
+        trasEspera = backSpot;
+        hechoGuardado = e.hecho;
+        retomar = true;
     }
 
     /** The "pensando" line: the mode, the goal, and why. */

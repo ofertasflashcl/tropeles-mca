@@ -96,6 +96,7 @@ public final class Interrupcion {
     public static String detener(PlayerEntity player, VillagerEntityMCA villager, boolean es) {
         UUID id = villager.getUuid();
         ULTIMA.put(id, System.currentTimeMillis());
+        Voluntad.nuevaGeneracion(id);
         String how = null;
         if (Voluntad.conectado(villager)) {
             how = Voluntad.alerta(villager, player, es);
