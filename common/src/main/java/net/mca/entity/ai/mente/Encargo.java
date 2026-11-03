@@ -11,7 +11,10 @@ import net.minecraft.item.FishingRodItem;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
+import net.minecraft.nbt.NbtCompound;
+import net.minecraft.registry.Registries;
 import net.minecraft.registry.tag.ItemTags;
+import net.minecraft.util.Identifier;
 import org.jetbrains.annotations.Nullable;
 
 import java.text.Normalizer;
@@ -87,16 +90,96 @@ public final class Encargo {
     /** The bag (and hands) when it started: what came in since is what it got. */
     private final Map<Item, Integer> antes;
 
-    private Encargo(Tipo tipo, int cuanto, boolean traer, @Nullable Item cosa, @Nullable Class<?> presa, PlayerEntity para, String paraNombre,
+    private Encargo(Tipo tipo, int cuanto, boolean traer, @Nullable Item cosa, @Nullable Class<?> presa, UUID para, String paraNombre,
                     Map<Item, Integer> antes) {
         this.tipo = tipo;
         this.cuanto = cuanto;
         this.traer = traer;
         this.cosa = cosa;
         this.presa = presa;
-        this.para = para.getUuid();
+        this.para = para;
         this.paraNombre = paraNombre;
         this.antes = antes;
+    }
+
+    // ------------------------------------------------------------------ kept in the villager across a restart ({@link Voluntad})
+
+    /** The animals one can be sent to hunt, by a name that does not change with the game's own class names. */
+    private static final Map<String, Class<?>> PRESAS = Map.of(
+            "vaca", net.minecraft.entity.passive.CowEntity.class,
+            "cerdo", net.minecraft.entity.passive.PigEntity.class,
+            "oveja", net.minecraft.entity.passive.SheepEntity.class,
+            "gallina", net.minecraft.entity.passive.ChickenEntity.class,
+            "conejo", net.minecraft.entity.passive.RabbitEntity.class);
+
+    /** What it was asked, for whom, how far along, and what it carried when it started. */
+    public NbtCompound toNbt() {
+        NbtCompound nbt = new NbtCompound();
+        nbt.putString("tipo", tipo.name());
+        nbt.putInt("cuanto", cuanto);
+        nbt.putBoolean("traer", traer);
+        if (cosa != null) {
+            nbt.putString("cosa", Registries.ITEM.getId(cosa).toString());
+        }
+        PRESAS.forEach((name, kind) -> {
+            if (kind == presa) {
+                nbt.putString("presa", name);
+            }
+        });
+        nbt.putUuid("para", para);
+        nbt.putString("paraNombre", paraNombre);
+        nbt.putInt("hecho", hecho);
+        nbt.putInt("base", base);
+        nbt.put("antes", cosas(antes));
+        return nbt;
+    }
+
+    /** The errand as it was kept, or null when it cannot be read back (a thing to make that no longer exists). */
+    @Nullable
+    public static Encargo fromNbt(NbtCompound nbt) {
+        try {
+            Tipo tipo = Tipo.valueOf(nbt.getString("tipo"));
+            Item cosa = nbt.contains("cosa") ? item(nbt.getString("cosa")) : null;
+            if (tipo == Tipo.HACER && cosa == null || !nbt.containsUuid("para")) {
+                return null;
+            }
+            Encargo e = new Encargo(tipo, Math.max(1, nbt.getInt("cuanto")), nbt.getBoolean("traer"), cosa, PRESAS.get(nbt.getString("presa")),
+                    nbt.getUuid("para"), nbt.getString("paraNombre"), cosas(nbt.getCompound("antes")));
+            e.hecho = nbt.getInt("hecho");
+            e.base = nbt.getInt("base");
+            return e;
+        } catch (RuntimeException ignored) {
+            return null;
+        }
+    }
+
+    /** Things and how many, as kept: item id -> count. */
+    public static NbtCompound cosas(Map<Item, Integer> cosas) {
+        NbtCompound nbt = new NbtCompound();
+        cosas.forEach((item, n) -> nbt.putInt(Registries.ITEM.getId(item).toString(), n));
+        return nbt;
+    }
+
+    /** Things and how many, read back (anything the game no longer has is left out). */
+    public static Map<Item, Integer> cosas(NbtCompound nbt) {
+        Map<Item, Integer> all = new LinkedHashMap<>();
+        for (String key : nbt.getKeys()) {
+            Item item = item(key);
+            if (item != null) {
+                all.put(item, nbt.getInt(key));
+            }
+        }
+        return all;
+    }
+
+    @Nullable
+    private static Item item(String id) {
+        Identifier key = Identifier.tryParse(id);
+        if (key == null || !Registries.ITEM.containsId(key)) {
+            return null;
+        }
+        Item item = Registries.ITEM.get(key);
+        return item == Items.AIR ? null : item;
     }
 
     /**
@@ -121,7 +204,7 @@ public final class Encargo {
         }
         boolean traer = tipo == Tipo.HACER ? !PARA_SI.matcher(t).find() : PARA_EL.matcher(t).find();
         Class<?> presa = tipo == Tipo.CAZAR ? presa(t) : null;
-        return new Encargo(tipo, n, traer, cosa, presa, player, name, bolsa(villager));
+        return new Encargo(tipo, n, traer, cosa, presa, player.getUuid(), name, bolsa(villager));
     }
 
     /** The animal the words name ("caza una vaca", "mata dos gallinas"), or null. */

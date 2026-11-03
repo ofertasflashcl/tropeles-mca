@@ -44,9 +44,13 @@ public class VillagerBrain<E extends MobEntity & VillagerLike<E>> {
     private static final CDataParameter<Boolean> WEAR_ARMOR = CParameter.create("wearArmor", false);
     /** What a connected villager's will is set on, kept across a relog ({@link Voluntad}): "", "SIGUIENDO uuid", "ESPERANDO x y z". */
     private static final CDataParameter<String> WILL = CParameter.create("tropelesVoluntad", "");
+    /** A connected villager's food bar (0-20), kept across a restart; -1 before it ever had one ({@link net.mca.entity.ai.brain.tasks.chore.ProspectingTask}). */
+    private static final CDataParameter<Integer> FOOD = CParameter.create("tropelesComida", -1);
+    /** The errand it is on, or the things it is bringing someone, kept across a restart ({@link Voluntad}); empty when none. */
+    private static final CDataParameter<NbtCompound> ERRAND = CParameter.create("tropelesEncargo", new NbtCompound());
 
     public static <E2 extends Entity> CDataManager.Builder<E2> createTrackedData(CDataManager.Builder<E2> builder) {
-        return builder.addAll(MEMORIES, PERSONALITY, MOOD, MOVE_STATE, ACTIVE_CHORE, CHORE_ASSIGNING_PLAYER, PANICKING, WEAR_ARMOR, WILL);
+        return builder.addAll(MEMORIES, PERSONALITY, MOOD, MOVE_STATE, ACTIVE_CHORE, CHORE_ASSIGNING_PLAYER, PANICKING, WEAR_ARMOR, WILL, FOOD, ERRAND);
     }
 
     private static final long GRIEVE_COOLDOWN = 24000 * 7;
@@ -286,6 +290,26 @@ public class VillagerBrain<E extends MobEntity & VillagerLike<E>> {
 
     public void setWill(String will) {
         entity.setTrackedValue(WILL, will == null ? "" : will);
+    }
+
+    /** The food bar a connected villager last had (0-20), or -1 when it never had one. */
+    public int getFood() {
+        Integer food = entity.getTrackedValue(FOOD);
+        return food == null ? -1 : food;
+    }
+
+    public void setFood(int food) {
+        entity.setTrackedValue(FOOD, food);
+    }
+
+    /** The errand (or delivery) a connected villager is on, as saved ({@link Voluntad}); never null, empty when none. */
+    public NbtCompound getErrand() {
+        NbtCompound errand = entity.getTrackedValue(ERRAND);
+        return errand == null ? new NbtCompound() : errand;
+    }
+
+    public void setErrand(NbtCompound errand) {
+        entity.setTrackedValue(ERRAND, errand == null ? new NbtCompound() : errand);
     }
 
     public void setArmorWear(boolean s) {

@@ -221,6 +221,9 @@ public class ProspectingTask extends AbstractChoreTask {
     // the body
     private int food = FOOD_MAX;
     private int foodTicks;
+    /** The food bar was read back from the villager (a restart keeps its hunger), and what was last written there. */
+    private boolean comidaLeida;
+    private int comidaGuardada = -1;
     private int healTicks;
     private int heals;
     private int decideTicks = 19;
@@ -836,6 +839,7 @@ public class ProspectingTask extends AbstractChoreTask {
      * phase is about. Never in the middle of a jump: the step lands first.
      */
     private void work(ServerWorld world, VillagerEntityMCA villager, boolean look) {
+        comidaDe(villager);
         if (!Voluntad.conectado(villager) && net.mca.entity.ai.mente.Interrupcion.pausado(villager) && !motor.midStep(villager)) {
             // stopped with "¡para!": the hands and legs wait with it, the mine and the plan stay as they were
             Motor.standStill(villager);
@@ -1081,6 +1085,30 @@ public class ProspectingTask extends AbstractChoreTask {
             }
         }
         MCA.LOGGER.info("[Tropeles] {} empieza un encargo de {}: {} (traer {})", name(), e.paraNombre, e.tipo.palabra, e.traer);
+    }
+
+    /**
+     * An errand that was under way when the world was closed goes on: what it already got still counts (the counts of
+     * crops, prey and catches start from nothing again, the logs and things made are in its bag), and its hands are
+     * asked again for what is missing.
+     */
+    public void retomarEncargo(ServerWorld world, VillagerEntityMCA villager, net.mca.entity.ai.mente.Encargo e) {
+        int hecho = e.hecho;
+        int base = e.base;
+        empezarEncargo(world, villager, e);
+        switch (e.tipo) {
+            case TALAR -> {
+                e.base = base;
+                progreso.pedirTroncos(e.base + e.cuanto);
+            }
+            case HACER -> {
+                e.base = base;
+                progreso.pedir(e.cosa, e.base + e.cuanto);
+            }
+            default -> e.base -= hecho;
+        }
+        e.hecho = hecho;
+        MCA.LOGGER.info("[Tropeles] {} retoma el encargo de {} tras reiniciar: {}", name(), e.paraNombre, e.tipo.palabra);
     }
 
     /** The errand is over or called off: what it asked of the hands is let go of (a hunt, the line, a table it put down). */
@@ -1408,6 +1436,7 @@ public class ProspectingTask extends AbstractChoreTask {
     /** For the in-game checks: how full its food bar is, and where home is. */
     public void setFood(int points) {
         food = points;
+        comidaLeida = true; // set on purpose: what the villager kept from before does not overwrite it
     }
 
     public int food() {
@@ -1601,8 +1630,22 @@ public class ProspectingTask extends AbstractChoreTask {
 
     // ------------------------------------------------------------------ the body
 
-    /** The food bar drops while it works; well fed it mends; low, or hurt, it eats from its bag. */
+    /** The food bar it had before a restart (kept in the villager), read once, before anything asks how hungry it is. */
+    private void comidaDe(VillagerEntityMCA villager) {
+        if (comidaLeida) {
+            return;
+        }
+        comidaLeida = true;
+        int saved = villager.getVillagerBrain().getFood();
+        if (saved >= 0) {
+            food = Math.min(FOOD_MAX, saved);
+        }
+        comidaGuardada = food;
+    }
+
+    /** The food bar drops while it works; well fed it mends; low, or hurt, it eats from its bag. Kept in the villager. */
     private void metabolism(ServerWorld world, VillagerEntityMCA villager) {
+        comidaDe(villager);
         if (++foodTicks >= FOOD_TICKS) {
             foodTicks = 0;
             food = Math.max(0, food - 1);
@@ -1624,6 +1667,10 @@ public class ProspectingTask extends AbstractChoreTask {
             if (!eatBest(world, villager) && food < GO_HOME_BELOW) {
                 askForFood(world, villager);
             }
+        }
+        if (food != comidaGuardada) {
+            comidaGuardada = food;
+            villager.getVillagerBrain().setFood(food);
         }
     }
 

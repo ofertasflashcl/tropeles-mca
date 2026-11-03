@@ -15,7 +15,7 @@ IDs de la auditoría de Sol. Estados: **propuesta** (sugerida, nadie la confirm�
 | B02 | `CommandPolicy` común para menú, paquetes, chat local y modelo; `villagerChatAIUseTools` se respeta (F02, F06) | Sol | `network/c2s/*`, `Config.java`, la puerta de acciones de `chatAI/*` | propuesta |
 | B03 | Paquetes con codecs explícitos en vez de serialización Java (F01) | Sol | `cobalt/network/*`, `*/NetworkHandlerImpl.java` | propuesta |
 | B10 | El robo de cofre necesita el actor real del inventario (F07) | Sol | `body/Cofres.java`, `mixin/MixinScreenHandler.java` | propuesta |
-| F22 | Hambre y encargo sobreviven a reiniciar | libre | `ProspectingTask.java`, `mente/Voluntad.java` | libre |
+| F22 | Hambre y encargo sobreviven a reiniciar | Claude | `ProspectingTask.java`, `mente/Voluntad.java`, `mente/Encargo.java`, `brain/VillagerBrain.java` | tomada |
 | B11 | ActionToken, cancelación y `ServerRuntime` (F10, F11, F15) | libre | `chatAI/ChatAI.java`, `chatAI/OpenAIChatAI.java` | libre |
 | F16 | Crafteo con las recetas reales (`RecipeManager`) | libre | `obra/Taller.java`, `body/Progreso.java` | libre |
 | F17 | Recogida que respeta demora y dueño del objeto | libre | `body/Hands.java` | libre |
