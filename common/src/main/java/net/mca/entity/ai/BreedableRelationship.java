@@ -188,6 +188,7 @@ public class BreedableRelationship extends Relationship<VillagerEntityMCA> {
 
             //take the gift
             getGiftSaturation().add(stack);
+            net.mca.entity.ai.nucleo.Nucleo.regalo(entity, player, stack, response == Response.BEST);
             entity.getWorld().sendEntityStatus(entity, Status.MCA_VILLAGER_POS_INTERACTION);
             if (toChest) {
                 net.mca.entity.ai.body.Cofres.storeGift((net.minecraft.server.world.ServerWorld) entity.getWorld(), entity, stack.split(1));

@@ -453,6 +453,7 @@ public final class Cofres {
         owner.getVillagerBrain().getMemoriesForPlayer(thief).modHearts(-loss);
         owner.getVillagerBrain().modifyMoodValue(-5);
         Item item = Registries.ITEM.get(new Identifier(theft.what()));
+        net.mca.entity.ai.nucleo.Nucleo.robo(owner, thief, item, theft.items(), caughtInTheAct);
         if (thief instanceof ServerPlayerEntity sp && sp.networkHandler != null) {
             owner.sendChatMessage(sp, caughtInTheAct ? "chore.chest.caught" : "chore.chest.stolen", theft.items(), item.getName());
         }

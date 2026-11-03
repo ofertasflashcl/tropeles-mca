@@ -682,7 +682,13 @@ public class VillagerEntityMCA extends VillagerEntity implements VillagerLike<Vi
             damageAmount *= 0.0f;
         }
 
-        return super.damage(source, damageAmount);
+        float healthBefore = getHealth();
+        boolean hit = super.damage(source, damageAmount);
+        if (hit && !getWorld().isClient) {
+            // the incident, as it lived it and as those around saw it ({@link net.mca.entity.ai.nucleo.Nucleo})
+            net.mca.entity.ai.nucleo.Nucleo.herido(this, source, Math.max(0.5f, healthBefore - getHealth()));
+        }
+        return hit;
     }
 
     long lastCooldown = 0L;
@@ -861,6 +867,8 @@ public class VillagerEntityMCA extends VillagerEntity implements VillagerLike<Vi
                 net.mca.entity.ai.mente.Interrupcion.tick(serverWorld, this);
                 // doors: opened by hand on the way, shut behind it once through
                 net.mca.entity.ai.body.Puertas.tick(serverWorld, this);
+                // its inner life, once a second: drives, attention, sleep's work, what it does with others
+                net.mca.entity.ai.nucleo.Nucleo.tick(serverWorld, this);
             }
 
             // panic screams
@@ -1034,6 +1042,8 @@ public class VillagerEntityMCA extends VillagerEntity implements VillagerLike<Vi
 
         //alert family and nearby villagers
         relations.onDeath(cause);
+        // those who saw it die keep it, and mourn it as much as they loved it
+        net.mca.entity.ai.nucleo.Nucleo.murio(this, cause);
 
         //distribute the hearts across the other villagers
         //this prevents rapid drops in village reputation as well as bounty hunters to know what you did

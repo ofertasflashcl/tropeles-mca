@@ -80,6 +80,12 @@ public final class Acciones {
         return Normalizer.normalize(text, Normalizer.Form.NFD).replaceAll("\\p{M}", "").toLowerCase(Locale.ROOT);
     }
 
+    /** True when the word names something one can carry ("pan", "diamantes", "iron"): a claim about it can be checked against a bag. */
+    public static boolean esCosa(String word) {
+        String w = normalize(word);
+        return WORDS.containsKey(w) || WORDS.containsValue(w);
+    }
+
     /** What was asked for, read from plain words: the item words and how many (-1 for "as much as there is"). */
     public record Request(List<String> words, int count, boolean food) {
     }

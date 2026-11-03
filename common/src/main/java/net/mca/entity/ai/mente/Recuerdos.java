@@ -161,6 +161,7 @@ public final class Recuerdos {
             Recuerdos r = of(villager);
             if (r != null) {
                 r.anotar(villager.getWorld().getTime(), tipo, texto, donde);
+                net.mca.entity.ai.nucleo.Nucleo.desdeRecuerdo(villager, tipo, texto, donde);
             }
         } catch (RuntimeException e) {
             MCA.LOGGER.warn("[Tropeles] {} no pudo recordar «{}»: {}", villager.getName().getString(), texto, e.toString());

@@ -231,6 +231,15 @@ public final class MenteLocal {
             order("climbed", "por donde (subiste|saliste|bajaste|viniste|entraste|llegaste|pasaste)|como (subiste|saliste|llegaste)|"
                     + "por que camino (subiste|saliste|bajaste|viniste)|how did you (get|come|climb) (up|out|here)|which way did you (come|go|climb)|"
                     + "the way you came"),
+            // its inner life ({@link net.mca.entity.ai.nucleo.Nucleo}): why it ran, who did what, how it feels, the news, what it knows of someone
+            order("fled", "por (que|q) (huiste|escapaste|arrancaste|corriste|te alejaste|te arrancaste|saliste corriendo)|"
+                    + "why did you (run|flee|run away|back off)"),
+            order("who", "quien te (pego|golpeo|ataco|hirio|lastimo|robo|regalo|dio)|quien (mato|asesino) a|who (hit|attacked|hurt|robbed|killed|gave)"),
+            order("mad", "(estas|andas) (enojad[oa]|molest[oa]|enfadad[oa]|triste|sentid[oa]|picad[oa]|de luto)( conmigo)?|me odias|te caigo (mal|bien)|"
+                    + "que sientes|que te pasa|are you (mad|angry|upset|sad)( at me| with me)?|do you (hate|like) me"),
+            order("news", "que (paso|ha pasado|pasa) hoy|alguna novedad|que hay de nuevo|que (se cuenta|cuentan|me cuentas)|algun chisme|"
+                    + "que (noticias|chismes) hay|what('s| is) new|any news|any gossip|what happened today"),
+            order("about", "que (sabes|opinas|piensas|pensas) (de|del|sobre)|conoces a|what do you (know|think) (of|about)"),
             // its own mind ({@link net.mca.entity.ai.mente.Conciencia}): what it thinks, and why it did what it did
             order("thinking", "en (que|q) (piensas|estas pensando|pensabas|andas pensando)|(que|q) (piensas|estas pensando|pasa por tu cabeza)|"
                     + "what are you thinking( about)?|what('s| is) on your mind|what do you think|what were you thinking"),
@@ -534,8 +543,11 @@ public final class MenteLocal {
             }
         }
         for (Map.Entry<String, Pattern> entry : QUESTIONS) {
-            if (entry.getValue().matcher(t).find()) {
-                return new Intent(null, "", entry.getKey(), spanish);
+            Matcher asked = entry.getValue().matcher(t);
+            if (asked.find()) {
+                // "¿qué sabes de Rosa?" keeps who; "¿quién te robó?" keeps what was done
+                String about = "about".equals(entry.getKey()) ? t.substring(asked.end()).trim() : "who".equals(entry.getKey()) ? t : "";
+                return new Intent(null, about, entry.getKey(), spanish);
             }
         }
         return new Intent(null, "", null, spanish);
@@ -615,6 +627,10 @@ public final class MenteLocal {
             case "bye" -> pick(villager, es ? new String[]{"¡Nos vemos, " + name + "!", "¡Chao! Cuídate.", "Hasta luego, " + name + "."}
                     : new String[]{"See you, " + name + "!", "Bye! Take care.", "Later, " + name + "."});
             case "hungry" -> hungry(villager, es);
+            case "mad", "news", "who", "fled", "about" -> {
+                String s = net.mca.entity.ai.nucleo.Nucleo.responder(villager, player, q, intent.argument(), es);
+                yield s != null ? s : help(es);
+            }
             case "found" -> found(villager, es);
             case "obra" -> {
                 String s = Voluntad.obraEstado(villager, es);

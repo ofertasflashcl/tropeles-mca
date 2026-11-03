@@ -103,7 +103,8 @@ public final class Conciencia {
     private static volatile int fallos;
 
     /** A thought, as it came back from a mind (or from its own). */
-    record Pensamiento(String pienso, String leccion, String quiero, String argumento, String porque, String dice, String mente, String evento) {
+    record Pensamiento(String pienso, String leccion, String quiero, String argumento, String porque, String dice, String mente, String evento,
+                       String cita) {
     }
 
     private long proximoMs = System.currentTimeMillis() + 20_000 + (long) (Math.random() * 30_000);
@@ -152,7 +153,7 @@ public final class Conciencia {
                     ultimoMs = nowMs;
                     evento = "";
                     if (local != null) {
-                        aplicar(world, villager, will, task, new Pensamiento(local, "", "", "", "", "", "mente local", ""));
+                        aplicar(world, villager, will, task, new Pensamiento(local, "", "", "", "", "", "mente local", "", ""));
                     }
                 }
                 proximoMs = Math.max(proximoMs, nowMs + 20_000);
@@ -224,7 +225,7 @@ public final class Conciencia {
                         MCA.LOGGER.info("[Tropeles] {} quiso pensar pero ninguna mente respondió; piensa solo un rato", villagerName);
                         String local = pasado.isEmpty() ? null : pensarLocal(villager, null, pasado);
                         if (local != null) {
-                            listo.set(new Pensamiento(local, "", "", "", "", "", "mente local", pasado));
+                            listo.set(new Pensamiento(local, "", "", "", "", "", "mente local", pasado, ""));
                         }
                     } else {
                         fallos = 0;
@@ -249,7 +250,7 @@ public final class Conciencia {
                 + "herramientas, madera y comida, mina, vuelve a casa, guarda sus cosas. No eres un asistente. Piensas en primera persona, "
                 + "con sentido común, solo con lo que te dan abajo: nunca inventes lugares, cosas ni motivos. Aprende de lo que te pasó "
                 + "(atascos, caminos, hambre, peleas) para hacerlo mejor la próxima vez.\n"
-                + "Responde SOLO con un objeto JSON, nada más: {\"pienso\": \"\", \"leccion\": \"\", \"quiero\": \"\", \"porque\": \"\", \"dice\": \"\"}\n"
+                + "Responde SOLO con un objeto JSON, nada más: {\"pienso\": \"\", \"leccion\": \"\", \"quiero\": \"\", \"porque\": \"\", \"dice\": \"\", \"cita\": \"\"}\n"
                 + "- pienso: lo que piensas ahora, en español, máximo 25 palabras.\n"
                 + "- leccion: algo nuevo que aprendiste de lo que te pasó y te servirá después, en español y corto; \"\" si no hay nada nuevo "
                 + "(no repitas tus lecciones).\n"
@@ -258,6 +259,8 @@ public final class Conciencia {
                 + "cofre), minar <mineral> (buscar primero diamond, iron, gold, coal, copper, redstone, lapis o emerald), seguir-jugador "
                 + "(ir a acompañar a " + quien + "), esperar. Cambia de plan solo con una buena razón.\n"
                 + "- porque: la razón real de lo que quieres, con lo que sabes.\n"
+                + "- cita: los #números de los incidentes de abajo en los que se basa tu leccion (\"#12 #15\"); sin incidentes que la respalden, "
+                + "la leccion queda como una idea, no como algo que sabes.\n"
                 + "- dice: casi siempre \"\". Solo si tienes algo útil o importante que decirle a " + quien + " ahora, una frase corta en "
                 + (es ? "español (casual, como un jugador chileno)" : "English") + ".";
     }
@@ -305,6 +308,15 @@ public final class Conciencia {
             } catch (RuntimeException ignored) {
                 // without the scene
             }
+        }
+        try {
+            // the incidents that weigh most, with their #ids, how it knows each, and how it feels ({@link net.mca.entity.ai.nucleo.Nucleo})
+            String core = net.mca.entity.ai.nucleo.Nucleo.paraPensar(villager);
+            if (!core.isEmpty()) {
+                o.addProperty("incidentes", core);
+            }
+        } catch (RuntimeException ignored) {
+            // without them
         }
         JsonArray diary = new JsonArray();
         for (Recuerdos.Hecho h : r.hechos(HECHOS)) {
@@ -372,7 +384,8 @@ public final class Conciencia {
                 q = "seguir-con-lo-mio";
             }
             return new Pensamiento(pienso, field(o, 160, "leccion", "lección", "lesson"), q, arg,
-                    field(o, 200, "porque", "porqué", "why", "reason", "razon"), field(o, 160, "dice", "say", "decir"), mente, evento);
+                    field(o, 200, "porque", "porqué", "why", "reason", "razon"), field(o, 160, "dice", "say", "decir"), mente, evento,
+                    field(o, 60, "cita", "citas", "cite", "ids"));
         } catch (RuntimeException e) {
             return null;
         }
@@ -404,7 +417,8 @@ public final class Conciencia {
                 p.porque().isEmpty() ? "" : " porque " + p.porque());
         if (!p.leccion().isEmpty() && aprender(world, villager, p.leccion())) {
             Recuerdos.anotar(villager, "leccion", p.leccion(), at);
-            MCA.LOGGER.info("[Tropeles] {} aprendió: «{}»", name, p.leccion());
+            boolean grounded = net.mca.entity.ai.nucleo.Nucleo.reflexion(villager, p.leccion(), p.cita());
+            MCA.LOGGER.info("[Tropeles] {} aprendió: «{}»{}", name, p.leccion(), grounded ? " (basado en " + p.cita() + ")" : "");
         }
         querer(world, villager, will, task, p, now);
         if (!p.dice().isEmpty() && now - ultimoDicho >= DECIR_TICKS) {

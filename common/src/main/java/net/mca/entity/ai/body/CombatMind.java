@@ -337,6 +337,7 @@ public final class CombatMind {
         boolean creeperClose = target instanceof CreeperEntity && distance < 4.5;
         if (child || hurt && !ranged || creeperClose) {
             memory.doing("alejándose de " + target.getName().getString(), now);
+            net.mca.entity.ai.nucleo.Nucleo.huye(villager, target, child ? "soy chico" : creeperClose ? "iba a explotar" : "me quedaba poca vida");
             backOff(villager, target, ward, 6, 1.15);
             if (creeperClose && ranged && !child) {
                 holdRanged(villager);

@@ -86,7 +86,7 @@ public class OpenAIChatAI implements ChatAIStrategy {
     private record Prepared(String playerName, String villagerName, List<Pair<String, String>> history,
                             MenteLocal.Intent intent, @Nullable String outcome, boolean refused, boolean done, String open,
                             String inHouse, List<Cerebros.Mind> minds, String local, @Nullable String image,
-                            @Nullable Boolean goesBack, @Nullable BlockPos pos) {
+                            @Nullable Boolean goesBack, @Nullable BlockPos pos, @Nullable net.mca.entity.ai.nucleo.Anclaje anclaje) {
     }
 
     /**
@@ -138,6 +138,14 @@ public class OpenAIChatAI implements ChatAIStrategy {
         MinecraftServer server = player.getServer();
         if (server == null) {
             return Optional.of(MenteLocal.shrug(MenteLocal.spanish(msg)));
+        }
+        // the answer to a question it asked about a rumour ("¿es verdad?") is weighed by its own mind
+        String verdict = onServer(server, () -> net.mca.entity.ai.nucleo.Nucleo.respuesta(villager, player, msg));
+        if (verdict != null) {
+            if (early == null) {
+                remember(villager.getUuid(), player.getUuid(), msg, verdict);
+            }
+            return Optional.of(verdict);
         }
         // the in-game checks keep this thread offline; the world is read on the server thread, so it is told
         boolean offline = Cerebros.OFFLINE.get();
@@ -208,6 +216,10 @@ public class OpenAIChatAI implements ChatAIStrategy {
         if (message != null && MenteLocal.clearlyNot(message, es)) {
             MCA.LOGGER.info("[Tropeles] {} contestó en otro idioma, habla su propia mente: «{}»", prep.villagerName(), message);
             message = null;
+        }
+        if (message != null && prep.anclaje() != null) {
+            // only what it was told: sentences with places, people or things it never had are not said
+            message = prep.anclaje().filtrar(message);
         }
         if (prep.refused() || prep.intent().order()) {
             // the order was already handled here: the model only finds the words, and may not claim another one
@@ -578,7 +590,8 @@ public class OpenAIChatAI implements ChatAIStrategy {
         // "¿dónde estás?": the answer will hold the exact numbers, whoever says it
         BlockPos pos = !intent.order() && ("where".equals(intent.question()) || "coords".equals(intent.question())) ? villager.getBlockPos() : null;
         return new Prepared(playerName, villagerName, history, intent, outcome, refused, done, open, inHouse.toString(),
-                minds, local, image, goesBack, pos);
+                minds, local, image, goesBack, pos, net.mca.entity.ai.nucleo.Anclaje.de(villager, player, open + "\n" + inHouse + "\n" + msg + "\n"
+                        + local + "\n" + history.stream().map(h -> h.getLeft() + "\n" + h.getRight()).collect(java.util.stream.Collectors.joining("\n"))));
     }
 
     /**

@@ -134,6 +134,16 @@ public class PerceptionModule {
             net.mca.MCA.LOGGER.warn("[Tropeles] los pensamientos de {} no se pudieron contar: {}", villager.getName().getString(), e.toString());
         }
 
+        // what happened between people, how it knows each thing, what it believes and feels ({@link net.mca.entity.ai.nucleo.Nucleo})
+        try {
+            String core = net.mca.entity.ai.nucleo.Nucleo.forModel(villager, player);
+            if (!core.isBlank()) {
+                input.add(core);
+            }
+        } catch (RuntimeException e) {
+            net.mca.MCA.LOGGER.warn("[Tropeles] el núcleo de {} no se pudo contar: {}", villager.getName().getString(), e.toString());
+        }
+
         // hands and bag
         ItemStack hand = villager.getMainHandStack();
         if (!hand.isEmpty()) {

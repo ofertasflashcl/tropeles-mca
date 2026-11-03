@@ -34,7 +34,7 @@ import java.util.Set;
  * line every {@value #COOLDOWN} ticks, and only to the player it is with (or the one who connected it) within
  * {@value #RANGE} blocks.
  */
-final class Iniciativa {
+public final class Iniciativa {
     static final int COOLDOWN = 900;
     static final double RANGE = 32;
     /** A monster this close to the player is worth a warning. */
@@ -255,7 +255,7 @@ final class Iniciativa {
     }
 
     /** Where a point lies from the player, by where they look: "a tu izquierda", "detrás de ti". */
-    private static String side(PlayerEntity player, Vec3d point, boolean es) {
+    public static String side(PlayerEntity player, Vec3d point, boolean es) {
         double dx = point.x - player.getX();
         double dz = point.z - player.getZ();
         if (dx * dx + dz * dz < 4.0) {
@@ -276,7 +276,7 @@ final class Iniciativa {
     }
 
     /** "un esqueleto" / "a skeleton". */
-    private static String[] monsterName(EntityType<?> type) {
+    public static String[] monsterName(EntityType<?> type) {
         String path = Registries.ENTITY_TYPE.getId(type).getPath();
         String en = type.getName().getString().toLowerCase(java.util.Locale.ROOT);
         String es = switch (path) {
