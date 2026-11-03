@@ -766,6 +766,7 @@ public final class Nucleo {
             boolean no = NIEGA.matcher(t).find();
             boolean si = !no && ADMITE.matcher(t).find();
             if (!no && !si) {
+                m.preguntaA = null; // the talk moved on: a later "sí" is not about the rumour
                 return null;
             }
             Episodio e = m.porOrigen(m.preguntaOrigen);
@@ -809,6 +810,18 @@ public final class Nucleo {
         } catch (RuntimeException ex) {
             falla("una respuesta", v, ex);
             return null;
+        }
+    }
+
+    /** It said {@code line} in chat to {@code player}: a question about a rumour stays open only while it is the last thing said. */
+    public static void dijo(VillagerEntityMCA v, UUID player, String line) {
+        try {
+            Mente m = VIVAS.get(v);
+            if (m != null && m.preguntaA != null && m.preguntaA.equals(player) && !line.equals(m.preguntaLinea)) {
+                m.preguntaA = null;
+            }
+        } catch (RuntimeException ignored) {
+            // nothing to close
         }
     }
 

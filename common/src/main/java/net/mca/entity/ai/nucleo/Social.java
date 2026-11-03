@@ -403,6 +403,7 @@ final class Social {
                 m.preguntaA = p.getUuid();
                 m.preguntaOrigen = best.origen;
                 m.preguntaHasta = now + 2400;
+                m.preguntaLinea = line;
             } else {
                 line = es ? name + ", te vi: " + best.narrarATi(true) + ". No me gustó nada." : name + ", I saw it: " + best.narrarATi(false) + ". I didn't like that at all.";
             }

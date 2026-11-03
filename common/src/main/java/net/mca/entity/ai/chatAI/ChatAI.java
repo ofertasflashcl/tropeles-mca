@@ -685,6 +685,8 @@ public class ChatAI {
             }
         }
         boolean here = !villager.isRemoved();
+        // a question it asked about a rumour stays open only while it is the last thing it said to them
+        net.mca.entity.ai.nucleo.Nucleo.dijo(villager, speakerId, answer);
         if (clearBar && speaker.networkHandler != null && !speaker.isRemoved()) {
             speaker.sendMessage(Text.empty(), true);
         }

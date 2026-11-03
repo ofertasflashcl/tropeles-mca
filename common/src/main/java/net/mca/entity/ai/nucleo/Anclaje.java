@@ -4,6 +4,7 @@ import net.mca.MCA;
 import net.mca.entity.VillagerEntityMCA;
 import net.mca.entity.ai.chatAI.Acciones;
 import net.mca.server.world.data.FamilyTree;
+import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.inventory.SimpleInventory;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
@@ -31,6 +32,10 @@ public final class Anclaje {
     private static final Pattern TENGO = Pattern.compile("(?<![a-z])(?<!no )(?<!ya no )(tengo|llevo|cargo|i have|i ve got|i got|i m carrying|i carry)\\s+"
             + "(?:(?:\\d+|un|una|unos|unas|algo de|algunos|algunas|varios|varias|mucho|mucha|muchos|muchas|harto|harta|hartos|hartas|"
             + "dos|tres|cuatro|cinco|seis|diez|a|an|some|two|three|a few|lots of|plenty of)\\s+)?(?:de\\s+)?([a-z]+(?: de [a-z]+| [a-z]+)?)");
+
+    /** Material words that name many items: a claim about them is not checked. */
+    private static final Set<String> VAGAS = Set.of("madera", "piedra", "piedras", "roca", "rocas", "tierra", "mineral", "minerales",
+            "lingote", "lingotes", "crudo", "cruda", "wood", "stone", "ore", "ingot", "ingots", "raw", "log", "logs", "cobblestone");
 
     private final List<int[]> coords;
     private final String contexto;
@@ -80,10 +85,15 @@ public final class Anclaje {
                     }
                 }
             }
+            // what it carries: the bag, and what it holds and wears ("tengo una espada" with the sword in its hand is true)
             SimpleInventory inv = v.getInventory();
-            SimpleInventory bolsa = new SimpleInventory(inv.size());
+            EquipmentSlot[] slots = EquipmentSlot.values();
+            SimpleInventory bolsa = new SimpleInventory(inv.size() + slots.length);
             for (int i = 0; i < inv.size(); i++) {
                 bolsa.setStack(i, inv.getStack(i).copy());
+            }
+            for (int i = 0; i < slots.length; i++) {
+                bolsa.setStack(inv.size() + i, v.getEquippedStack(slots[i]).copy());
             }
             return new Anclaje(coords, " " + Acciones.normalize(contexto) + " ", nombres, bolsa, v.getName().getString());
         } catch (RuntimeException e) {
@@ -146,8 +156,9 @@ public final class Anclaje {
             Matcher t = TENGO.matcher(n);
             while (t.find()) {
                 String cosa = t.group(2);
-                if (!Acciones.esCosa(cosa.split(" ")[0])) {
-                    continue;
+                String head = cosa.split(" ")[0];
+                if (!Acciones.esCosa(head) || VAGAS.contains(head)) {
+                    continue; // not a thing, or a material too broad to check ("madera" may be logs or planks)
                 }
                 Acciones.Request req = Acciones.read(cosa);
                 if (!req.words().isEmpty() && Acciones.find(bolsa, req) < 0) {

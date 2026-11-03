@@ -88,6 +88,8 @@ public final class Mente {
     UUID preguntaA;
     String preguntaOrigen = "";
     long preguntaHasta;
+    /** The words of that question (not saved): anything else it says to them afterwards closes it. */
+    String preguntaLinea = "";
 
     // not saved: when it next does something with others, and whom it is comforting
     long proximoEncuentro;
