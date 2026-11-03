@@ -360,22 +360,22 @@ public final class Nucleo {
             Mente m = de(world, v);
             List<Integer> ids = new ArrayList<>();
             float conf = 0;
-            java.util.Set<String> raices = raices(leccion);
+            String lec = " " + net.mca.entity.ai.chatAI.Acciones.normalize(leccion).replaceAll("[^a-z0-9]+", " ").trim() + " ";
+            int pol = polaridad(lec);
             java.util.regex.Matcher mm = Pattern.compile("\\d+").matcher(cita);
             while (mm.find() && ids.size() < 6) {
                 try {
                     Episodio e = m.porId(Integer.parseInt(mm.group()));
-                    // citing an incident is not enough: it has to be about what the lesson says (a person, a thing, a deed)
-                    if (e != null && e.tipo != Tipo.DIJE && !ids.contains(e.id)
-                            && !java.util.Collections.disjoint(raices, raices(e.narrar(true) + " " + e.narrar(false) + " " + e.cosa + " " + e.cosaEn))) {
+                    if (e != null && !ids.contains(e.id) && respalda(lec, pol, e, v.getUuid())) {
                         ids.add(e.id);
-                        conf += e.confianza * (e.estado == Estado.FALSO ? 0.2F : 1.0F);
+                        conf += e.confianza;
                     }
                 } catch (NumberFormatException ignored) {
                     // not an id
                 }
             }
-            if (ids.isEmpty()) {
+            // what rests only on weak hearsay stays a hunch, however many it cites
+            if (ids.isEmpty() || conf / ids.size() < 0.35F) {
                 return false;
             }
             Episodio r = m.nuevo(Tipo.REFLEXION, now, v.getUuid());
@@ -391,20 +391,76 @@ public final class Nucleo {
         }
     }
 
-    private static final Set<String> VACIAS = Set.of("para", "como", "pero", "esta", "este", "esto", "esas", "esos", "porq", "cuan",
-            "todo", "toda", "algo", "nada", "sien", "tien", "hace", "siem", "nunc", "debo", "debe", "mejo", "much", "poco", "otra", "otro",
-            "with", "that", "this", "have", "from", "when", "they", "what", "will", "just", "been", "abou", "ther", "some", "more", "alwa",
-            "neve", "shou", "vece", "time");
+    private static final Set<String> ARTICULOS = Set.of("un", "una", "unos", "unas", "el", "la", "los", "las", "del", "al", "a", "an", "the", "of", "de");
+    private static final Set<String> NIEGAN = Set.of("no", "nunca", "jamas", "nadie", "not", "never", "dont", "don", "isnt", "aren", "nobody");
+    private static final Set<String> MALO = Set.of("malo", "mala", "malos", "malas", "peligro", "peligros", "peligroso", "peligrosa", "peligrosos",
+            "peligrosas", "cuidado", "ladron", "ladrona", "ladrones", "roba", "robo", "robar", "roban", "pega", "pegar", "pegan", "golpea", "golpes",
+            "hiere", "herir", "dano", "odio", "odia", "miedo", "evitar", "evita", "desconfio", "desconfiar", "traidor", "traiciona", "miente", "mentir",
+            "mentiroso", "enemigo", "enemigos", "amenaza", "cruel", "bad", "danger", "dangerous", "careful", "thief", "steal", "steals", "hurt", "hurts",
+            "hits", "avoid", "hate", "hates", "afraid", "fear", "enemy", "liar", "lies", "distrust", "threat", "mean");
+    private static final Set<String> BUENO = Set.of("bueno", "buena", "buenos", "buenas", "amigo", "amiga", "amigos", "amigas", "confio", "confiar",
+            "confiable", "generoso", "generosa", "regala", "regalos", "ayuda", "ayudar", "carino", "protege", "proteger", "salva", "amable", "good",
+            "kind", "friend", "friends", "trust", "trusted", "generous", "gift", "gifts", "helps", "help", "love", "loves", "protect", "protects", "nice");
 
-    /** The first four letters of each word of four or more, without the empty ones: enough to tell what a text is about. */
-    private static Set<String> raices(String text) {
-        Set<String> out = new java.util.HashSet<>();
-        for (String w : net.mca.entity.ai.chatAI.Acciones.normalize(text).split("[^a-z0-9]+")) {
-            if (w.length() >= 4 && !VACIAS.contains(w.substring(0, 4))) {
-                out.add(w.substring(0, 4));
+    /**
+     * A cited incident backs a lesson only when the lesson speaks of someone or something in it (who did it, to whom,
+     * the thing) and, when the lesson judges, the incident went the same way: "Benja es buena gente" is not backed by
+     * "Benja me pegó". It is a check of consistency, not a proof that the conclusion follows. Its own words (a past
+     * lesson, a summary's text, something it said) never back a lesson, nor does a story found false.
+     */
+    private static boolean respalda(String lec, int pol, Episodio e, UUID yo) {
+        if (e.tipo == Tipo.DIJE || e.tipo == Tipo.REFLEXION || e.estado == Estado.FALSO) {
+            return false;
+        }
+        List<String> sujetos = new ArrayList<>(6);
+        for (Episodio.Ser s : new Episodio.Ser[]{e.quien, e.aQuien}) {
+            if (s != null && !s.es(yo)) {
+                sujetos.add(s.nombre(true));
+                sujetos.add(s.nombre(false));
             }
         }
-        return out;
+        if (e.tipo != Tipo.RESUMEN) {
+            sujetos.add(e.cosa);
+            sujetos.add(e.cosaEn);
+        }
+        boolean habla = false;
+        for (String sj : sujetos) {
+            for (String w : net.mca.entity.ai.chatAI.Acciones.normalize(sj).split("[^a-z0-9]+")) {
+                if (w.length() >= 3 && !ARTICULOS.contains(w) && nombra(lec, w)) {
+                    habla = true;
+                    break;
+                }
+            }
+            if (habla) {
+                break;
+            }
+        }
+        return habla && (pol == 0 || e.valencia * pol > 0.05F);
+    }
+
+    /** {@code lec} has {@code w} as a word, or as the same word in plural or another gender ("zombi", "zombis"). */
+    private static boolean nombra(String lec, String w) {
+        String raiz = w.length() <= 4 ? w : w.substring(0, w.length() - 1);
+        for (String t : lec.trim().split(" ")) {
+            if (t.startsWith(raiz) && t.length() <= w.length() + 2 && (w.length() > 3 || t.length() <= w.length() + 1)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Whether a lesson judges well (+1), badly (-1) or not at all (0), with "no" turning a word around. */
+    private static int polaridad(String lec) {
+        String[] t = lec.trim().split(" ");
+        int score = 0;
+        for (int i = 0; i < t.length; i++) {
+            int s = MALO.contains(t[i]) ? -1 : BUENO.contains(t[i]) ? 1 : 0;
+            if (s != 0 && (i > 0 && NIEGAN.contains(t[i - 1]) || i > 1 && NIEGAN.contains(t[i - 2]))) {
+                s = -s;
+            }
+            score += s;
+        }
+        return Integer.signum(score);
     }
 
     // ------------------------------------------------------------------ once a second

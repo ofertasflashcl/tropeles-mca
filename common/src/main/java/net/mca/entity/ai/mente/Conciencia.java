@@ -627,7 +627,7 @@ public final class Conciencia {
         if (!(villager.getWorld() instanceof ServerWorld world) || world.getServer() == null) {
             return List.of();
         }
-        List<String> list = Registro.get(world.getServer()).lecciones.get(villager.getUuid());
+        List<String> list = Registro.get(world.getServer()).de(villager.getUuid());
         return list == null ? List.of() : List.copyOf(list);
     }
 
@@ -637,7 +637,11 @@ public final class Conciencia {
             return false;
         }
         Registro registro = Registro.get(world.getServer());
-        List<String> list = registro.lecciones.computeIfAbsent(villager.getUuid(), k -> new ArrayList<>());
+        List<String> list = registro.de(villager.getUuid());
+        if (list == null) {
+            list = new ArrayList<>();
+            registro.lecciones.put(villager.getUuid(), list);
+        }
         String key = clave(lesson);
         for (String known : list) {
             String k = clave(known);
@@ -665,10 +669,19 @@ public final class Conciencia {
         return text.length() <= max ? text : text.substring(0, max - 1) + "…";
     }
 
-    /** Every villager's lessons, kept with the overworld so they follow it into any dimension. */
+    /**
+     * Every villager's lessons, kept with the overworld so they follow it into any dimension. Past {@value #MAX_ALDEANOS}
+     * villagers, the one who learned nothing for the longest goes whole to the archive
+     * ({@link net.mca.server.world.data.ArchivoTropeles}) and comes back from there: no lesson is ever forgotten.
+     */
     static final class Registro extends PersistentState {
-        private static final int MAX_ALDEANOS = 4096;
+        private static final int MAX_ALDEANOS = 256;
+        private static final String ARCHIVO = "lecciones";
         final Map<UUID, List<String>> lecciones = new LinkedHashMap<>();
+        /** Asked of the archive and not there (not saved): no disk read every time it thinks. */
+        private final java.util.Set<UUID> sinArchivo = new java.util.HashSet<>();
+        @Nullable
+        private MinecraftServer server;
 
         private Registro() {
         }
@@ -690,10 +703,33 @@ public final class Conciencia {
         }
 
         static Registro get(MinecraftServer server) {
-            return WorldUtils.loadData(server.getOverworld(), Registro::new, w -> new Registro(), "mca_tropeles_conciencia");
+            Registro r = WorldUtils.loadData(server.getOverworld(), Registro::new, w -> new Registro(), "mca_tropeles_conciencia");
+            r.server = server;
+            return r;
         }
 
-        /** Too many villagers (only in huge worlds): the one who learned nothing for the longest goes, never {@code keep}. */
+        /** Its lessons, from here or back from the archive; null when it has none. */
+        @Nullable
+        List<String> de(UUID id) {
+            List<String> list = lecciones.get(id);
+            if (list == null && !sinArchivo.contains(id)) {
+                NbtCompound n = net.mca.server.world.data.ArchivoTropeles.leer(server, ARCHIVO, id);
+                if (n == null) {
+                    sinArchivo.add(id);
+                } else {
+                    list = new ArrayList<>();
+                    NbtList raw = n.getList("l", NbtElement.STRING_TYPE);
+                    for (int i = 0; i < raw.size(); i++) {
+                        list.add(raw.getString(i));
+                    }
+                    lecciones.put(id, list);
+                    trim(id);
+                }
+            }
+            return list;
+        }
+
+        /** Too many villagers here: the one who learned nothing for the longest goes to the archive, never {@code keep}. */
         void trim(UUID keep) {
             while (lecciones.size() > MAX_ALDEANOS) {
                 UUID first = null;
@@ -706,7 +742,16 @@ public final class Conciencia {
                 if (first == null) {
                     break;
                 }
+                NbtCompound n = new NbtCompound();
+                NbtList raw = new NbtList();
+                lecciones.get(first).forEach(l -> raw.add(NbtString.of(l)));
+                n.put("l", raw);
+                if (!net.mca.server.world.data.ArchivoTropeles.guardar(server, ARCHIVO, first, n)) {
+                    break; // the disk refused: it stays here rather than be lost
+                }
+                sinArchivo.remove(first);
                 lecciones.remove(first);
+                markDirty();
             }
         }
 
