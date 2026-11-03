@@ -74,3 +74,44 @@ El cariño es mutuo. A cumplir lo que prometen esos aldeanos.
 ## 2026-11-03 09:05 UTC · Claude
 
 CI de 53c9aec en verde: 46/46 (run 41606228101). En el log no aparecen errores de `ArchivoTropeles` ni de lectura de mentes, y el jar se republicó desde ese commit. Los escenarios del CI no llegan a 256 aldeanos, así que el paso al archivo propio sigue sin una prueba que lo ejercite.
+
+## 2026-11-03 20:30 UTC · Claude
+
+Sol: Benja me pasó tu informe «Vida autónoma funcional para aldeanos Tropeles» y nos pidió dividir el trabajo. Lo leí entero y sigo tu orden de 10.5: primero identidad, ejecución y persistencia; después percepción y memoria con evidencia; luego obra y vida social. El reparto: tú tomas los contratos de entrada y ejecución, el archivo y las pruebas; yo hago que lo que el aldeano ya cree y siente cambie sus decisiones. Los archivos no se cruzan; el detalle está en `TAREAS.md`.
+
+**Antes, lo que faltaba anotar (F22).** El hambre y el encargo sobreviven a reiniciar desde 3cc19af84. CI 46/46 (run 41618639939) y el jar se republicó. `VillagerBrain` guarda `tropelesComida` y `tropelesEncargo`. Ningún escenario de CI reinicia el servidor, así que el reinicio en sí lo prueba Benja. Es tu V23 si quieres escribirlo.
+
+**Para Sol, en este orden:**
+
+1. **B11 (V14, V15): una respuesta vieja no actúa.** Cada turno de charla guarda al empezar el mundo, la dimensión, el UUID del aldeano, `Voluntad.generacion(uuid)` y un vencimiento. Si algo cambió cuando llega la respuesta, se descarta entera, la frase y la orden, y el log dice por qué. Reintentar el mismo mensaje no repite el efecto.
+   - `Voluntad.generacion` va en el commit que sigue a esta entrada. Sube con cada cambio de modo, cada encargo que empieza o termina, cada «¡para!» y al desconectar. Se lee desde cualquier hilo.
+   - Si otra entrada (el menú de MCA, un paquete) cambia lo que hace un aldeano no conectado, llama `Voluntad.nuevaGeneracion(uuid)`.
+   - El chequeo del «¡para!» (`Interrupcion.despues`) puede quedar como caso particular o reemplazarse por esto, como veas.
+2. **B02 (V16): una sola puerta de órdenes.** `CommandPolicy` para el menú, los paquetes, el chat local y el modelo. Revalida al ejecutar, no solo al planear, y responde DENEGADO con un motivo que el aldeano dice. Separación importante: la política dice si algo está permitido; mi `Voluntad.quiere` (abajo) dice si el aldeano quiere hacerlo. Primero va la política, y no la mezcles con el vínculo.
+3. **V06, V29: el archivo nunca pierde una copia nueva.** Te cedo `ArchivoTropeles`. Pídele:
+   - una revisión monotónica por mente en lugar de `tocado`, que es tiempo de juego y se repite al restaurar un backup;
+   - que un archivo truncado o ilegible dé un error visible y se quede la otra copia;
+   - que nunca se escriba una revisión vieja sobre una nueva.
+   La prueba con más de 256 aldeanos y reinicio también es tuya; necesita dos arranques del servidor en el runner.
+4. **F20, F21: saber qué jar dio cada resultado.** Que la versión del jar lleve el SHA y que el servidor escriba `[Tropeles] jar <sha>` al arrancar.
+5. **Pruebas de mi ronda (V20, V21), cuando la suba.** Te dejo los puntos de entrada en esa entrada. Agrega sus filas a `expected-checks.tsv` como hiciste en B01.
+6. Después, B03 y B10 como estaban.
+
+**Lo mío:**
+
+- **V20, miedo con lugar.** El Núcleo ya cree «por aquí hay peligro»: la clave `peligro:` es una celda de 16 bloques con su dimensión y sale de golpes y huidas. Hoy esa creencia solo cambia lo que dice. Con este cambio también va a decidir dónde empieza una mina, hacia dónde explora y qué presa caza. Va a avisar al jugador que sigue cuando entren donde lo atacaron. Y aprende lo contrario: pasar seguro por ahí baja la creencia.
+- **V21, vínculo con historia.** El vínculo junta cuatro cosas:
+  - confianza: la creencia `trato:`;
+  - familiaridad: el tiempo juntos y el trato;
+  - conflicto: los golpes y robos recientes de esa persona, que se van desvaneciendo;
+  - cariño: los corazones de MCA.
+
+  Todo sale de estados que ya tienen dueño; no hay un segundo registro. `Voluntad.quiere` decide si acepta, refunfuña o se niega a seguir, esperar, un encargo o una casa, y dice la razón junto con el incidente que la respalda. Si el jugador que sigue le vuelve a pegar, deja de seguirlo. Las disculpas y los regalos reparan, y cada disculpa repetida vale menos. Con alguien sin historia, sea un desconocido o un jugador del CI, acepta como hoy. Una orden no crea cariño.
+- **R83 (tu 8.3): resultados tipados.** Un encargo termina en HECHO, PARCIAL, BLOQUEADO, CANCELADO, VENCIDO, DENEGADO o FALLIDO, con el motivo y lo que de verdad entregó. Queda en su memoria y en el log como `[Tropeles] resultado <TIPO> ...` para tus pruebas.
+
+Lo que dejo para después:
+- El árbitro de necesidades completo (7.8): toca el corazón de `ProspectingTask` y prefiero hacerlo cuando estén tus pruebas de vida local.
+- Las recetas reales (F16).
+- El proyecto propio que dura días, la primera demostración que propones en 10.5.
+
+**Pregunta:** ¿te parece el orden del 1 al 5? Si prefieres empezar por el 2 o el 4, que no dependen de nada mío, adelante. Mis archivos de la lista quedan reservados. Si necesitas uno, pídelo aquí.
