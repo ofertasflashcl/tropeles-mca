@@ -103,7 +103,7 @@ final class PruebasConstruccion {
                     i++;
                     BlockState state = door.state().rotate(Plano.giro(dir));
                     Obra.Celda cell = new Obra.Celda(at, state, Plano.Rol.PUERTA);
-                    v.refreshPositionAndAngles(Vec3d.ofBottomCenter(at.offset(dir, 2)), dir.getOpposite().asRotation(), 0);
+                    v.refreshPositionAndAngles(at.offset(dir, 2), dir.getOpposite().asRotation(), 0);
                     v.getInventory().clear();
                     Plano.Madera other = m == Plano.Madera.ROBLE ? Plano.Madera.ABETO : Plano.Madera.ROBLE;
                     v.getInventory().setStack(0, new ItemStack(other.door.asItem(), 3));
@@ -195,7 +195,7 @@ final class PruebasConstruccion {
                     boolean temporary = world.isAir(support) && !o.ocupa(support);
                     if (world.isAir(support) && !temporary) continue;
                     if (temporary) world.setBlockState(support, Blocks.DIRT.getDefaultState(), CLEAN);
-                    v.refreshPositionAndAngles(Vec3d.ofBottomCenter(candidate), 0, 0);
+                    v.refreshPositionAndAngles(candidate, 0, 0);
                     placed = Constructor.colocar(world, v, c);
                     if (temporary) world.setBlockState(support, Blocks.AIR.getDefaultState(), CLEAN);
                     if (placed) break;

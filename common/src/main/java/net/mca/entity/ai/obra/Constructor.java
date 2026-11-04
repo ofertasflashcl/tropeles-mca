@@ -27,6 +27,7 @@ import net.minecraft.entity.Entity;
 import net.minecraft.entity.ai.brain.MemoryModuleType;
 import net.minecraft.inventory.Inventory;
 import net.minecraft.inventory.SimpleInventory;
+import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.registry.tag.ItemTags;
@@ -1614,7 +1615,7 @@ public final class Constructor {
 
     /** What it would put in the furnace now (sand for glass first, then a log for charcoal), or null. */
     @Nullable
-    private static Predicate<ItemStack> cargaHorno(VillagerEntityMCA villager, Necesidad n) {
+    private Predicate<ItemStack> cargaHorno(VillagerEntityMCA villager, Necesidad n) {
         SimpleInventory inv = villager.getInventory();
         if (n.vidrioPorHacer > 0 && Taller.contar(inv, Taller.ARENA) > 0) {
             return Taller.ARENA;
