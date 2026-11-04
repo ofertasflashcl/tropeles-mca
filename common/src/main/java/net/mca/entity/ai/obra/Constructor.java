@@ -582,6 +582,9 @@ public final class Constructor {
             if (Hands.findSlot(inv, s -> Plano.acepta(rol, c.state(), s)) < 0) {
                 continue;
             }
+            if (!puedeApoyar(world, c)) {
+                continue; // a missing wall is a dependency, not a failed route to this piece
+            }
             cands.add(new Objetivo(Tipo.PIEZA, c.pos(), c));
         }
         return cands;
@@ -764,6 +767,26 @@ public final class Constructor {
             return c.state().get(net.minecraft.state.property.Properties.HORIZONTAL_FACING).getOpposite();
         }
         return null;
+    }
+
+    /** A coarse dependency check before spending pathfinding on a piece. The placer still checks eye/face/reach. */
+    public static boolean puedeApoyar(World world, Obra.Celda c) {
+        if (!c.state().canPlaceAt(world, c.pos())
+                || c.rol() == Plano.Rol.PUERTA && !world.getBlockState(c.pos().up()).isReplaceable()) {
+            return false;
+        }
+        Direction only = apoyo(c);
+        for (Direction dir : Direction.values()) {
+            if (only != null && dir != only) {
+                continue;
+            }
+            BlockPos neighbor = c.pos().offset(dir);
+            BlockState s = world.getBlockState(neighbor);
+            if (!s.isAir() && !s.isReplaceable() && !s.getOutlineShape(world, neighbor).isEmpty()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

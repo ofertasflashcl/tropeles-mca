@@ -153,7 +153,7 @@ final class PruebasConstruccion {
         final List<Obra> obras = new ArrayList<>();
         final List<List<Obra.Celda>> ordenes = new ArrayList<>();
         final VillagerEntityMCA v;
-        int casa, pieza, puestas;
+        int casa, pieza, puestas, sinApoyo;
         Modelos(ServerWorld world) {
             super("obra-modelos", world, 1000);
             int i = 0;
@@ -166,8 +166,8 @@ final class PruebasConstruccion {
                 Obra o = new Obra("prueba-casa-" + i, java.util.UUID.randomUUID(), "Prueba", origin, Direction.NORTH, m, CatalogoPlanos.plano(f.id(), m));
                 obras.add(o);
                 // Fixtures need their wall/roof supports; a y-sorted blueprint can list a torch before its wall.
-                ordenes.add(o.celdas().stream().filter(c -> c.rol().bloque())
-                        .sorted(java.util.Comparator.comparingInt(c -> c.rol().estructura ? 0 : 1)).toList());
+                ordenes.add(new ArrayList<>(o.celdas().stream().filter(c -> c.rol().bloque())
+                        .sorted(java.util.Comparator.comparingInt(c -> c.rol().estructura ? 0 : 1)).toList()));
             }
             v = Pruebas.villager(world, new BlockPos(21496, 100, 96), Direction.SOUTH, "Colocador de casas");
         }
@@ -175,18 +175,25 @@ final class PruebasConstruccion {
         @Override Boolean step() {
             for (int batch = 0; batch < 8; batch++) {
                 if (casa == obras.size()) {
+                    exige(sinApoyo > 0, "No se ejercitó la espera de apoyos");
                     Pruebas.check(name, true, "tres diseños con " + puestas + " objetos colocados por Constructor.colocar; posición asistida, inventario mixto");
                     return true;
                 }
                 Obra o = obras.get(casa);
                 List<Obra.Celda> orden = ordenes.get(casa);
-                if (pieza == orden.size()) {
+                if (orden.isEmpty()) {
                     for (Obra.Celda c : o.celdas()) {
                         exige(c.rol() == Plano.Rol.AIRE || Obra.hecha(world, c), "Casa final distinta del plano: " + c.pos());
                     }
                     casa++; pieza = 0; continue;
                 }
-                Obra.Celda c = orden.get(pieza++);
+                int next = -1;
+                for (int i = 0; i < orden.size(); i++) {
+                    if (Constructor.puedeApoyar(world, orden.get(i))) { next = i; break; }
+                    sinApoyo++;
+                }
+                exige(next >= 0, "Ninguna pieza pendiente tiene apoyo: " + orden.get(0).pos());
+                Obra.Celda c = orden.get(next);
                 Item required = Plano.item(c.rol(), c.state());
                 v.getInventory().clear();
                 v.getInventory().setStack(0, new ItemStack(o.madera == Plano.Madera.ROBLE ? Items.SPRUCE_LOG : Items.OAK_LOG, 64));
@@ -208,6 +215,8 @@ final class PruebasConstruccion {
                 exige(placed && Obra.hecha(world, c), "El colocador no puso " + c.rol() + " en " + c.pos());
                 exige(v.getInventory().getStack(0).getCount() == 64 && v.getInventory().getStack(1).getCount() == 64
                         && v.getInventory().getStack(4).getCount() == 1, "Cambió el inventario equivocado");
+                orden.remove(next);
+                pieza++;
                 puestas++;
             }
             return null;
