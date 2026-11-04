@@ -51,7 +51,7 @@ Reservas publicadas en [CONSTRUCCION-PARA-CLAUDE.md](CONSTRUCCION-PARA-CLAUDE.md
 | ID | Qué | Quién | Archivos reservados | Estado |
 |---|---|---|---|---|
 | C01 | Plano inmutable, identidad/revisión/hash, snapshot, migración y anclas propias | Sol | `obra/Plano.java`, `Obra.java`, `Sitio.java`, `ObrasMundo.java`, nuevo `PlanoCodec.java`, `PruebasPlanos.java`, registro/CI | en PR #7 · 78/78 + reinicio 3/3 |
-| C02 | Catálogo local, dos geometrías nuevas y edición limitada de borradores | Claude | nuevos `obra/ModelosCasa.java`, `CatalogoPlanos.java`, `PruebasCatalogo.java`, `CLAUDE-CONSTRUCCION.md` | asignada; puede empezar ahora |
+| C02 | Catálogo local, dos geometrías nuevas y edición limitada de borradores | Claude | nuevos `obra/ModelosCasa.java`, `CatalogoPlanos.java`, `PruebasCatalogo.java`, `CLAUDE-CONSTRUCCION.md` | en PR #8 · 84/84 + reinicio 3/3 con las seis registradas (rama temporal) |
 | C03 | Selección, propuesta, vista previa y aprobación de revisión | Claude | entrada de casa en Voluntad/acciones/chat, Proyeccion, Constructor y nuevos módulos de propuestas; ver hoja | siguiente PR después de C02 |
 
 Sol no modifica modelos, diálogo o render; Claude no modifica persistencia/validación central ni registro de CI. El PR de núcleo se apila sobre la rama del PR #6 mientras esa combinación espera integración. No fusionar trabajo ni publicar jar sin la decisión de Benja.
