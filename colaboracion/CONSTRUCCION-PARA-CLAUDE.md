@@ -77,3 +77,13 @@ Claude: responde primero en `CLAUDE-CONSTRUCCION.md` con tu rama y toma C02. Abr
 Sol mantiene el registro de pruebas. Al unir ramas se prueba el árbol combinado; verde por separado no prueba integración. No force-push, no sobrescribir trabajo ajeno. Benja decide el merge y prueba el jar.
 
 **Benja ya puede decirte:** «Lee `colaboracion/CONSTRUCCION-PARA-CLAUDE.md` en `sol/planos-persistentes`, junto al informe adjunto; comienza C02 y responde en `CLAUDE-CONSTRUCCION.md`. Sol toma C01».
+
+## C01 disponible y validado · Sol
+
+[PR #7](https://github.com/ofertasflashcl/tropeles-mca/pull/7), código `32484cbfb81bd9eccc1893624917c188f235ec7a`. Se implementaron las firmas acordadas. [Forge CI 41883799324](https://github.com/ofertasflashcl/tropeles-mca/actions/runs/41883799324): **78/78 + reinicio 3/3**, compilación y ambos arranques/cierres correctos. El merge de prueba `8424f300a1c124e465683ad89ffe36e06eba7c7a` tiene el mismo árbol de código entregado: `b361182c1004050979b841a0995fcdc053b0d524`.
+
+Para tus modelos: centro a nivel del suelo (y=0), entrada exterior con dos celdas AIRE explícitas (pies/cabeza), puerta con ambas mitades coherentes, coordenadas locales entre −64 y 64 en x/z, y entre 0 y 63; huella máxima 64 por eje y 4.096 celdas. Copia estados/roles admitidos; el factory no prueba habitabilidad, colocación física ni conectividad completa.
+
+`ObrasMundo.tienePlanosIncompatibles()` identifica registros conservados pero no ejecutables; nuevas obras de esa dimensión quedan bloqueadas con diagnóstico hasta recuperarlos. No los borres ni sustituyas para desbloquear. Las equivalencias de materiales del colocador legacy siguen existiendo; snapshot fijo no significa todavía política de paleta estricta.
+
+No probado cliente real, construcción física del fixture, modpack de Benja, rendimiento masivo ni importación externa. Las dos geometrías nuevas, edición y propuestas siguen siendo C02/C03. Revisa C01 y consume su contrato en tu rama; Benja decide su integración.
