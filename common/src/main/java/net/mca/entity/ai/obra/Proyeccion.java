@@ -16,7 +16,9 @@ import java.util.UUID;
 /**
  * The plan of every building under way, sent to the players near it so their game draws it as a see-through ghost
  * (the "The Forest" way): sent once when they come within {@value #RADIO} blocks, again when it moves, taken away
- * when they leave, when it is done or given up. Server thread only; never throws into the server tick.
+ * when they leave, when it is done or given up. A house only proposed ({@link Propuestas}) is drawn the same way, but
+ * only for the player it is for, until they say yes or no, or it is left a day. Server thread only; never throws into
+ * the server tick.
  */
 public final class Proyeccion {
     private static final double RADIO = 160.0;
@@ -35,13 +37,18 @@ public final class Proyeccion {
             return;
         }
         for (ServerWorld world : server.getWorlds()) {
+            long now = world.getTime();
+            Propuestas propuestas = Propuestas.get(world);
+            for (Propuestas.Propuesta q : propuestas.caducar(now)) {
+                net.mca.MCA.LOGGER.info("[Tropeles] la propuesta de casa {} de {} para {} caducó sin respuesta", q.id, q.constructorNombre, q.paraNombre);
+                borrarPropuesta(world, q);
+            }
             List<ServerPlayerEntity> players = world.getPlayers();
             if (players.isEmpty()) {
                 continue;
             }
             ObrasMundo obras = ObrasMundo.get(world);
             String dim = dim(world);
-            long now = world.getTime();
             for (ServerPlayerEntity p : players) {
                 if (!dim.equals(MUNDO.put(p.getUuid(), dim))) {
                     ENVIADO.remove(p.getUuid()); // another world: its ghosts there are drawn only there
@@ -49,8 +56,15 @@ public final class Proyeccion {
                 Map<String, long[]> sent = ENVIADO.computeIfAbsent(p.getUuid(), k -> new HashMap<>());
                 for (Iterator<Map.Entry<String, long[]>> it = sent.entrySet().iterator(); it.hasNext(); ) {
                     Map.Entry<String, long[]> e = it.next();
-                    Obra o = obras.porId(e.getKey());
-                    if (o == null || !o.centro().isWithinDistance(p.getPos(), RADIO + 16)) {
+                    boolean gone;
+                    if (e.getKey().startsWith(Propuestas.PREFIJO)) {
+                        Propuestas.Propuesta q = propuestas.porId(e.getKey().substring(Propuestas.PREFIJO.length()));
+                        gone = q == null || !q.para.equals(p.getUuid()) || !q.vista().centro().isWithinDistance(p.getPos(), RADIO + 16);
+                    } else {
+                        Obra o = obras.porId(e.getKey());
+                        gone = o == null || !o.centro().isWithinDistance(p.getPos(), RADIO + 16);
+                    }
+                    if (gone) {
                         NetworkHandler.sendToPlayer(FantasmaMessage.borrar(e.getKey(), dim), p);
                         it.remove();
                     }
@@ -65,7 +79,49 @@ public final class Proyeccion {
                         sent.put(o.id, new long[]{o.version, now});
                     }
                 }
+                for (Propuestas.Propuesta q : propuestas.todas()) {
+                    if (!q.para.equals(p.getUuid()) || !q.vista().centro().isWithinDistance(p.getPos(), RADIO)) {
+                        continue;
+                    }
+                    String key = Propuestas.PREFIJO + q.id;
+                    long[] s = sent.get(key);
+                    if (s == null || s[0] != q.version() || now - s[1] > REENVIO) {
+                        NetworkHandler.sendToPlayer(mensaje(world, q.vista()), p);
+                        sent.put(key, new long[]{q.version(), now});
+                    }
+                }
             }
+        }
+    }
+
+    /** A proposal, right away to the one it is for (new, changed or moved): nobody else sees it. */
+    public static void enviarPropuesta(ServerWorld world, Propuestas.Propuesta q) {
+        try {
+            ServerPlayerEntity p = world.getServer().getPlayerManager().getPlayer(q.para);
+            if (p == null || p.getWorld() != world || !q.vista().centro().isWithinDistance(p.getPos(), RADIO)) {
+                return;
+            }
+            NetworkHandler.sendToPlayer(mensaje(world, q.vista()), p);
+            ENVIADO.computeIfAbsent(p.getUuid(), k -> new HashMap<>()).put(Propuestas.PREFIJO + q.id, new long[]{q.version(), world.getTime()});
+            MUNDO.put(p.getUuid(), dim(world));
+        } catch (RuntimeException e) {
+            net.mca.MCA.LOGGER.warn("[Tropeles] no se pudo enviar la propuesta {}: {}", q.id, e.toString());
+        }
+    }
+
+    /** A proposal's ghost goes (approved, refused, dropped or left a day). */
+    public static void borrarPropuesta(ServerWorld world, Propuestas.Propuesta q) {
+        try {
+            String key = Propuestas.PREFIJO + q.id;
+            String dim = dim(world);
+            for (ServerPlayerEntity p : world.getServer().getPlayerManager().getPlayerList()) {
+                Map<String, long[]> sent = ENVIADO.get(p.getUuid());
+                if (sent != null && sent.remove(key) != null || p.getUuid().equals(q.para)) {
+                    NetworkHandler.sendToPlayer(FantasmaMessage.borrar(key, dim), p);
+                }
+            }
+        } catch (RuntimeException e) {
+            net.mca.MCA.LOGGER.warn("[Tropeles] no se pudo borrar la propuesta {}: {}", q.id, e.toString());
         }
     }
 

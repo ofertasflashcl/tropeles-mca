@@ -15,10 +15,14 @@ import net.mca.entity.ai.sense.Entorno;
 import net.mca.entity.ai.sense.Mirada;
 import net.mca.entity.ai.sense.Retina;
 import net.mca.entity.ai.sense.VisualMemory;
+import net.mca.entity.ai.obra.CambioCasa;
+import net.mca.entity.ai.obra.CatalogoPlanos;
 import net.mca.entity.ai.obra.Constructor;
+import net.mca.entity.ai.obra.ModelosCasa;
 import net.mca.entity.ai.obra.Obra;
 import net.mca.entity.ai.obra.ObrasMundo;
 import net.mca.entity.ai.obra.Plano;
+import net.mca.entity.ai.obra.Propuestas;
 import net.mca.entity.ai.obra.Proyeccion;
 import net.mca.entity.ai.obra.Sitio;
 import net.mca.entity.ai.nucleo.Vinculo;
@@ -368,6 +372,14 @@ public final class Voluntad {
             if (o != null) {
                 mode += ". The house you are building for " + (o.paraNombre.isEmpty() ? "someone" : o.paraNombre) + (o.pausaJugador ? " (paused: they told you"
                         + " to do something else; \"sigue con la casa\" resumes it)" : "") + ": " + Constructor.estado(sw, villager, o, false);
+            }
+        }
+        if (villager.getWorld() instanceof ServerWorld pw) {
+            Propuestas.Propuesta q = Propuestas.get(pw).de(villager.getUuid());
+            if (q != null) {
+                mode += ". You proposed " + q.resumen(false) + " to " + (q.paraNombre.isEmpty() ? "someone" : q.paraNombre) + " ("
+                        + CambioCasa.piezas(q.plano(), false) + "): it waits for their own yes. You cannot start it; you can change it (edit-house)"
+                        + " or drop it (cancel-house)";
             }
         }
         if (w.oferta != null && villager.getWorld().getTime() <= w.ofertaHasta) {
@@ -1101,11 +1113,10 @@ public final class Voluntad {
     }
 
     /**
-     * "Constrúyeme una casa", "hazme una casa aquí", "una casa de abeto", "sigue con la casa": a two-floor house for
-     * {@code player}, all of it by its own hands. A house under way is taken up again (moved to where they look while
-     * almost nothing of it stands); otherwise it picks the spot ("aquí": where they look; else the best ground near
-     * them, the door their way), shows the whole plan as a see-through ghost and sets off for the materials. The
-     * account for a language model; its own words in {@link #dicho}.
+     * "Constrúyeme una casa", "hazme una cabaña aquí", "una casa de abeto", "sigue con la casa". A house under way is
+     * taken up again (moved to where they look while almost nothing of it stands). A new one is only proposed
+     * ({@link #proponer}): its plan shown to them as a golden ghost, and started only by their own yes
+     * ({@link #respuestaPropuesta}), never by a model. The account for a language model; its own words in {@link #dicho}.
      */
     public static String construir(VillagerEntityMCA villager, PlayerEntity player, String words, boolean spanish) {
         Voluntad w = of(villager);
@@ -1118,39 +1129,28 @@ public final class Voluntad {
         if (!g.si()) {
             return w.negarse(villager, player, "OBRA", g, Pedido.CASA);
         }
-        ProspectingTask task = ProspectingTask.of(villager);
         ObrasMundo obras = ObrasMundo.get(world);
         String low = words == null ? "" : words.toLowerCase(java.util.Locale.ROOT);
         boolean aqui = AQUI.matcher(low).find();
         Obra o = obras.de(villager.getUuid());
-        boolean nueva = o == null;
-        String[] why = {"", ""};
-        if (o != null) {
-            if (aqui && o.hechas(world) <= 3) {
-                Sitio.Elegido s = Sitio.buscar(world, villager, o.plano(), Sitio.mirada(player), player.getPos(), 0, 8, o.id, why);
-                if (s != null) {
-                    o.mover(s.origen(), s.frente());
-                }
-            }
-            o.pausaJugador = false;
-        } else {
-            Plano.Madera madera = Plano.Madera.palabra(low);
-            if (madera == null) {
-                madera = maderaDe(villager);
-            }
-            Plano plano = net.mca.entity.ai.obra.PedidoCasa.elegir(low, madera);
-            Sitio.Elegido s = aqui ? Sitio.buscar(world, villager, plano, Sitio.mirada(player), player.getPos(), 0, 8, null, why)
-                    : Sitio.buscar(world, villager, plano, player.getBlockPos(), player.getPos(), 7, 28, null, why);
-            if (s == null) {
-                w.dicho("OBRA", "No encuentro dónde hacer una casa " + (aqui ? "ahí" : "por aquí") + ", " + name + ": " + why[0] + ". ¿Me muestras otro sitio?",
-                        "I can't find anywhere to put a house " + (aqui ? "there" : "around here") + ", " + name + ": " + why[1] + ". Can you show me another spot?");
-                return "You can't find anywhere to build a house " + (aqui ? "where they are looking" : "around here") + ": " + why[1]
-                        + ". Say so, and ask them to look at (or stand on) a flatter, dry, free spot and ask again.";
-            }
-            o = new Obra(UUID.randomUUID().toString().substring(0, 8), villager.getUuid(), villager.getName().getString(), s.origen(), s.frente(), madera, plano);
-            o.creada = world.getTime();
-            obras.poner(o);
+        if (o == null) {
+            return w.proponer(world, villager, player, name, low, aqui);
         }
+        if (aqui && o.hechas(world) <= 3) {
+            String[] why = {"", ""};
+            Sitio.Elegido s = Sitio.buscar(world, villager, o.plano(), Sitio.mirada(player), player.getPos(), 0, 8, o.id, why);
+            if (s != null) {
+                o.mover(s.origen(), s.frente());
+            }
+        }
+        o.pausaJugador = false;
+        return empezar(w, world, villager, player, name, o, false);
+    }
+
+    /** It sets to work on {@code o} for {@code player}: a house just approved ({@code nueva}), or one taken up again. */
+    private static String empezar(Voluntad w, ServerWorld world, VillagerEntityMCA villager, PlayerEntity player, String name, Obra o, boolean nueva) {
+        ProspectingTask task = ProspectingTask.of(villager);
+        ObrasMundo obras = ObrasMundo.get(world);
         o.para = player.getUuid();
         o.paraNombre = name;
         obras.cambio();
@@ -1190,6 +1190,255 @@ public final class Voluntad {
         return "You go back to building the house for " + name + ": " + Constructor.estado(world, villager, o, false) + " Say so briefly.";
     }
 
+    private static final String PREGUNTA_ES = "Puedo cambiarle el techo (dos aguas, alto o girado), abrir o cerrar ventanas, o hacerla de otro diseño"
+            + " o de otra madera. ¿La hago así? Dime «sí» y empiezo.";
+    private static final String PREGUNTA_EN = "I can change its roof (gable, steep or turned), open or wall up windows, or make it another design or"
+            + " wood. Shall I build it like this? Say \"yes\" and I'll start.";
+    /** What a model is told of a proposal: it cannot start it; only the player can, with their own yes. */
+    private static final String PROPUESTA_MODELO = "Nothing is built yet and you cannot start it yourself: it starts only when they themselves"
+            + " say yes (never say you have started). They can ask for another roof, windows, design or wood (edit-house) or say no. Tell them"
+            + " briefly what it is and what it takes, and ask whether to build it.";
+
+    /**
+     * A house asked for and not started (C03b): the design and wood named (else its own wood), the roof and windows
+     * asked with it, a site ("aquí": where they look), shown to them alone as a golden ghost and kept until they answer.
+     * Asked again, what they name now changes it. Nothing is ever built from here.
+     */
+    private String proponer(ServerWorld world, VillagerEntityMCA villager, PlayerEntity player, String name, String low, boolean aqui) {
+        Propuestas ps = Propuestas.get(world);
+        Propuestas.Propuesta p = ps.de(villager.getUuid());
+        long now = world.getTime();
+        if (p != null && !p.para.equals(player.getUuid())) {
+            if (p.reciente(now)) {
+                dicho("OBRA", "Ahora le estoy proponiendo una casa a " + p.paraNombre + ", " + name + ". Cuando me conteste, te hago la tuya.",
+                        "I'm proposing a house to " + p.paraNombre + " right now, " + name + ". Once they answer, I'll make yours.");
+                return "You are waiting for " + p.paraNombre + " to answer the house you proposed to them. Say so, and that you will propose "
+                        + name + " one after.";
+            }
+            ps.quitar(p);
+            Proyeccion.borrarPropuesta(world, p);
+            p = null;
+        }
+        CambioCasa.Pedido pedido = CambioCasa.leer(low);
+        if (p != null) {
+            if (!pedido.vacio() || aqui) {
+                return editar(world, villager, player, name, p, pedido, aqui);
+            }
+            p.mostrada(now);
+            ps.cambio();
+            Proyeccion.enviarPropuesta(world, p);
+            dicho("OBRA", "Sigue en pie lo que te propuse, " + name + ": " + p.resumen(true) + ". " + CambioCasa.piezas(p.plano(), true) + ". " + PREGUNTA_ES,
+                    "What I proposed still stands, " + name + ": " + p.resumen(false) + ". " + CambioCasa.piezas(p.plano(), false) + ". " + PREGUNTA_EN);
+            return "You already proposed " + p.resumen(false) + " to " + name + " and they have not said yes yet. " + PROPUESTA_MODELO;
+        }
+        Plano.Madera madera = pedido.madera() != null ? pedido.madera() : maderaDe(villager);
+        Plano elegido = net.mca.entity.ai.obra.PedidoCasa.elegir(low, madera);
+        CatalogoPlanos.Borrador b = CatalogoPlanos.borrador(elegido.id, madera);
+        if (b == null) {
+            b = CatalogoPlanos.Borrador.de(ModelosCasa.Modelo.DOS_PISOS, madera);
+        }
+        CambioCasa.Hecho hecho = null;
+        if (!pedido.arreglos().vacio()) {
+            hecho = CambioCasa.aplicar(b, pedido.arreglos());
+            if (hecho.ok()) {
+                b = hecho.despues();
+            }
+        }
+        Plano plano = b.plano();
+        String[] why = {"", ""};
+        Sitio.Elegido s = aqui ? Sitio.buscar(world, villager, plano, Sitio.mirada(player), player.getPos(), 0, 8, null, why)
+                : Sitio.buscar(world, villager, plano, player.getBlockPos(), player.getPos(), 7, 28, null, why);
+        if (s == null) {
+            dicho("OBRA", "No encuentro dónde hacer una casa " + (aqui ? "ahí" : "por aquí") + ", " + name + ": " + why[0] + ". ¿Me muestras otro sitio?",
+                    "I can't find anywhere to put a house " + (aqui ? "there" : "around here") + ", " + name + ": " + why[1] + ". Can you show me another spot?");
+            return "You can't find anywhere to build a house " + (aqui ? "where they are looking" : "around here") + ": " + why[1]
+                    + ". Say so, and ask them to look at (or stand on) a flatter, dry, free spot and ask again.";
+        }
+        p = new Propuestas.Propuesta(UUID.randomUUID().toString().substring(0, 8), villager.getUuid(), villager.getName().getString(), player.getUuid(),
+                name, b, s.origen(), s.frente(), now);
+        ps.poner(p);
+        Proyeccion.enviarPropuesta(world, p);
+        MCA.LOGGER.info("[Tropeles] {} propone a {} {}: {} rev {} hash {}", villager.getName().getString(), name, p.resumen(true), plano.id,
+                plano.revision, plano.hash());
+        String noEs = hecho != null && !hecho.ok() ? " Lo otro que pediste no se puede: " + hecho.es() + "." : "";
+        String noEn = hecho != null && !hecho.ok() ? " The rest of what you asked can't be done: " + hecho.en() + "." : "";
+        dicho("OBRA", "Mira, " + name + ": te propongo " + p.resumen(true) + "; ahí ves el plano en dorado. " + CambioCasa.piezas(plano, true)
+                        + "; en material, " + Constructor.materiales(plano, true) + "." + noEs + " " + PREGUNTA_ES,
+                "Look, " + name + ": I propose " + p.resumen(false) + "; you can see the plan there in gold. " + CambioCasa.piezas(plano, false)
+                        + "; in materials, " + Constructor.materiales(plano, false) + "." + noEn + " " + PREGUNTA_EN);
+        return "You proposed " + p.resumen(false) + " to " + name + ": they see its plan as a golden see-through ghost. It takes "
+                + CambioCasa.piezas(plano, false) + " (" + Constructor.materiales(plano, false) + ")." + noEn + " " + PROPUESTA_MODELO;
+    }
+
+    /**
+     * "Ponle techo alto", "dos ventanas a la izquierda", "mejor una cabaña", "de abeto": a change to the house it
+     * proposed and they have not approved. A house under way keeps its plan. The account for a language model.
+     */
+    public static String editarCasa(VillagerEntityMCA villager, PlayerEntity player, String words, boolean spanish) {
+        Voluntad w = of(villager);
+        oyo(villager, player, spanish);
+        String name = Companero.nombre(villager, player);
+        if (!(villager.getWorld() instanceof ServerWorld world)) {
+            return "You have no way to do that right now.";
+        }
+        if (ObrasMundo.get(world).de(villager.getUuid()) != null) {
+            w.dicho("OBRA", "Esa casa ya la empecé, " + name + ": su plano ya no cambia.", "I've already started that house, " + name + ": its plan doesn't change now.");
+            return "The house is already under way, and a house under way keeps its plan. Say so.";
+        }
+        Propuestas.Propuesta p = Propuestas.get(world).de(villager.getUuid());
+        if (p == null) {
+            w.dicho("OBRA", "No te he propuesto ninguna casa todavía, " + name + ". Pídemela: «hazme una cabaña aquí».",
+                    "I haven't proposed you any house yet, " + name + ". Ask me: \"build me a cabin here\".");
+            return "You have proposed no house. Say so; they can ask for one.";
+        }
+        if (!p.para.equals(player.getUuid())) {
+            w.dicho("OBRA", "Esa casa se la propuse a " + p.paraNombre + ": lo que tenga que cambiar me lo dice " + p.paraNombre + ".",
+                    "I proposed that house to " + p.paraNombre + ": " + p.paraNombre + " tells me what to change.");
+            return "That proposal is " + p.paraNombre + "'s; only they can change it. Say so.";
+        }
+        String low = words == null ? "" : words.toLowerCase(java.util.Locale.ROOT);
+        CambioCasa.Pedido pedido = CambioCasa.leer(low);
+        boolean aqui = AQUI.matcher(low).find();
+        if (pedido.vacio() && !aqui) {
+            p.mostrada(world.getTime());
+            w.dicho("OBRA", "No entendí qué cambiarle, " + name + ". " + PREGUNTA_ES, "I didn't get what to change, " + name + ". " + PREGUNTA_EN);
+            return "You did not understand what to change in the proposal. Ask them, saying what you can change: the roof (gable, steep, turned), one or two"
+                    + " windows on one wall (front, back, left, right), the design (cabin, long house, two-floor house) or the wood.";
+        }
+        return w.editar(world, villager, player, name, p, pedido, aqui);
+    }
+
+    /** A change to its proposal: all of it or none, then the same spot if it still fits there (or the nearest), the ghost again. */
+    private String editar(ServerWorld world, VillagerEntityMCA villager, PlayerEntity player, String name, Propuestas.Propuesta p,
+                          CambioCasa.Pedido pedido, boolean aqui) {
+        long now = world.getTime();
+        Propuestas ps = Propuestas.get(world);
+        p.mostrada(now);
+        ps.cambio();
+        CambioCasa.Hecho h = pedido.vacio() ? null : CambioCasa.aplicar(p.borrador(), pedido);
+        if (h != null && !h.ok()) {
+            dicho("OBRA", "Eso no puedo, " + name + ": " + h.es() + ". Lo que te propuse sigue igual. ¿La hago así?",
+                    "I can't do that, " + name + ": " + h.en() + ". What I proposed stays as it was. Shall I build it like this?");
+            return "You can't make that change: " + h.en() + ". The proposal stays as it was (" + p.resumen(false) + "). Say so and ask whether to build it.";
+        }
+        CatalogoPlanos.Borrador b = h == null ? p.borrador() : h.despues();
+        Plano antes = p.plano();
+        Plano plano = b.plano();
+        String[] why = {"", ""};
+        // "aquí" moves it only when that is all the change says ("cierra la ventana de ahí" is no move)
+        boolean mover = aqui && pedido.ventanas().isEmpty() && pedido.cubierta() == null;
+        Sitio.Elegido s = mover ? Sitio.buscar(world, villager, plano, Sitio.mirada(player), player.getPos(), 0, 8, null, why)
+                : mismoSitio(world, villager, p, plano, why, true);
+        if (s == null) {
+            dicho("OBRA", "Así no cabe " + (mover ? "ahí" : "donde estaba") + ", " + name + ": " + why[0] + ". Lo que te propuse sigue igual.",
+                    "That way it doesn't fit " + (mover ? "there" : "where it was") + ", " + name + ": " + why[1] + ". What I proposed stays as it was.");
+            return "The changed house does not fit " + (mover ? "where they look" : "on its site") + ": " + why[1] + ". The proposal stays as it was. Say so.";
+        }
+        boolean movida = !s.origen().equals(p.origen()) || s.frente() != p.frente();
+        p.cambiar(b, s.origen(), s.frente(), now);
+        ps.cambio();
+        Proyeccion.enviarPropuesta(world, p);
+        CatalogoPlanos.Diferencia d = CatalogoPlanos.diferencia(antes, plano);
+        MCA.LOGGER.info("[Tropeles] {} cambia la propuesta {} para {}: {} (rev {} hash {}) -> {} (rev {} hash {})", villager.getName().getString(), p.id,
+                name, antes.id, antes.revision, antes.hash(), plano.id, plano.revision, plano.hash());
+        String hechoEs = h == null ? "la puse donde miras" : h.es();
+        String hechoEn = h == null ? "I put it where you're looking" : h.en();
+        String corrida = movida && h != null ? ", y la corrí un poco para que quepa" : "";
+        String moved = movida && h != null ? ", moved a little so it fits" : "";
+        dicho("OBRA", "Listo: " + hechoEs + corrida + ". En piezas, " + CambioCasa.diferencia(d, true) + ". Queda " + p.resumen(true) + "; en material, "
+                        + Constructor.materiales(plano, true) + ". ¿Así sí? Dime «sí» y empiezo.",
+                "Done: " + hechoEn + moved + ". In pieces, " + CambioCasa.diferencia(d, false) + ". It's now " + p.resumen(false) + "; in materials, "
+                        + Constructor.materiales(plano, false) + ". Like this? Say \"yes\" and I'll start.");
+        return "You changed the proposal: " + hechoEn + moved + "; the exact difference in pieces: " + CambioCasa.diferencia(d, false) + ". It is now "
+                + p.resumen(false) + " (" + Constructor.materiales(plano, false) + "). " + PROPUESTA_MODELO;
+    }
+
+    /** {@code plano} on the proposal's spot: exactly there with its door the same way, else (if {@code cerca}) the nearest that fits. */
+    @Nullable
+    private static Sitio.Elegido mismoSitio(ServerWorld world, VillagerEntityMCA villager, Propuestas.Propuesta p, Plano plano, String[] why, boolean cerca) {
+        BlockPos c = p.vista().centro();
+        Vec3d delante = Vec3d.ofCenter(c.offset(p.frente(), 32));
+        Sitio.Elegido s = Sitio.buscar(world, villager, plano, c, delante, 0, 0, null, why);
+        return s != null || !cerca ? s : Sitio.buscar(world, villager, plano, c, delante, 2, 8, null, why);
+    }
+
+    /**
+     * "Sí", "dale, hazla", "no, gracias": the player's own answer to the house it just proposed them, read on the server
+     * from what they wrote, ahead of any model. A yes from them (and only them) builds exactly that plan, revision and
+     * hash, on exactly the spot shown; a no drops it. Its words, or null when the message is no such answer.
+     */
+    @Nullable
+    public static String respuestaPropuesta(VillagerEntityMCA villager, ServerPlayerEntity player, String msg, boolean spanish) {
+        if (!(villager.getWorld() instanceof ServerWorld world) || !conectado(villager)) {
+            return null;
+        }
+        Propuestas ps = Propuestas.get(world);
+        Propuestas.Propuesta p = ps.de(villager.getUuid());
+        long now = world.getTime();
+        if (p == null || !p.para.equals(player.getUuid()) || !p.reciente(now)) {
+            return null;
+        }
+        String own = villager.getName().getString();
+        boolean si = CambioCasa.si(msg, own);
+        if (!si && !CambioCasa.no(msg, own)) {
+            return null;
+        }
+        Voluntad w = of(villager);
+        oyo(villager, player, spanish);
+        String name = Companero.nombre(villager, player);
+        if (!si) {
+            ps.quitar(p);
+            Proyeccion.borrarPropuesta(world, p);
+            MCA.LOGGER.info("[Tropeles] {} no quiso la propuesta {} de {}", player.getName().getString(), p.id, villager.getName().getString());
+            return spanish ? "Vale, " + name + ", no la hago. Si cambias de idea, pídemela otra vez." : "Okay, " + name + ", I won't build it. If you change your mind, just ask.";
+        }
+        net.mca.entity.ai.chatAI.CommandPolicy.Decision ok = net.mca.entity.ai.chatAI.CommandPolicy.check(player, villager, "build-house",
+                net.mca.entity.ai.chatAI.CommandPolicy.Source.LOCAL);
+        if (!ok.allowed()) {
+            return ok.line(spanish);
+        }
+        Gana g = quiere(villager, player, Pedido.CASA);
+        if (!g.si()) {
+            w.negarse(villager, player, "OBRA", g, Pedido.CASA);
+            return spanish ? w.dichoEs : w.dichoEn;
+        }
+        ObrasMundo obras = ObrasMundo.get(world);
+        if (obras.de(villager.getUuid()) != null) {
+            return spanish ? "Ya estoy con otra casa, " + name + ". Cuando la termine, te hago esa." : "I'm on another house already, " + name + ". When it's done, I'll make that one.";
+        }
+        String[] why = {"", ""};
+        Sitio.Elegido s = obras.tienePlanosIncompatibles() ? null : mismoSitio(world, villager, p, p.plano(), why, false);
+        if (s == null) {
+            p.mostrada(now);
+            return spanish ? "Ahora ese sitio ya no sirve, " + name + ": " + why[0] + ". Muéstrame otro («aquí») y te la propongo ahí."
+                    : "That spot won't do any more, " + name + ": " + why[1] + ". Show me another (\"here\") and I'll propose it there.";
+        }
+        if (!s.origen().equals(p.origen()) || s.frente() != p.frente()) {
+            // the ground changed under it: they see it again where it would really stand before they say yes
+            p.cambiar(p.borrador(), s.origen(), s.frente(), now);
+            ps.cambio();
+            Proyeccion.enviarPropuesta(world, p);
+            return spanish ? "Espera, " + name + ": el suelo cambió y tendría que quedar un poco distinta. Mira el plano otra vez. ¿Así sí?"
+                    : "Wait, " + name + ": the ground changed and it would stand a little differently. Look at the plan again. Like this?";
+        }
+        Plano plano = p.plano();
+        Obra o = new Obra(UUID.randomUUID().toString().substring(0, 8), villager.getUuid(), villager.getName().getString(), p.origen(), p.frente(),
+                p.madera(), plano);
+        o.creada = now;
+        obras.poner(o);
+        ps.quitar(p);
+        Proyeccion.borrarPropuesta(world, p);
+        MCA.LOGGER.info("[Tropeles] {} aprobó la propuesta {} de {}: obra {} con {} rev {} hash {}", player.getName().getString(), p.id,
+                villager.getName().getString(), o.id, plano.id, plano.revision, plano.hash());
+        empezar(w, world, villager, player, name, o, true);
+        return spanish ? w.dichoEs : w.dichoEn;
+    }
+
+    /** It has a house proposed and not yet answered. */
+    public static boolean tienePropuesta(VillagerEntityMCA villager) {
+        return villager.getWorld() instanceof ServerWorld world && Propuestas.get(world).de(villager.getUuid()) != null;
+    }
+
     /** "Ya no hagas la casa", "cancela la casa": the house is given up for good; what stands of it stays. */
     public static String cancelarObra(VillagerEntityMCA villager, PlayerEntity player, boolean spanish) {
         Voluntad w = of(villager);
@@ -1200,6 +1449,18 @@ public final class Voluntad {
         }
         ObrasMundo obras = ObrasMundo.get(world);
         Obra o = obras.de(villager.getUuid());
+        Propuestas.Propuesta propuesta = o == null ? Propuestas.get(world).de(villager.getUuid()) : null;
+        if (propuesta != null) {
+            if (!propuesta.para.equals(player.getUuid())) {
+                w.dicho("OBRA", "Esa casa se la propuse a " + propuesta.paraNombre + ", " + name + ".", "I proposed that house to " + propuesta.paraNombre + ", " + name + ".");
+                return "The house you proposed is " + propuesta.paraNombre + "'s; only they can drop it. Say so.";
+            }
+            Propuestas.get(world).quitar(propuesta);
+            Proyeccion.borrarPropuesta(world, propuesta);
+            MCA.LOGGER.info("[Tropeles] {} deja la propuesta {} para {}", villager.getName().getString(), propuesta.id, name);
+            w.dicho("OBRA", "Vale, " + name + ", olvido la casa que te propuse.", "Okay, " + name + ", I'll forget the house I proposed.");
+            return "You dropped the house you had proposed to them (nothing of it was built). Say so.";
+        }
         if (o == null) {
             w.dicho("OBRA", "No estoy haciendo ninguna casa, " + name + ".", "I'm not building any house, " + name + ".");
             return "You are not building any house. Say so.";
@@ -1237,7 +1498,12 @@ public final class Voluntad {
             return null;
         }
         Obra o = ObrasMundo.get(world).de(villager.getUuid());
-        return o == null ? null : Constructor.estado(world, villager, o, spanish);
+        if (o == null) {
+            Propuestas.Propuesta p = Propuestas.get(world).de(villager.getUuid());
+            return p == null ? null : spanish ? "Le propuse a " + p.paraNombre + " " + p.resumen(true) + "; espero su «sí» para empezar."
+                    : "I proposed " + p.resumen(false) + " to " + p.paraNombre + "; I'm waiting for their \"yes\" to start.";
+        }
+        return Constructor.estado(world, villager, o, spanish);
     }
 
     /**
