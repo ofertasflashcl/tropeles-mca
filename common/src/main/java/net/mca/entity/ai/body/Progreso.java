@@ -3,6 +3,9 @@ package net.mca.entity.ai.body;
 import net.mca.entity.VillagerEntityMCA;
 import net.mca.MCA;
 import net.mca.entity.ai.WorkTools;
+import net.mca.entity.ai.crafting.Ejecutor;
+import net.mca.entity.ai.crafting.Planificador;
+import net.mca.entity.ai.crafting.Reserva;
 import net.mca.entity.ai.sense.Entorno;
 import net.mca.entity.ai.sense.Obras;
 import net.mca.entity.ai.sense.Retina;
@@ -571,6 +574,9 @@ public final class Progreso {
         if (r == null) {
             return new String[]{"Eso no sé hacerlo todavía.", "I don't know how to make that yet."};
         }
+        if (Planificador.planear(world, villager.getInventory(), item, Math.max(1, n), Reserva.normal()).posible()) {
+            return null; // what it carries is enough, by the server's own recipes (a hay bale is wheat)
+        }
         SimpleInventory inv = villager.getInventory();
         int crafts = r.count() <= 0 ? 1 : (int) Math.ceil(n / (double) r.count());
         StringBuilder es = new StringBuilder();
@@ -959,7 +965,7 @@ public final class Progreso {
             }
             troncos = Math.max(troncos, (int) Math.ceil((pedidoTotal - cuantos(villager, PLANKS)) / 4.0));
         } else if (pedido != null) {
-            if (!hasNonWood(inv, pedido)) {
+            if (!hasNonWood(inv, pedido) && !desdeLaBolsa(world, villager, pedido)) {
                 MCA.LOGGER.info("[Tropeles] {} no tiene con qué hacer {}: deja el encargo", villager.getName().getString(), pedido.output());
                 faltaPedido = true;
                 pedido = null;
@@ -2278,7 +2284,11 @@ public final class Progreso {
     /** Bread right now from the wheat it carries, with a crafting table at hand or one in the bag: true when it made one. */
     public boolean pan(ServerWorld world, VillagerEntityMCA villager) {
         SimpleInventory inv = villager.getInventory();
-        if (!affordable(inv, BREAD) || !tableInReach(world, villager) && count(inv, Mat.TABLE) == 0) {
+        if (!tableInReach(world, villager) && count(inv, Mat.TABLE) == 0) {
+            return false;
+        }
+        // wheat, or what the server's recipes turn into wheat (a hay bale)
+        if (!affordable(inv, BREAD) && !desdeLaBolsa(world, villager, BREAD)) {
             return false;
         }
         return craft(world, villager, BREAD, (key, params) -> {
@@ -2303,21 +2313,43 @@ public final class Progreso {
 
     /** Turns logs into planks and planks into sticks until {@code recipe}'s wood is covered. */
     private static void prepareWood(VillagerEntityMCA villager, Recipe recipe, boolean tableToo) {
+        if (!(villager.getWorld() instanceof ServerWorld world)) {
+            return;
+        }
         SimpleInventory inv = villager.getInventory();
         int needPlanks = recipe.cost().getOrDefault(Mat.PLANKS, 0) + (tableToo ? 4 : 0);
         int needSticks = recipe.cost().getOrDefault(Mat.STICK, 0);
         int sticksToMake = Math.max(0, (int) Math.ceil((needSticks - count(inv, Mat.STICK)) / 4.0));
         needPlanks += 2 * sticksToMake;
         while (count(inv, Mat.PLANKS) < needPlanks && count(inv, Mat.LOG) > 0) {
-            int slot = Hands.findSlot(inv, Mat.LOG.match);
-            Item planks = planksFor(inv.getStack(slot).getItem());
-            inv.getStack(slot).decrement(1);
-            give(villager, new ItemStack(planks, 4));
+            if (!sierra(world, villager)) {
+                break;
+            }
         }
         for (int i = 0; i < sticksToMake && count(inv, Mat.PLANKS) >= 2; i++) {
-            take(inv, Mat.PLANKS, 2);
-            give(villager, new ItemStack(Items.STICK, 4));
+            if (!Ejecutor.hacer(world, villager, Items.STICK, 1, false, Reserva.normal(), true).ok()) {
+                break;
+            }
         }
+    }
+
+    /** One log of the bag sawn into the planks the server's recipe for it gives: false when no log it carries has one. */
+    private static boolean sierra(ServerWorld world, VillagerEntityMCA villager) {
+        SimpleInventory inv = villager.getInventory();
+        for (int i = 0; i < inv.size(); i++) {
+            ItemStack s = inv.getStack(i);
+            if (!s.isEmpty() && Mat.LOG.match.test(s)
+                    && Ejecutor.desde(world, villager, i, p -> p.isIn(ItemTags.PLANKS), Reserva.normal(), true).ok()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** The server's recipes turn what it carries into it, the steps before included (a hay bale is the wheat of a bread). */
+    private static boolean desdeLaBolsa(ServerWorld world, VillagerEntityMCA villager, Recipe recipe) {
+        return recipe.count() > 0 && recipe.output() != null
+                && Planificador.planear(world, villager.getInventory(), recipe.output(), recipe.count(), Reserva.normal()).posible();
     }
 
     private static boolean affordable(SimpleInventory inv, Recipe recipe) {
@@ -2333,27 +2365,21 @@ public final class Progreso {
         if (recipe == KIT || recipe == COOK || recipe == LENA) {
             return false; // stand-ins, nothing to craft
         }
-        SimpleInventory inv = villager.getInventory();
         if (recipe == PLANKS) {
-            int slot = Hands.findSlot(inv, Mat.LOG.match);
-            if (slot < 0) {
+            if (!sierra(world, villager)) {
                 return false;
             }
-            Item planks = planksFor(inv.getStack(slot).getItem());
-            inv.getStack(slot).decrement(1);
-            give(villager, new ItemStack(planks, 4));
-            villager.swingHand(Hand.MAIN_HAND);
             Retina.memory(villager).doing("hizo tablas", world.getTime());
             return true;
         }
         prepareWood(villager, recipe, false);
-        if (!affordable(inv, recipe)) {
+        // the server's own recipe with the bag's own things on the grid; what it takes first (a hay bale into wheat) on the way
+        Ejecutor.Resultado hecho = Ejecutor.hacer(world, villager, recipe.output(), Math.max(1, recipe.count()), recipe.table(), Reserva.normal(), true);
+        if (!hecho.ok()) {
+            MCA.LOGGER.info("[Tropeles] {} no hace {}: {}", villager.getName().getString(), recipe.output(), hecho.motivo());
             return false;
         }
-        recipe.cost().forEach((mat, n) -> take(inv, mat, n));
-        ItemStack made = new ItemStack(recipe.output(), recipe.count());
-        give(villager, made.copy());
-        villager.swingHand(Hand.MAIN_HAND);
+        ItemStack made = hecho.hecho();
         if (made.getItem() instanceof net.minecraft.item.ArmorItem && !ajeno(villager, made.getItem())) {
             wear(villager);
         }
@@ -2444,6 +2470,11 @@ public final class Progreso {
         }
         prepareWood(villager, goal, false);
         if (!craft(world, villager, goal, say)) {
+            if (goal == pedido) {
+                // the server's recipe would not have it after all: the errand is given up, not tried again every second
+                faltaPedido = true;
+                pedido = null;
+            }
             finishCrafting();
             return;
         }
