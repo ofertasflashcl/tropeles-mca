@@ -143,17 +143,25 @@ public class TriggerCommandInfos {
                     (p, v, what) -> Voluntad.encargar(v, p, Encargo.Tipo.HACER, what, spanish(v)),
                     (p, v) -> Voluntad.conectado(v)),
             new TriggerCommandInfo("build-house", "Build a log cabin, a long house or the default two-floor house with your own hands: you chop the trees, dig the stone, find "
-                    + "the sand, craft and smelt everything and set every block yourself, and they see the whole plan first as a see-through ghost; "
-                    + "also to go on with a house you left. Not for crafting one item (that is craft-item)",
+                    + "the sand, craft and smelt everything and set every block yourself. A new house is first proposed: they see its plan as a "
+                    + "golden see-through ghost and only their own yes starts it, never you. Also to go on with a house you left. Not for crafting "
+                    + "one item (that is craft-item)",
                     "Include the design in the player's words (\"cabaña\", \"casa larga\", \"dos pisos\"), \"aquí\" for where they look, "
                             + "and their wood (\"de abeto\", \"spruce\"); do not drop the requested design or wood",
                     (p, v, how) -> Voluntad.construir(v, p, how == null ? "" : how, spanish(v)),
                     (p, v) -> Voluntad.conectado(v)),
-            new TriggerCommandInfo("cancel-house", "Give up the house you are building for good (what is already built stays); to only pause it, "
-                    + "that is stop-working",
+            new TriggerCommandInfo("edit-house", "Change the house you proposed and they have not approved yet: another roof (gable, steep, turned), "
+                    + "open or wall up one or two windows on one wall (front, back, left, right), another design (log cabin, long house, two-floor "
+                    + "house) or another wood. It stays a proposal: only their own yes starts it",
+                    "the change in the player's words, for example \"techo alto\", \"dos ventanas a la izquierda\", \"cierra la ventana del frente\", "
+                            + "\"mejor una cabaña\", \"de abeto\"",
+                    (p, v, how) -> Voluntad.editarCasa(v, p, how == null ? "" : how, spanish(v)),
+                    (p, v) -> Voluntad.conectado(v) && Voluntad.tienePropuesta(v)),
+            new TriggerCommandInfo("cancel-house", "Give up the house you are building for good (what is already built stays), or drop the one you "
+                    + "proposed; to only pause it, that is stop-working",
                     null,
                     (p, v, ignored) -> Voluntad.cancelarObra(v, p, spanish(v)),
-                    (p, v) -> Voluntad.conectado(v) && Voluntad.tieneObra(v)),
+                    (p, v) -> Voluntad.conectado(v) && (Voluntad.tieneObra(v) || Voluntad.tienePropuesta(v))),
             new TriggerCommandInfo("stop-working", "Stop the work or the errand you are doing; not for a quick \"stop!\" or \"careful!\", that is "
                     + "alert. A connected villager never disconnects: it drops the errand (or its digging) and stays with the player",
                     null,

@@ -67,7 +67,8 @@ public final class MenteLocal {
             + "shields?|bows?|ladders?|chestplates?|helmets?|leggings|boots";
 
     private static final Map<String, String> ERRANDS = Map.of("start-chopping", "TALAR", "start-fishing", "PESCAR", "start-harvesting", "COSECHAR",
-            "start-hunting", "CAZAR", "craft-item", "HACER", "stop-working", "PARAR", "stop", "PARAR", "build-house", "OBRA", "cancel-house", "OBRA");
+            "start-hunting", "CAZAR", "craft-item", "HACER", "stop-working", "PARAR", "stop", "PARAR", "build-house", "OBRA", "cancel-house", "OBRA",
+            "edit-house", "OBRA");
 
     /** "Perdón", "lo siento": an apology, when the message is nothing else it understands (an order or a question wins). */
     private static final Pattern SORRY = Pattern.compile("(?<![a-z])(perdon|perdona|perdoname|perdonas|disculpa|disculpame|disculpe|disculpas|"
@@ -86,6 +87,15 @@ public final class MenteLocal {
                     + "cancela (la|esa|tu|mi|nuestra) (casa|obra|construccion)|olvida(te de)? (la|esa) (casa|obra)|abandona (la|esa|tu) (casa|obra)|"
                     + "cancel (the|that|my|your) (house|build(ing)?|construction)|forget (about )?the house|give up (on )?the house|"
                     + "(don'?t|do not) build (the|that|a|my) house"),
+            // a change to the house it proposed ({@link Voluntad#editarCasa}): its roof, a window or two, its design or wood
+            order("edit-house", "(ponle|ponele|pon|hazle|hazla con|que tenga|la quiero con|mejor con|cambiale|cambia) (el |un )?techo|"
+                    + "techo (mas )?(alto|empinado|inclinado|puntiagudo|girado|al reves|cruzado|normal|a dos aguas)|"
+                    + "(abre|abrele|abreme|pon|ponle|ponme|agrega|agregale|anade|anadele|hazle|cierra|cierrale|tapa|tapale|quita|quitale|saca|sacale)"
+                    + "(?![a-z]).{0,24}(?<![a-z])ventanas?(?![a-z])|(una|dos|otra|mas|menos) ventanas?|"
+                    + "(mejor|prefiero|que sea|hazla|cambiala a|la quiero) (una |de )?(cabana|casa larga|casa alargada|dos pisos|roble|abeto|pino|abedul|"
+                    + "jungla|acacia|roble oscuro|mangle|cerezo)|"
+                    + "(steep|steeper|turned|gable) roof|(open|add|close|remove|wall up) (a |one |two |the |another )?windows?|"
+                    + "make it (a cabin|a long house|two[- ]floor|of (oak|spruce|birch|jungle|acacia|dark oak|mangrove|cherry))"),
             order("build-house", "(construye|construyeme|construyenos|construir|construyas|construirme|haz|hazme|haznos|hacer|hacerme|haceme|arma|armame|"
                     + "armar|levanta|levantame|edifica|edificame|crea|creame|build|make)(?![a-z]).{0,30}(?<![a-z])(" + CASA + ")(?![a-z])|"
                     + "(sigue|segui|continua|termina|retoma)( con)? (la|tu|mi|esa|nuestra) (casa|obra|construccion)|"

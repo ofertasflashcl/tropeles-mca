@@ -2,6 +2,7 @@ package net.mca.client.render;
 
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.mca.entity.ai.obra.Plano;
+import net.mca.entity.ai.obra.Propuestas;
 import net.mca.network.s2c.FantasmaMessage;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockRenderType;
@@ -29,10 +30,11 @@ import java.util.concurrent.ConcurrentHashMap;
  * The plans of the buildings under way near the player, drawn see-through over the world the way "The Forest"
  * shows a structure before it is built: every block still to be set in its real look, pale and breathing; a block
  * of the plan where something else stands now, reddish; whatever is in the way where the house must be empty
- * (dirt, leaves, a trunk), tinted red over itself. What is already built is not drawn. Client render thread.
+ * (dirt, leaves, a trunk), tinted red over itself. What is already built is not drawn. A house only proposed, waiting
+ * for the player's yes, is drawn golden instead of pale. Client render thread.
  */
 public final class Fantasmas {
-    private record Fantasma(String dim, BlockPos[] pos, BlockState[] states, Plano.Rol[] roles, Vec3d centro) {
+    private record Fantasma(String dim, BlockPos[] pos, BlockState[] states, Plano.Rol[] roles, Vec3d centro, boolean propuesta) {
     }
 
     private static final Map<String, Fantasma> TODOS = new ConcurrentHashMap<>();
@@ -70,7 +72,7 @@ public final class Fantasmas {
             sy += m.ys[i] + 0.5;
             sz += m.zs[i] + 0.5;
         }
-        TODOS.put(m.id, new Fantasma(m.dim, pos, states, roles, new Vec3d(sx / n, sy / n, sz / n)));
+        TODOS.put(m.id, new Fantasma(m.dim, pos, states, roles, new Vec3d(sx / n, sy / n, sz / n), m.id.startsWith(Propuestas.PREFIJO)));
     }
 
     private static void nuevaConexion() {
@@ -130,9 +132,9 @@ public final class Fantasmas {
                     }
                     draw = f.states()[i];
                     boolean blocked = !actual.isAir() && !actual.isReplaceable();
-                    r = blocked ? 1.0F : 0.70F;
-                    g = blocked ? 0.45F : 0.92F;
-                    b = blocked ? 0.40F : 1.0F;
+                    r = blocked ? 1.0F : f.propuesta() ? 1.0F : 0.70F;
+                    g = blocked ? 0.45F : f.propuesta() ? 0.84F : 0.92F;
+                    b = blocked ? 0.40F : f.propuesta() ? 0.35F : 1.0F;
                     scale = 0.98F;
                 }
                 if (draw.getRenderType() != BlockRenderType.MODEL) {

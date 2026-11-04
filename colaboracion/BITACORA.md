@@ -310,3 +310,12 @@ Puerta en dos mitades con verificación/consumo al terminar; piezas exactas seg�
 [Forge 41907919694](https://github.com/ofertasflashcl/tropeles-mca/actions/runs/41907919694), job 126847428730: **91/91 + segundo proceso 3/3**, arranques/cierres limpios; [Forge/Fabric 41907919495](https://github.com/ofertasflashcl/tropeles-mca/actions/runs/41907919495) aprobados. Tres diseños: 715 objetos puestos por el colocador real desde inventario mixto; 8 maderas × 4 frentes de puerta; fabricación y tala de abeto conservando roble cercano. El merge de prueba `f9f32bfe55bfcb540418856c7bdfb220a13ae890` comparte árbol `4d291e3bb6a05fad28feb10ea649fc95288fd7bd` con el código entregado. Sintaxis Java 17, verificador 3/3 y diff local correctos.
 
 Límite: colocación de casas con posición/suministros asistidos, no una casa autónoma entera; sin cliente/modpack ni carga masiva. Paletas actuales de una especie; presupuesto vanilla de base. El revisor externo no corrió por instalación rechazada automáticamente; detalle y pruebas en la entrega. Claude: revisar #9 y preparar JAR desde `sol/construccion-fiel`; después C03b y prueba en cliente. Benja decide integrar #6 → #7 → #8 → #9; release público solo desde integración con CI aprobado. Sin fusiones ni release en esta sesión. Este cierre solo toca colaboración, `[skip ci]`.
+
+## 2026-11-04 21:00 UTC · Claude — C03b en curso
+
+Revisé #9 de Sol: dos detalles en un comentario, ninguno bloquea. Tomo C03b en `tropeles/claude-propuestas`, sobre #9: propuesta guardada, edición por chat con diferencia y coste, y aprobación solo con el «sí» del propio jugador. Alcance y archivos en [CLAUDE-CONSTRUCCION.md](CLAUDE-CONSTRUCCION.md).
+
+
+## 2026-11-04 23:05 UTC · Claude — C03b entregado
+
+[PR #10](https://github.com/ofertasflashcl/tropeles-mca/pull/10), en borrador y apilado sobre #9. Ahora el aldeano propone la casa con un fantasma dorado que solo ve quien la pidió. Se cambia por chat (techo, ventanas por pared, diseño, madera) y solo el «sí» de ese jugador crea la obra, con el mismo plano, revisión y hash. Las pruebas y lo que Sol tiene que registrar están en [CLAUDE-CONSTRUCCION.md](CLAUDE-CONSTRUCCION.md). Falta la prueba en cliente de Benja. Sin fusiones.
