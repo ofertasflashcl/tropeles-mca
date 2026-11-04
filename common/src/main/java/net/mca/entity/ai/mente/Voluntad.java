@@ -1086,7 +1086,7 @@ public final class Voluntad {
         Constructor.olvidar(villager.getUuid());
         String n = o.paraNombre.isEmpty() ? "alguien" : o.paraNombre;
         MCA.LOGGER.info("[Tropeles] {} termina la casa de {} en {}", villager.getName().getString(), n, o.donde());
-        Recuerdos.anotar(villager, "obra", "terminé la casa de " + n + " en " + o.donde() + ": dos pisos, de " + o.madera.es + ", hecha con mis manos",
+        Recuerdos.anotar(villager, "obra", "terminé la casa de " + n + " en " + o.donde() + ": " + o.plano().nombre + ", de " + o.madera.es + ", hecha con mis manos",
                 o.centro());
         ServerPlayerEntity para = o.para == null ? null : jugador(world, o.para);
         tras = obraTras;
@@ -1138,7 +1138,7 @@ public final class Voluntad {
             if (madera == null) {
                 madera = maderaDe(villager);
             }
-            Plano plano = Plano.casa(madera);
+            Plano plano = net.mca.entity.ai.obra.PedidoCasa.elegir(low, madera);
             Sitio.Elegido s = aqui ? Sitio.buscar(world, villager, plano, Sitio.mirada(player), player.getPos(), 0, 8, null, why)
                     : Sitio.buscar(world, villager, plano, player.getBlockPos(), player.getPos(), 7, 28, null, why);
             if (s == null) {
@@ -1147,7 +1147,7 @@ public final class Voluntad {
                 return "You can't find anywhere to build a house " + (aqui ? "where they are looking" : "around here") + ": " + why[1]
                         + ". Say so, and ask them to look at (or stand on) a flatter, dry, free spot and ask again.";
             }
-            o = new Obra(UUID.randomUUID().toString().substring(0, 8), villager.getUuid(), villager.getName().getString(), s.origen(), s.frente(), madera);
+            o = new Obra(UUID.randomUUID().toString().substring(0, 8), villager.getUuid(), villager.getName().getString(), s.origen(), s.frente(), madera, plano);
             o.creada = world.getTime();
             obras.poner(o);
         }
@@ -1176,12 +1176,12 @@ public final class Voluntad {
         }
         Plano plano = o.plano();
         if (nueva) {
-            w.dicho("OBRA", "¡Va, " + name + "! Te hago una casa de dos pisos de " + o.madera.es + " en " + o.donde() + ": ahí ves el plano. La hago toda yo;"
+            w.dicho("OBRA", "¡Va, " + name + "! Te hago una " + plano.nombre + " de " + o.madera.es + " en " + o.donde() + ": ahí ves el plano. La hago toda yo;"
                             + " necesito " + Constructor.materiales(plano, true) + ", así que primero voy por material.",
-                    "You got it, " + name + "! I'll build you a two-floor " + o.madera.en + " house at " + o.donde() + ": you can see the plan there. I'll do all"
+                    "You got it, " + name + "! I'll build you a " + plano.nombreEn + " in " + o.madera.en + " at " + o.donde() + ": you can see the plan there. I'll do all"
                             + " of it myself; I need " + Constructor.materiales(plano, false) + ", so I'm off for materials first.");
             MCA.LOGGER.info("[Tropeles] {} empieza una casa de {} para {} en {} (frente {})", villager.getName().getString(), o.madera.es, name, o.donde(), o.frente);
-            return "You are now building a two-floor " + o.madera.en + " house for " + name + " at " + o.donde() + ", all by your own hands (chopping,"
+            return "You are now building a " + plano.nombreEn + " in " + o.madera.en + " for " + name + " at " + o.donde() + ", all by your own hands (chopping,"
                     + " digging stone, finding sand, crafting, smelting): they can see the whole plan as a see-through ghost. You need "
                     + Constructor.materiales(plano, false) + ". Tell them so, briefly and gladly.";
         }

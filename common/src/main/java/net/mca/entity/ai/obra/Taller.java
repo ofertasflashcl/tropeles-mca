@@ -22,7 +22,7 @@ import java.util.function.Predicate;
  * sticks, a crafting table and torches by hand (the 2x2 grid); stairs, a door, a chest, a furnace, glass panes and
  * a wooden pickaxe at a crafting table (the 3x3 grid). Stairs and doors come out in the wood of the planks used.
  */
-final class Taller {
+public final class Taller {
     static final Predicate<ItemStack> TABLAS = s -> s.isIn(ItemTags.PLANKS);
     static final Predicate<ItemStack> TRONCOS = s -> s.isIn(ItemTags.LOGS) && !s.isOf(Items.CRIMSON_STEM) && !s.isOf(Items.WARPED_STEM);
     static final Predicate<ItemStack> PALOS = s -> s.isOf(Items.STICK);
@@ -32,7 +32,7 @@ final class Taller {
     static final Predicate<ItemStack> VIDRIO = s -> s.isOf(Items.GLASS);
 
     /** What each recipe is: by hand or at a table. */
-    enum Receta {
+    public enum Receta {
         TABLAS(false), PALOS(false), MESA(false), ANTORCHAS(false),
         ESCALERAS(true), PUERTA(true), COFRE(true), HORNO(true), PANELES(true), PICO(true);
 
@@ -98,33 +98,42 @@ final class Taller {
         };
     }
 
+    static boolean puede(VillagerEntityMCA villager, Receta r, int reservaTroncos, Plano.Madera madera) {
+        SimpleInventory inv = villager.getInventory();
+        return switch (r) {
+            case TABLAS -> contar(inv, s -> s.isOf(madera.log.asItem())) > reservaTroncos;
+            case ESCALERAS, PUERTA -> contar(inv, s -> s.isOf(madera.planks.asItem())) >= 6;
+            default -> puede(villager, r, reservaTroncos);
+        };
+    }
+
     /**
      * One craft of {@code r}: true when it made something. {@code pref} is the wood it would rather use. The server's own
      * recipe does it, with the bag's own things on the grid ({@link Ejecutor}); the logs the house still needs are kept.
      */
-    static boolean hacer(VillagerEntityMCA villager, Receta r, Plano.Madera pref, int reservaTroncos) {
-        if (!puede(villager, r, reservaTroncos) || !(villager.getWorld() instanceof ServerWorld world)) {
+    public static boolean hacer(VillagerEntityMCA villager, Receta r, Plano.Madera pref, int reservaTroncos) {
+        if (!puede(villager, r, reservaTroncos, pref) || !(villager.getWorld() instanceof ServerWorld world)) {
             return false;
         }
         SimpleInventory inv = villager.getInventory();
-        Reserva reserva = Reserva.normal().guarda(TRONCOS, reservaTroncos);
+        Reserva reserva = Reserva.normal().guarda(s -> s.isOf(pref.log.asItem()), reservaTroncos);
         Ejecutor.Resultado hecho = switch (r) {
             case TABLAS -> {
                 // the log of the house's own wood first: its walls and roof should be one colour
                 int slot = -1;
                 for (int i = 0; i < inv.size(); i++) {
                     ItemStack s = inv.getStack(i);
-                    if (!s.isEmpty() && TRONCOS.test(s) && (slot < 0 || s.isOf(pref.log.asItem()))) {
+                    if (!s.isEmpty() && s.isOf(pref.log.asItem())) {
                         slot = i;
                     }
                 }
-                yield slot < 0 ? null : Ejecutor.desde(world, villager, slot, TABLAS, reserva, true);
+                yield slot < 0 ? null : Ejecutor.desde(world, villager, slot, s -> s.isOf(pref.planks.asItem()), reserva, true);
             }
             case PALOS -> Ejecutor.hacer(world, villager, Items.STICK, 4, false, reserva, true);
             case MESA -> Ejecutor.hacer(world, villager, Items.CRAFTING_TABLE, 1, false, reserva, true);
             case ANTORCHAS -> Ejecutor.hacer(world, villager, Items.TORCH, 4, false, reserva, true);
             case ESCALERAS, PUERTA -> {
-                Item planks = mismaMadera(inv, 6, pref.planks.asItem());
+                Item planks = contar(inv, s -> s.isOf(pref.planks.asItem())) >= 6 ? pref.planks.asItem() : null;
                 if (planks == null) {
                     yield null;
                 }

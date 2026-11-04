@@ -405,6 +405,8 @@ public final class Progreso {
 
     /** Logs it was asked to carry ("tala un poco"): it fells trees until it has them, or 0. */
     private int troncos;
+    @Nullable
+    private Item tipoTronco;
     /** What it was asked to make ("hazme un cofre"), and how many of it it is to carry once done, or null. */
     @Nullable
     private Recipe pedido;
@@ -416,7 +418,13 @@ public final class Progreso {
 
     /** Fell trees (the nearest it saw, or it goes looking) until it carries {@code total} logs. */
     public void pedirTroncos(int total) {
+        pedirTroncos(total, null);
+    }
+
+    /** A building may require one species. The generic mining/errand API keeps accepting any logs. */
+    public void pedirTroncos(int total, @Nullable Item tipo) {
         troncos = total;
+        tipoTronco = tipo;
         sinArboles = false;
         nextCheck = 0;
     }
@@ -460,6 +468,7 @@ public final class Progreso {
     public void olvidarPedidos(ServerWorld world, VillagerEntityMCA villager) {
         boolean mine = goal != null && (goal == LENA || goal == pedido);
         troncos = 0;
+        tipoTronco = null;
         pedido = null;
         faltaPedido = false;
         sinArboles = false;
@@ -482,6 +491,10 @@ public final class Progreso {
     /** Logs it carries. */
     public static int troncos(VillagerEntityMCA villager) {
         return count(villager.getInventory(), Mat.LOG);
+    }
+
+    public static int troncos(VillagerEntityMCA villager, @Nullable Item tipo) {
+        return tipo == null ? troncos(villager) : count(villager.getInventory(), tipo);
     }
 
     /** How many of {@code item} it carries, in the bag, in its hands and worn (planks: of every wood). */
@@ -973,7 +986,7 @@ public final class Progreso {
                 return pedido; // the wood it needs it chops itself
             }
         }
-        if (troncos > 0 && count(inv, Mat.LOG) >= troncos) {
+        if (troncos > 0 && troncos(villager, tipoTronco) >= troncos) {
             troncos = 0;
         }
         if (troncos > 0) {
@@ -1196,7 +1209,7 @@ public final class Progreso {
             tree = null;
         }
         boolean needsTable = goal.table() && !tableInReach(world, villager);
-        int missing = goal == LENA ? Math.max(0, troncos - count(inv, Mat.LOG)) : shortLogs(inv, goal, needsTable);
+        int missing = goal == LENA ? Math.max(0, troncos - troncos(villager, tipoTronco)) : shortLogs(inv, goal, needsTable);
         // for the first pickaxe it takes a few spare logs, for the sticks and tables to come
         int spare = goal == WOODEN_PICKAXE ? LOGS_TO_START : 0;
         BlockPos log = nearestLog(world, villager, memory, now);
@@ -2074,6 +2087,9 @@ public final class Progreso {
         BlockPos best = null;
         double bestScore = Double.MAX_VALUE;
         for (VisualMemory.SeenBlock seen : memory.blocks(s -> s.state.isIn(BlockTags.LOGS))) {
+            if (goal == LENA && tipoTronco != null && world.getBlockState(seen.pos).getBlock().asItem() != tipoTronco) {
+                continue;
+            }
             BlockPos pos = seen.pos;
             int dx = pos.getX() - t.base.getX();
             int dz = pos.getZ() - t.base.getZ();
@@ -2206,6 +2222,9 @@ public final class Progreso {
         double bestScore = Double.MAX_VALUE;
         for (VisualMemory.SeenBlock seen : memory.blocks(s -> s.state.isIn(BlockTags.LOGS))) {
             if (ignored.getOrDefault(seen.pos.asLong(), 0L) > now || !world.getBlockState(seen.pos).isIn(BlockTags.LOGS)) {
+                continue;
+            }
+            if (goal == LENA && tipoTronco != null && world.getBlockState(seen.pos).getBlock().asItem() != tipoTronco) {
                 continue;
             }
             if (avoid != null && Math.abs(seen.pos.getX() - avoid.getX()) <= BRANCH_REACH + 1 && Math.abs(seen.pos.getZ() - avoid.getZ()) <= BRANCH_REACH + 1) {

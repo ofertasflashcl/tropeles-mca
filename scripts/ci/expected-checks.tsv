@@ -77,3 +77,16 @@ planos	planos-codec
 planos	planos-anclas
 planos	planos-cuarentena
 planos	planos-preparar
+catalogo	catalogo-casas
+catalogo	catalogo-orientaciones
+catalogo	catalogo-limites
+catalogo	catalogo-edicion
+catalogo	catalogo-obra-fija
+catalogo	catalogo-colocacion
+construccion	obra-puerta
+construccion	obra-paleta
+construccion	obra-fabricacion
+construccion	obra-modelos
+construccion	obra-madera
+construccion	obra-seleccion
+construccion	obra-escolta

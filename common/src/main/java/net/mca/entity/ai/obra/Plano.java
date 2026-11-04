@@ -465,19 +465,25 @@ public final class Plano {
 
     /** Whether {@code actual} (what is in the world at that cell) is this piece done: the right kind, the right way round. */
     public static boolean hecho(Rol rol, BlockState planned, BlockState actual) {
+        if (rol == Rol.AIRE) {
+            return actual.isAir();
+        }
+        if (planned.getBlock() != actual.getBlock()) {
+            return false;
+        }
         return switch (rol) {
             case BASE -> piedra(actual);
             case TRONCO -> actual.isIn(BlockTags.LOGS) && mismo(planned, actual, Properties.AXIS);
             case TABLA -> actual.isIn(BlockTags.PLANKS);
             case ESCALON -> actual.isIn(BlockTags.WOODEN_STAIRS) && mismo(planned, actual, Properties.HORIZONTAL_FACING)
                     && mismo(planned, actual, Properties.BLOCK_HALF);
-            case PUERTA -> actual.isIn(BlockTags.WOODEN_DOORS) && actual.contains(DoorBlock.HALF) && actual.get(DoorBlock.HALF) == DoubleBlockHalf.LOWER;
-            case PUERTA_ARRIBA -> actual.isIn(BlockTags.WOODEN_DOORS) && actual.contains(DoorBlock.HALF) && actual.get(DoorBlock.HALF) == DoubleBlockHalf.UPPER;
+            case PUERTA, PUERTA_ARRIBA -> mismo(planned, actual, DoorBlock.HALF) && mismo(planned, actual, DoorBlock.FACING)
+                    && mismo(planned, actual, DoorBlock.HINGE);
             case VIDRIO -> actual.isOf(Blocks.GLASS_PANE) || actual.isOf(Blocks.GLASS) || actual.getBlock() instanceof StainedGlassPaneBlock
                     || actual.getBlock() instanceof StainedGlassBlock;
-            case ANTORCHA -> actual.isOf(Blocks.WALL_TORCH) || actual.isOf(Blocks.SOUL_WALL_TORCH) || actual.isOf(Blocks.TORCH);
+            case ANTORCHA -> mismo(planned, actual, Properties.HORIZONTAL_FACING);
             case MESA -> actual.isOf(Blocks.CRAFTING_TABLE);
-            case COFRE -> actual.isOf(Blocks.CHEST) || actual.isOf(Blocks.TRAPPED_CHEST) || actual.isOf(Blocks.BARREL);
+            case COFRE -> mismo(planned, actual, Properties.HORIZONTAL_FACING);
             case AIRE -> actual.isAir();
         };
     }
@@ -514,8 +520,21 @@ public final class Plano {
         };
     }
 
+    /** The exact item for this cell. A wall torch is placed with a torch; a door is paid only at its lower half. */
+    public static Item item(Rol rol, BlockState planned) {
+        return rol == Rol.ANTORCHA ? Items.TORCH : planned.getBlock().asItem();
+    }
+
+    /** Role-only acceptance classifies supplies. Actual placement must also match the blueprint's block id. */
+    public static boolean acepta(Rol rol, BlockState planned, ItemStack stack) {
+        return acepta(rol, stack) && stack.isOf(item(rol, planned));
+    }
+
     /** The state this stack makes at that piece: its own block, turned and set like the plan's. */
     public static BlockState estadoPara(Rol rol, BlockState planned, ItemStack stack) {
+        if (!acepta(rol, planned, stack)) {
+            throw new IllegalArgumentException("The carried block does not match the blueprint");
+        }
         if (!(stack.getItem() instanceof BlockItem bi)) {
             return planned;
         }
