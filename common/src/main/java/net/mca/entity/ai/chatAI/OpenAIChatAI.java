@@ -23,6 +23,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 /**
@@ -86,7 +87,8 @@ public class OpenAIChatAI implements ChatAIStrategy {
     private record Prepared(String playerName, String villagerName, List<Pair<String, String>> history,
                             MenteLocal.Intent intent, @Nullable String outcome, boolean refused, boolean done, String open,
                             String inHouse, List<Cerebros.Mind> minds, String local, @Nullable String image,
-                            @Nullable Boolean goesBack, @Nullable BlockPos pos, @Nullable net.mca.entity.ai.nucleo.Anclaje anclaje) {
+                            @Nullable Boolean goesBack, @Nullable BlockPos pos, @Nullable net.mca.entity.ai.nucleo.Anclaje anclaje,
+                            Map<String, String> actions) {
     }
 
     /**
@@ -177,10 +179,11 @@ public class OpenAIChatAI implements ChatAIStrategy {
             MCA.LOGGER.info("[Tropeles] {} no pudo con la orden '{}': contesta su propia mente", prep.villagerName(), prep.intent().command());
         } else {
             try {
-                Cerebros.Reply reply = Cerebros.ask(prep.minds(), mind -> mind.inHouse() ? prep.inHouse() : prep.open(),
+                Cerebros.Reply reply = askMinds(prep.minds(), mind -> mind.inHouse() ? prep.inHouse() : prep.open(),
                         prep.history(), msg, prep.playerName(), prep.villagerName(), villager.getUuid(), deadline, prep.image());
                 if (reply != null) {
                     StructuredResponse said = structured(reply.content(), prep.villagerName());
+                    said = repairAction(server, villager, prep, msg, said, lease, deadline);
                     line = speak(server, player, villager, prep, said, lease);
                     MCA.LOGGER.info("[Tropeles] {} pensó con {} en {} ms (orden '{}'){}", prep.villagerName(), reply.mind(), reply.millis(),
                             said.optionalCommand(), reply.saw() ? ", mirando la foto de lo que ve" : "");
@@ -208,6 +211,67 @@ public class OpenAIChatAI implements ChatAIStrategy {
             return finish(server, lease, villager.getUuid(), player.getUuid(), msg, line) ? Optional.of(line) : Optional.empty();
         }
         return lease.finished() ? Optional.empty() : Optional.of(line);
+    }
+
+    /** Kept separate from world effects so the complete dialogue path can be tested without an HTTP service. */
+    protected Cerebros.Reply askMinds(List<Cerebros.Mind> minds, Function<Cerebros.Mind, String> system,
+                                     List<Pair<String, String>> history, String msg, String playerName,
+                                     String villagerName, UUID villager, long deadline, @Nullable String image) {
+        return Cerebros.ask(minds, system, history, msg, playerName, villagerName, villager, deadline, image);
+    }
+
+    /** A small, bounded second pass when the storyteller omitted the action. No effects occur in this pass. */
+    private StructuredResponse repairAction(MinecraftServer server, VillagerEntityMCA villager, Prepared prep, String msg,
+                                            StructuredResponse said, ActionTurn lease, long deadline) {
+        if (prep.intent().order() || prep.refused() || prep.actions().isEmpty()
+                || !command(said.optionalCommand()).isEmpty()
+                || said.message() != null && MenteLocal.promise(said.message()) != null) return said;
+        // A late answer must not start another request, much less act through one.
+        if (System.currentTimeMillis() >= deadline || !Boolean.TRUE.equals(onServer(server, lease, () -> true))) {
+            return new StructuredResponse(prep.local(), "", "");
+        }
+        String prompt = "Select the action requested in the player's latest message, including indirect requests. "
+                + "Do not roleplay or write dialogue. Return ONLY JSON {\"optionalCommand\":\"\",\"argument\":\"\"}. "
+                + "Choose exactly one command from the list below, or an empty command for conversation, questions, "
+                + "hypothetical/future plans, negated requests or a refusal in your previous reply. "
+                + "Never invent a command. The argument must be a string.\n"
+                + prep.actions().entrySet().stream().map(e -> e.getKey() + ": " + e.getValue()).collect(java.util.stream.Collectors.joining("\n"));
+        JsonObject data = new JsonObject();
+        data.addProperty("playerMessage", msg);
+        data.addProperty("previousReply", said.message());
+        Cerebros.Reply repair = askMinds(prep.minds(), mind -> prompt, List.of(), data.toString(),
+                prep.playerName(), prep.villagerName(), villager.getUuid(), deadline, null);
+        StructuredResponse choice = repair == null ? null : actionChoice(repair.content(), prep.actions().keySet());
+        if (choice == null) {
+            MCA.LOGGER.info("[Tropeles] {} no obtuvo una decisión de acción válida; contesta su propia mente", prep.villagerName());
+            return new StructuredResponse(prep.local(), "", "");
+        }
+        if (!choice.optionalCommand().isEmpty()) {
+            MCA.LOGGER.info("[Tropeles] {} completó la orden omitida: '{}'", prep.villagerName(), choice.optionalCommand());
+            // Speak from the execution result, not the original story that omitted it.
+            return new StructuredResponse(null, choice.optionalCommand(), choice.argument());
+        }
+        return said;
+    }
+
+    /** The action-only reply is stricter than free speech: no prose, aliases, nested values or unlisted actions. */
+    @Nullable
+    static StructuredResponse actionChoice(String content, Set<String> allowed) {
+        try {
+            JsonElement value = JsonParser.parseString(content.trim());
+            if (!value.isJsonObject()) return null;
+            JsonObject o = value.getAsJsonObject();
+            if (!o.keySet().equals(Set.of("optionalCommand", "argument"))) return null;
+            for (String key : o.keySet()) {
+                if (!o.get(key).isJsonPrimitive() || !o.get(key).getAsJsonPrimitive().isString()) return null;
+            }
+            String chosen = o.get("optionalCommand").getAsString().trim();
+            String argument = o.get("argument").getAsString().trim();
+            if ((!chosen.isEmpty() && !allowed.contains(chosen)) || argument.length() > 256) return null;
+            return new StructuredResponse(null, chosen, argument);
+        } catch (RuntimeException invalid) {
+            return null;
+        }
     }
 
     private static boolean finish(MinecraftServer server, ActionTurn lease, UUID villager, UUID player, String msg, String line) {
@@ -632,7 +696,9 @@ public class OpenAIChatAI implements ChatAIStrategy {
         BlockPos pos = !intent.order() && ("where".equals(intent.question()) || "coords".equals(intent.question())) ? villager.getBlockPos() : null;
         return new Prepared(playerName, villagerName, history, intent, outcome, refused, done, open, inHouse.toString(),
                 minds, local, image, goesBack, pos, net.mca.entity.ai.nucleo.Anclaje.de(villager, player, open + "\n" + inHouse + "\n" + msg + "\n"
-                        + local + "\n" + history.stream().map(h -> h.getLeft() + "\n" + h.getRight()).collect(java.util.stream.Collectors.joining("\n"))));
+                        + local + "\n" + history.stream().map(h -> h.getLeft() + "\n" + h.getRight()).collect(java.util.stream.Collectors.joining("\n"))),
+                valid.stream().collect(java.util.stream.Collectors.toUnmodifiableMap(c -> c.command,
+                        c -> c.description + (c.argument == null ? "" : " (argument: " + c.argument + ")"))));
     }
 
     /**

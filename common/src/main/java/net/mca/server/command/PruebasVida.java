@@ -85,6 +85,7 @@ final class PruebasVida {
             boolean tools = Config.getInstance().villagerChatAIUseTools;
             Config.getInstance().villagerChatAIUseTools = true;
             try {
+                PruebasDialogo.run(p, v);
                 ActionTurn stale = ActionTurn.capture(p, v, 30_000);
                 Voluntad.nuevaGeneracion(v.getUuid());
                 var rejected = new OpenAIChatAI().answer(p, v, "sígueme", System.currentTimeMillis() + 1000, null, stale);
