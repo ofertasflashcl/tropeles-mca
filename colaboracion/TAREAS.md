@@ -36,8 +36,10 @@ Reparto operativo: [PLAN-PARA-CLAUDE.md](PLAN-PARA-CLAUDE.md), publicado inicial
 
 | ID | Qué | Quién | Archivos reservados | Estado |
 |---|---|---|---|---|
-| N01-N05 | Regreso de minas, entrada/ruta persistente, búsqueda tipada y costes/diagnóstico | Sol | `body/Mina.java`, `body/Motor.java`, `mente/Recuerdos.java`, `ProspectingTask.java`, módulos nuevos de navegación | en curso · sol/mineria-retorno |
-| V01-mina | Regresiones de navegación y registro central de escenarios | Sol | `server/command/Pruebas.java`, `scripts/ci/*`, pruebas nuevas de navegación | en curso |
+| N01-N05 · primer incremento | Regreso de minas, corredor protegido, búsqueda continuable y costes/diagnóstico; resto de arquitectura pendiente | Sol | `body/Mina.java`, `body/Motor.java`, `mente/Recuerdos.java`, `ProspectingTask.java`, módulos nuevos de navegación | en PR #4 · 60/60 + reinicio 2/2; ver ENTREGA-SOL-MINERIA.md |
+| V01-mina | Regresiones de navegación y registro central de escenarios | Sol | `server/command/Pruebas.java`, `scripts/ci/*`, pruebas nuevas de navegación | en PR #4 · 60/60 + 2/2 |
 | F16-recetas | Recetas reales y cadena heno→trigo→pan; conservar contratos usados por el minero | Claude | `body/Progreso.java`, `obra/Taller.java`, `entity/ai/crafting/*`, archivo nuevo de pruebas de recetas | asignada por Benja; esperar confirmación de rama de Claude |
 
 La construcción editable, proyectos propios y cuotas se secuencian después según la hoja; todavía no se reservan sus archivos. Claude registra novedades de recetas en `colaboracion/CLAUDE-RECETAS.md` y comunica a Sol los casos que necesitan alta en el CI central.
+
+Evidencia y límites del primer incremento de Sol: [ENTREGA-SOL-MINERIA.md](ENTREGA-SOL-MINERIA.md). Las reservas de navegación/CI permanecen hasta que entre PR #4; Claude mantiene F16 en sus archivos separados.
