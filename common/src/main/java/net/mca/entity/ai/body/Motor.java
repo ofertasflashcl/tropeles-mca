@@ -1469,7 +1469,11 @@ public final class Motor {
             return Result.RUNNING;
         }
         if (!villager.isOnGround()) {
-            // swimming in a hole: the submerged jump and Agua's blocks under the feet lift it
+            // The head can already be in air while the feet still float in the last water block. In that state
+            // the submerged-only jump above no longer runs: keep swimming up until Agua can set the next support.
+            if (villager.isTouchingWater()) {
+                villager.getJumpControl().setActive();
+            }
             return Result.RUNNING;
         }
         // 0. the feet cell has to take a block

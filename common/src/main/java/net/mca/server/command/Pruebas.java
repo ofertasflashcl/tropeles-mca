@@ -4480,6 +4480,9 @@ public final class Pruebas {
             lowestAir = Math.min(lowestAir, miner.getAir());
             miner.getNavigation().stop();
             task.practice(world, miner);
+            if (ticks % 200 == 0) {
+                MCA.LOGGER.info("PRUEBA agua-pozo t=" + ticks + ": " + state());
+            }
             boolean surface = miner.getBlockY() >= o.getY() - 1 && world.isSkyVisible(miner.getBlockPos().up()) && !miner.isTouchingWater();
             if (!surface) {
                 return null;
@@ -4493,7 +4496,8 @@ public final class Pruebas {
         @Override
         String state() {
             return "en " + miner.getBlockPos().toShortString() + ", haciendo: " + Retina.memory(miner).doing() + ", aire " + miner.getAir()
-                    + ", en el agua: " + miner.isTouchingWater() + ", piedra " + miner.getInventory().count(Items.COBBLESTONE) + ", comida " + task.food();
+                    + ", en el agua: " + miner.isTouchingWater() + ", en suelo: " + miner.isOnGround() + ", y=" + miner.getY()
+                    + ", piedra " + miner.getInventory().count(Items.COBBLESTONE) + ", comida " + task.food() + "; " + task.debug();
         }
 
         @Override

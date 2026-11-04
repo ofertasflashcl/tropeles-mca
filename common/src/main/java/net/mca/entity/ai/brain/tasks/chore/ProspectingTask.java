@@ -788,6 +788,9 @@ public class ProspectingTask extends AbstractChoreTask {
         }
         // the job is over: the next one starts from the mine it left (when near), not from this trip's half-way state
         started = false;
+        pieBusqueda = null;
+        viaPendiente = false;
+        viaRetryAt = 0;
         phase = Phase.SEEK;
         resume = Phase.SEEK;
         trip = Trip.BAG;
@@ -1440,7 +1443,6 @@ public class ProspectingTask extends AbstractChoreTask {
         return bestWater == null ? null : new BlockPos[]{bestWater, bestStand};
     }
 
-    /** For the in-game checks: how full its food bar is, and where home is. */
     /** Bounded work per return tick; a smaller slice also lets server checks exercise continuation. */
     public void setWalkBudget(int nodes) {
         if (nodes < 1 || nodes > 512) {
@@ -1449,6 +1451,7 @@ public class ProspectingTask extends AbstractChoreTask {
         walkBudget = nodes;
     }
 
+    /** For the in-game checks: how full its food bar is, and where home is. */
     public void setFood(int points) {
         food = points;
         comidaLeida = true; // set on purpose: what the villager kept from before does not overwrite it
@@ -1468,7 +1471,8 @@ public class ProspectingTask extends AbstractChoreTask {
         return phase + (phase == Phase.HOME_UP || phase == Phase.HOME_WALK || phase == Phase.HOME_STORE ? " (" + trip + ")" : "")
                 + (ore == null ? "" : " hacia " + ore.toShortString()) + (plan.isEmpty() ? "" : " plan " + plan.peekFirst().toShortString())
                 + ", camino " + mina.size() + (fallback ? " (escalera propia, modo " + climbMode + ")" : "")
-                + (viaMemoria ? " (por " + viaDe + ", " + via.size() + " pasos" + (viaPaso ? ", paso a paso" : "") + ")" : "");
+                + (viaMemoria ? " (por " + viaDe + ", " + via.size() + " pasos" + (viaPaso ? ", paso a paso" : "") + ")" : "")
+                + ", cuerpo: " + motor.doing() + (viaPendiente ? ", búsqueda pendiente" : "");
     }
 
     /** For the checks: the phase it is in ("HOME_WALK"), and whether it is walking a way it remembers. */
@@ -2531,6 +2535,12 @@ public class ProspectingTask extends AbstractChoreTask {
             }
         } catch (RuntimeException e) {
             MCA.LOGGER.warn("[Tropeles] {} no pudo pensar en un camino sin cavar: {}", name(), e.toString());
+            if (phase == Phase.HOME_UP) {
+                // A failed query is not evidence that its staircase disappeared.
+                pieBusqueda = null;
+                viaPendiente = true;
+                viaRetryAt = world.getTime() + 200;
+            }
             way = List.of();
         }
         if (way.isEmpty()) {
