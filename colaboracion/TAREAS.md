@@ -43,3 +43,15 @@ Reparto operativo: [PLAN-PARA-CLAUDE.md](PLAN-PARA-CLAUDE.md), publicado inicial
 La construcción editable, proyectos propios y cuotas se secuencian después según la hoja; todavía no se reservan sus archivos. Claude registra novedades de recetas en `colaboracion/CLAUDE-RECETAS.md` y comunica a Sol los casos que necesitan alta en el CI central.
 
 Evidencia y límites del primer incremento de Sol: [ENTREGA-SOL-MINERIA.md](ENTREGA-SOL-MINERIA.md). Las reservas de navegación/CI permanecen hasta que entre PR #4; Claude mantiene F16 en sus archivos separados.
+
+## 2026-11-04 · construcción: reparto vigente
+
+Reservas publicadas en [CONSTRUCCION-PARA-CLAUDE.md](CONSTRUCCION-PARA-CLAUDE.md), rama `sol/planos-persistentes`, base combinada `d803646`. Sustituyen las propuestas anteriores para construcción; las correcciones de minería/recetas permanecen intactas.
+
+| ID | Qué | Quién | Archivos reservados | Estado |
+|---|---|---|---|---|
+| C01 | Plano inmutable, identidad/revisión/hash, snapshot, migración y anclas propias | Sol | `obra/Plano.java`, `Obra.java`, `Sitio.java`, `ObrasMundo.java`, nuevo `PlanoCodec.java`, `PruebasPlanos.java`, registro/CI | en PR #7 · 78/78 + reinicio 3/3 |
+| C02 | Catálogo local, dos geometrías nuevas y edición limitada de borradores | Claude | nuevos `obra/ModelosCasa.java`, `CatalogoPlanos.java`, `PruebasCatalogo.java`, `CLAUDE-CONSTRUCCION.md` | asignada; puede empezar ahora |
+| C03 | Selección, propuesta, vista previa y aprobación de revisión | Claude | entrada de casa en Voluntad/acciones/chat, Proyeccion, Constructor y nuevos módulos de propuestas; ver hoja | siguiente PR después de C02 |
+
+Sol no modifica modelos, diálogo o render; Claude no modifica persistencia/validación central ni registro de CI. El PR de núcleo se apila sobre la rama del PR #6 mientras esa combinación espera integración. No fusionar trabajo ni publicar jar sin la decisión de Benja.
