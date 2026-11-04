@@ -91,6 +91,7 @@ public final class Pruebas {
                 case "ia-red" -> start(new IaRed(world, false));
                 case "recetas" -> PruebasRecetas.empezar(world, which);
                 case "planos", "planos-reinicio" -> PruebasPlanos.run(world, which);
+                case "catalogo" -> PruebasCatalogo.run(world, which);
                 case "ia-solo-promesa" -> start(new IaRed(world, true));
                 case "conectar" -> start(new Conectar(world));
                 case "tala" -> start(new Tala(world));

@@ -62,6 +62,7 @@ mca-prueba archivo-revisiones
 mca-prueba robo-actor
 mca-prueba recetas
 mca-prueba planos
+mca-prueba catalogo
 await-checks 320
 mca-prueba resumen
 sleep 2
