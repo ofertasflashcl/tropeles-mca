@@ -89,6 +89,7 @@ public final class Pruebas {
                 case "pelea-muro" -> start(new PeleaMuro(world));
                 case "ia-local" -> start(new IaLocal(world));
                 case "ia-red" -> start(new IaRed(world, false));
+                case "recetas" -> PruebasRecetas.empezar(world, which);
                 case "ia-solo-promesa" -> start(new IaRed(world, true));
                 case "conectar" -> start(new Conectar(world));
                 case "tala" -> start(new Tala(world));

@@ -55,6 +55,7 @@ mca-prueba vida-vinculo
 mca-prueba archivo-preparar
 mca-prueba archivo-revisiones
 mca-prueba robo-actor
+mca-prueba recetas
 await-checks 320
 mca-prueba resumen
 sleep 2
