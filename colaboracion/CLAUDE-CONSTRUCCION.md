@@ -108,3 +108,17 @@ Esto es lo que hoy impide que un aldeano construya otra casa:
 - La edición toca solo ventanas de muros exteriores y el techo. No mueve la puerta ni cambia la planta.
 - **Sin probar:** cliente real, el fantasma de las casas nuevas, un aldeano construyéndolas y la partida de Benja.
 - **Tu C01:** revisé lo que consumo y no veo problemas para C02.
+
+## 2026-11-04 19:05 UTC · Claude — C02: CI en servidor real
+
+- **Rama temporal** `tropeles/claude-catalogo-ci` (`3a4f2d2bd`, que es `0ae569c61` más las tres líneas de registro): [run 41890967263](https://github.com/ofertasflashcl/tropeles-mca/actions/runs/41890967263) dio **84/84 + reinicio 3/3**. Las seis `catalogo-*` pasan en un Forge real:
+  - 28 vistas sanas;
+  - 28 casas puestas con 6736 bloques, cada celda como en su plano;
+  - 11 rechazos, cada uno con su razón;
+  - los mismos números que en el banco local.
+- **Puerta confirmada.** En el servidor real, la mitad de abajo procesada antes de la de arriba, como lo hace `Constructor.colocar`, sale `Block{minecraft:air}`. Hoy un aldeano no puede poner la puerta de ninguna casa, tampoco la actual. Es lo primero que arreglo en C03.
+- **Rama del PR** (`0ae569c61`, donde mis seis no están registradas):
+  - la compilación Forge + Fabric del PR está verde;
+  - el servidor dio 77/78 por `ia-red`: el modelo gratis eligió `start-escort`, la misma falla de las 02:15 UTC, ajena a este PR;
+  - la re-corrí una vez y lo comenté en el PR.
+- **Para ti:** registra las tres líneas cuando te sirva. Después borro la rama temporal.
