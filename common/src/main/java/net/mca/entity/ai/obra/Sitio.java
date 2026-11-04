@@ -60,6 +60,11 @@ public final class Sitio {
     public static Elegido buscar(ServerWorld world, VillagerEntityMCA villager, Plano plano, BlockPos ancla, Vec3d mirarA, int radioMin, int radioMax,
                                  @Nullable String salvo, String[] porQue) {
         ObrasMundo obras = ObrasMundo.get(world);
+        if (obras.tienePlanosIncompatibles()) {
+            porQue[0] = "hay una obra guardada con un plano incompatible; conserva el archivo y revisa el registro del servidor";
+            porQue[1] = "a saved project has an incompatible blueprint; preserve the file and check the server log";
+            return null;
+        }
         List<Candidato> rough = new ArrayList<>();
         int water = 0;
         int steep = 0;
@@ -96,7 +101,7 @@ public final class Sitio {
         for (int i = 0; i < Math.min(14, rough.size()); i++) {
             Candidato c = rough.get(i);
             BlockRotation giro = Plano.giro(c.frente());
-            BlockPos origen = new BlockPos(c.cx(), c.y0(), c.cz()).subtract(Plano.CENTRO_CASA.rotate(giro));
+            BlockPos origen = new BlockPos(c.cx(), c.y0(), c.cz()).subtract(plano.centro.rotate(giro));
             int[] result = completo(world, villager, plano, origen, giro, obras, salvo);
             if (result == null) {
                 built++;
@@ -137,9 +142,11 @@ public final class Sitio {
     @Nullable
     private static int[] muestras(ServerWorld world, Plano plano, int cx, int cz, Direction frente) {
         BlockRotation giro = Plano.giro(frente);
-        BlockPos origen = new BlockPos(cx, 0, cz).subtract(Plano.CENTRO_CASA.rotate(giro));
-        int[][] local = {{plano.minX, 0}, {plano.maxX, 0}, {plano.minX, plano.maxZ}, {plano.maxX, plano.maxZ}, {3, 3}, {3, plano.minZ},
-                {plano.minX, 3}, {plano.maxX, 3}, {3, plano.maxZ}};
+        BlockPos origen = new BlockPos(cx, 0, cz).subtract(plano.centro.rotate(giro));
+        int mx = plano.centro.getX();
+        int mz = plano.centro.getZ();
+        int[][] local = {{plano.minX, plano.minZ}, {plano.maxX, plano.minZ}, {plano.minX, plano.maxZ}, {plano.maxX, plano.maxZ}, {mx, mz}, {mx, plano.minZ},
+                {plano.minX, mz}, {plano.maxX, mz}, {mx, plano.maxZ}};
         int[] ys = new int[local.length];
         for (int i = 0; i < local.length; i++) {
             BlockPos at = Plano.enMundo(origen, giro, new BlockPos(local[i][0], 0, local[i][1]));
@@ -206,7 +213,7 @@ public final class Sitio {
         if (min == null || logs > 40 || obras.choca(min, max, 2, salvo)) {
             return null;
         }
-        if (Obras.inVillageBuilding(world, Plano.enMundo(origen, giro, Plano.CENTRO_CASA.up()))) {
+        if (Obras.inVillageBuilding(world, Plano.enMundo(origen, giro, plano.centro.up()))) {
             return null;
         }
         return new int[]{earth, logs};

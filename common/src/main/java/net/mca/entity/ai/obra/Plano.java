@@ -14,6 +14,7 @@ import net.minecraft.item.BlockItem;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
+import net.minecraft.util.Identifier;
 import net.minecraft.registry.tag.BlockTags;
 import net.minecraft.registry.tag.ItemTags;
 import net.minecraft.state.property.Properties;
@@ -26,10 +27,13 @@ import org.jetbrains.annotations.Nullable;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 
 /**
  * The blueprint of a building, in its own coordinates (front to the north, -z; x and z from 0): every block with the
@@ -146,6 +150,14 @@ public final class Plano {
         }
     }
 
+    public static final int MAX_PIEZAS = 4096;
+    public static final int MAX_EXTENSION = 64;
+    public final String id;
+    public final int revision;
+    /** Local ground anchor and the feet outside the door, independent of the legacy house's dimensions. */
+    public final BlockPos centro;
+    public final BlockPos entrada;
+    private final String hash;
     public final String nombre;
     public final String nombreEn;
     /** Every block, ground floor first; the empty cells last. */
@@ -158,10 +170,14 @@ public final class Plano {
     public final int maxZ;
     public final int alto;
 
-    private Plano(String nombre, String nombreEn, List<Pieza> piezas) {
+    private Plano(String id, int revision, String nombre, String nombreEn, BlockPos centro, BlockPos entrada, List<Pieza> piezas) {
+        this.id = id;
+        this.revision = revision;
+        this.centro = centro.toImmutable();
+        this.entrada = entrada.toImmutable();
         this.nombre = nombre;
         this.nombreEn = nombreEn;
-        this.piezas = Collections.unmodifiableList(piezas);
+        this.piezas = List.copyOf(piezas);
         Map<Rol, Integer> m = new EnumMap<>(Rol.class);
         int x0 = Integer.MAX_VALUE;
         int z0 = Integer.MAX_VALUE;
@@ -184,6 +200,89 @@ public final class Plano {
         this.maxX = x1;
         this.maxZ = z1;
         this.alto = y1 + 1;
+        this.hash = PlanoCodec.hash(this);
+    }
+
+    /** Validates and freezes a draft. It does not authorize a site or prove that the builder can reach each piece. */
+    public static Plano crear(String id, int revision, String nombre, String nombreEn, BlockPos centro, BlockPos entrada, List<Pieza> piezas) {
+        Identifier key = id == null ? null : Identifier.tryParse(id);
+        if (key == null || !key.toString().equals(id) || id.length() > 128 || revision < 1) {
+            throw new IllegalArgumentException("Invalid blueprint identity/revision");
+        }
+        if (nombre == null || nombre.isBlank() || nombre.length() > 256 || nombreEn == null || nombreEn.isBlank() || nombreEn.length() > 256) {
+            throw new IllegalArgumentException("Invalid blueprint name");
+        }
+        validarPos(Objects.requireNonNull(centro));
+        validarPos(Objects.requireNonNull(entrada));
+        if (centro.getY() != 0 || entrada.getY() < 1 || piezas == null || piezas.isEmpty() || piezas.size() > MAX_PIEZAS) {
+            throw new IllegalArgumentException("Invalid blueprint anchors or cell count");
+        }
+        List<Pieza> copy = new ArrayList<>(piezas.size());
+        Set<BlockPos> occupied = new HashSet<>();
+        Map<BlockPos, Pieza> cells = new LinkedHashMap<>();
+        for (Pieza p : piezas) {
+            if (p == null || p.rel() == null || p.state() == null || p.rol() == null) {
+                throw new IllegalArgumentException("Null blueprint cell");
+            }
+            validarPos(p.rel());
+            Pieza frozen = new Pieza(p.rel().toImmutable(), p.state(), p.rol());
+            if (!occupied.add(frozen.rel()) || !compatible(frozen)) {
+                throw new IllegalArgumentException("Duplicate or unsupported blueprint cell: " + frozen.rel());
+            }
+            copy.add(frozen);
+            cells.put(frozen.rel(), frozen);
+        }
+        for (Pieza p : copy) {
+            if (p.rol() == Rol.PUERTA || p.rol() == Rol.PUERTA_ARRIBA) {
+                boolean lower = p.rol() == Rol.PUERTA;
+                Pieza mate = cells.get(lower ? p.rel().up() : p.rel().down());
+                Rol role = lower ? Rol.PUERTA_ARRIBA : Rol.PUERTA;
+                DoubleBlockHalf half = lower ? DoubleBlockHalf.UPPER : DoubleBlockHalf.LOWER;
+                if (mate == null || mate.rol() != role || !p.state().with(DoorBlock.HALF, half).equals(mate.state())) {
+                    throw new IllegalArgumentException("Incomplete or mismatched blueprint door");
+                }
+            }
+        }
+        Plano plano = new Plano(id, revision, nombre, nombreEn, centro, entrada, copy);
+        if (plano.maxX - plano.minX + 1 > MAX_EXTENSION || plano.maxZ - plano.minZ + 1 > MAX_EXTENSION
+                || centro.getX() < plano.minX || centro.getX() > plano.maxX || centro.getZ() < plano.minZ || centro.getZ() > plano.maxZ) {
+            throw new IllegalArgumentException("Blueprint footprint exceeds limits or omits anchor");
+        }
+        for (BlockPos at : List.of(entrada, entrada.up())) {
+            Pieza p = cells.get(at);
+            if (p == null || p.rol() != Rol.AIRE) {
+                throw new IllegalArgumentException("Blueprint entrance requires explicit empty feet/head cells");
+            }
+        }
+        return plano;
+    }
+
+    private static void validarPos(BlockPos p) {
+        if (p.getX() < -MAX_EXTENSION || p.getX() > MAX_EXTENSION || p.getZ() < -MAX_EXTENSION || p.getZ() > MAX_EXTENSION
+                || p.getY() < 0 || p.getY() >= MAX_EXTENSION) {
+            throw new IllegalArgumentException("Blueprint coordinate out of bounds");
+        }
+    }
+
+    private static boolean compatible(Pieza p) {
+        BlockState s = p.state();
+        return switch (p.rol()) {
+            case BASE -> piedra(s);
+            case TRONCO -> s.isIn(BlockTags.LOGS) && s.contains(Properties.AXIS);
+            case TABLA -> s.isIn(BlockTags.PLANKS);
+            case ESCALON -> s.isIn(BlockTags.WOODEN_STAIRS);
+            case PUERTA, PUERTA_ARRIBA -> s.isIn(BlockTags.WOODEN_DOORS) && s.contains(DoorBlock.HALF)
+                    && s.get(DoorBlock.HALF) == (p.rol() == Rol.PUERTA ? DoubleBlockHalf.LOWER : DoubleBlockHalf.UPPER);
+            case VIDRIO -> s.isOf(Blocks.GLASS_PANE);
+            case ANTORCHA -> s.isOf(Blocks.TORCH) || s.isOf(Blocks.WALL_TORCH);
+            case MESA -> s.isOf(Blocks.CRAFTING_TABLE);
+            case COFRE -> s.isOf(Blocks.CHEST);
+            case AIRE -> s.isAir();
+        };
+    }
+
+    public String hash() {
+        return hash;
     }
 
     private static final Map<Madera, Plano> CASAS = new EnumMap<>(Madera.class);
@@ -326,7 +425,8 @@ public final class Plano {
                 list.add(piece);
             }
         }
-        return new Plano("casa de dos pisos", "two-storey house", list);
+        return crear("tropeles:legacy/casa_dos_pisos", 1, "casa de dos pisos", "two-storey house", CENTRO_CASA,
+                new BlockPos(3, 1, -1), list);
     }
 
     /** The first piece set at a cell stays: the door and windows are put before the walls they sit in. */

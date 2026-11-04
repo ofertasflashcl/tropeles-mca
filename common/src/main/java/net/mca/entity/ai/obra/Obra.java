@@ -39,6 +39,8 @@ public final class Obra {
     public BlockPos origen;
     public Direction frente;
     public Plano.Madera madera;
+    /** The exact design chosen for this project; never resolved again from a changing catalog or wood field. */
+    private final Plano plano;
     /** A player told the builder to do something else: it does not go back to it by itself. */
     public boolean pausaJugador;
     /** There is no sand anywhere it could look: the windows stay open. */
@@ -69,17 +71,22 @@ public final class Obra {
     private transient int maxZ;
 
     public Obra(String id, UUID constructor, String constructorNombre, BlockPos origen, Direction frente, Plano.Madera madera) {
+        this(id, constructor, constructorNombre, origen, frente, madera, Plano.casa(madera));
+    }
+
+    public Obra(String id, UUID constructor, String constructorNombre, BlockPos origen, Direction frente, Plano.Madera madera, Plano plano) {
         this.id = id;
         this.constructor = constructor;
         this.constructorNombre = constructorNombre;
         this.origen = origen.toImmutable();
         this.frente = frente;
         this.madera = madera;
+        this.plano = java.util.Objects.requireNonNull(plano);
         this.paraNombre = "";
     }
 
     public Plano plano() {
-        return Plano.casa(madera);
+        return plano;
     }
 
     public BlockRotation giro() {
@@ -161,12 +168,12 @@ public final class Obra {
 
     /** The middle of the ground floor. */
     public BlockPos centro() {
-        return Plano.enMundo(origen, giro(), Plano.CENTRO_CASA.up());
+        return Plano.enMundo(origen, giro(), plano.centro.up());
     }
 
     /** The cell in front of the door, outside. */
     public BlockPos entrada() {
-        return Plano.enMundo(origen, giro(), new BlockPos(3, 1, -1));
+        return Plano.enMundo(origen, giro(), plano.entrada);
     }
 
     /** How many blocks it has in all (the door once). */
@@ -226,6 +233,7 @@ public final class Obra {
         n.putLong("origen", origen.asLong());
         n.putString("frente", frente.asString());
         n.putString("madera", madera.name());
+        n.put("plano", PlanoCodec.guardar(plano));
         n.putBoolean("pausaJugador", pausaJugador);
         n.putBoolean("sinVidrio", sinVidrio);
         n.putLong("creada", creada);
@@ -250,8 +258,18 @@ public final class Obra {
         try {
             Direction frente = Direction.byName(n.getString("frente"));
             Plano.Madera madera = Plano.Madera.valueOf(n.getString("madera"));
+            // Only saves predating snapshots use the legacy generator. A bad/future snapshot never falls back.
+            Plano plano;
+            if (n.contains("plano")) {
+                if (!n.contains("plano", NbtElement.COMPOUND_TYPE)) {
+                    throw new IllegalArgumentException("Invalid project blueprint snapshot");
+                }
+                plano = PlanoCodec.leer(n.getCompound("plano"));
+            } else {
+                plano = Plano.casa(madera);
+            }
             Obra o = new Obra(n.getString("id"), n.getUuid("constructor"), n.getString("constructorNombre"), BlockPos.fromLong(n.getLong("origen")),
-                    frente == null || frente.getAxis().isVertical() ? Direction.NORTH : frente, madera);
+                    frente == null || frente.getAxis().isVertical() ? Direction.NORTH : frente, madera, plano);
             if (n.containsUuid("para")) {
                 o.para = n.getUuid("para");
             }
