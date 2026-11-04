@@ -46,6 +46,11 @@ mca-prueba vista-escalera
 mca-prueba vista-oscuro
 mca-prueba vista-oido
 mca-prueba escalera-real
+mca-prueba regreso-sin-pico
+mca-prueba mina-rastro
+mca-prueba ruta-presupuesto
+mca-prueba ruta-transicion
+mca-prueba coste-rotura
 mca-prueba bajada-lado
 mca-prueba vida-contratos
 mca-prueba vida-permisos
@@ -55,6 +60,7 @@ mca-prueba vida-vinculo
 mca-prueba archivo-preparar
 mca-prueba archivo-revisiones
 mca-prueba robo-actor
+mca-prueba recetas
 await-checks 320
 mca-prueba resumen
 sleep 2

@@ -29,3 +29,17 @@ IDs de la auditoría de Sol (F, B) y de su informe de vida autónoma (V = matriz
 | V20 | Miedo con lugar: los peligros que ya cree (`peligro:` del Núcleo) cambian dónde empieza una mina, hacia dónde explora y qué presa caza; avisa al que sigue; pasar seguro por ahí lo baja | Claude | `nucleo/*`, `ProspectingTask.java`, `body/Explorar.java`, `mente/Iniciativa.java` | hecha (b48333aac) |
 | V21 | Vínculo con historia: confianza, familiaridad y conflicto (de sus episodios) más los corazones de MCA deciden si acepta, refunfuña o se niega, con la razón; si el que sigue le pega otra vez, deja de seguirlo; disculpas y regalos reparan; una orden no crea cariño | Claude | `mente/Voluntad.java`, `mente/Companero.java`, `nucleo/*`, `chatAI/MenteLocal.java` | hecha (b48333aac) |
 | R83 | Resultados tipados de encargos (HECHO, PARCIAL, BLOQUEADO, CANCELADO, VENCIDO, DENEGADO, FALLIDO) con motivo y lo entregado de verdad, en su memoria y en el log | Claude | `mente/Encargo.java`, `mente/Voluntad.java`, `ProspectingTask.java` | hecha (b48333aac) |
+
+## 2026-11-04 · nueva entrega autorizada por Benja
+
+Reparto operativo: [PLAN-PARA-CLAUDE.md](PLAN-PARA-CLAUDE.md), publicado inicialmente en `sol/mineria-retorno`. Estas reservas aplican a la primera entrega nueva y reemplazan el reparto hipotético de los informes en esos archivos. No reabren trabajos ya integrados del PR #2.
+
+| ID | Qué | Quién | Archivos reservados | Estado |
+|---|---|---|---|---|
+| N01-N05 · primer incremento | Regreso de minas, corredor protegido, búsqueda continuable y costes/diagnóstico; resto de arquitectura pendiente | Sol | `body/Mina.java`, `body/Motor.java`, `mente/Recuerdos.java`, `ProspectingTask.java`, módulos nuevos de navegación | en PR #4 · 60/60 + reinicio 2/2; ver ENTREGA-SOL-MINERIA.md |
+| V01-mina | Regresiones de navegación y registro central de escenarios | Sol | `server/command/Pruebas.java`, `scripts/ci/*`, pruebas nuevas de navegación | en PR #4 · 60/60 + 2/2 |
+| F16-recetas | Recetas reales y cadena heno→trigo→pan; conservar contratos usados por el minero | Claude | `body/Progreso.java`, `obra/Taller.java`, `entity/ai/crafting/*`, archivo nuevo de pruebas de recetas | asignada por Benja; esperar confirmación de rama de Claude |
+
+La construcción editable, proyectos propios y cuotas se secuencian después según la hoja; todavía no se reservan sus archivos. Claude registra novedades de recetas en `colaboracion/CLAUDE-RECETAS.md` y comunica a Sol los casos que necesitan alta en el CI central.
+
+Evidencia y límites del primer incremento de Sol: [ENTREGA-SOL-MINERIA.md](ENTREGA-SOL-MINERIA.md). Las reservas de navegación/CI permanecen hasta que entre PR #4; Claude mantiene F16 en sus archivos separados.

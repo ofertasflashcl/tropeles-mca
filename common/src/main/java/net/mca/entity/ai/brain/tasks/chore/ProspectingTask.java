@@ -106,7 +106,7 @@ public class ProspectingTask extends AbstractChoreTask {
     }
 
     /** Why it is on its way up: a full bag, hunger, no pickaxe left, or someone called it out of the mine. */
-    private enum Trip {BAG, FOOD, PICK, CALLED}
+    private enum Trip {BAG, FOOD, PICK, CALLED, ROUTE}
 
     /** Food points like a player's bar: one goes every minute of work, food in the bag brings them back. */
     private static final int FOOD_MAX = 20;
@@ -339,18 +339,26 @@ public class ProspectingTask extends AbstractChoreTask {
     private int trailDigFails;
     /** It said it cannot find the way home this trip (it keeps trying, connected). */
     private boolean lostSaid;
-    /** A way on foot ({@link #aPie}) looked for and not found: from where, to where and when, so it is not looked for every tick. */
+    /** Walking search retained between return ticks; a spent slice is not a missing staircase. */
     @Nullable
-    private BlockPos pieNadaDe;
+    private Motor.WalkSearch pieBusqueda;
+    /**
+     * A question of this same wait that came out "no way on foot" (the door of its mine) while the next one (the mouth
+     * it remembers) is still being thought out: answered from here, so it never takes that one's place and starts it
+     * again every tick. Forgotten as soon as nothing is pending.
+     */
+    @Nullable
+    private Motor.WalkSearch pieSinPaso;
+    private int walkBudget = 512;
+    private boolean viaPendiente;
+    private long viaRetryAt;
+
     /** It could not get into its house this trip: its chest may go right by the house, outside. */
     private boolean homeOutside;
     /** The ripe crop it is going to harvest, and for how long it has been at it. */
     @Nullable
     private BlockPos crop;
     private int cropTicks;
-    @Nullable
-    private BlockPos pieNadaA;
-    private long pieNadaAt = Long.MIN_VALUE / 2;
     /** What it looked for (and why each failed) before it cut a staircase of its own this trip: said in the log when it digs. */
     private final List<String> intentos = new ArrayList<>();
 
@@ -752,6 +760,9 @@ public class ProspectingTask extends AbstractChoreTask {
         if (face == null || age < 0 || age > RESUME_AGE) {
             return false;
         }
+        if (saved.nearLowAny(Mining.pies(villager)) >= 0) {
+            return true; // a restart in the middle of a long known corridor is not a different mine
+        }
         BlockPos door = saved.entrance();
         return horizontalSq(face, villager) <= RESUME_DISTANCE * RESUME_DISTANCE
                 || door != null && horizontalSq(door, villager) <= RESUME_DISTANCE * RESUME_DISTANCE;
@@ -784,6 +795,10 @@ public class ProspectingTask extends AbstractChoreTask {
         }
         // the job is over: the next one starts from the mine it left (when near), not from this trip's half-way state
         started = false;
+        pieBusqueda = null;
+        pieSinPaso = null;
+        viaPendiente = false;
+        viaRetryAt = 0;
         phase = Phase.SEEK;
         resume = Phase.SEEK;
         trip = Trip.BAG;
@@ -1436,6 +1451,14 @@ public class ProspectingTask extends AbstractChoreTask {
         return bestWater == null ? null : new BlockPos[]{bestWater, bestStand};
     }
 
+    /** Bounded work per return tick; a smaller slice also lets server checks exercise continuation. */
+    public void setWalkBudget(int nodes) {
+        if (nodes < 1 || nodes > 512) {
+            throw new IllegalArgumentException("walk budget must be 1..512");
+        }
+        walkBudget = nodes;
+    }
+
     /** For the in-game checks: how full its food bar is, and where home is. */
     public void setFood(int points) {
         food = points;
@@ -1456,7 +1479,8 @@ public class ProspectingTask extends AbstractChoreTask {
         return phase + (phase == Phase.HOME_UP || phase == Phase.HOME_WALK || phase == Phase.HOME_STORE ? " (" + trip + ")" : "")
                 + (ore == null ? "" : " hacia " + ore.toShortString()) + (plan.isEmpty() ? "" : " plan " + plan.peekFirst().toShortString())
                 + ", camino " + mina.size() + (fallback ? " (escalera propia, modo " + climbMode + ")" : "")
-                + (viaMemoria ? " (por " + viaDe + ", " + via.size() + " pasos" + (viaPaso ? ", paso a paso" : "") + ")" : "");
+                + (viaMemoria ? " (por " + viaDe + ", " + via.size() + " pasos" + (viaPaso ? ", paso a paso" : "") + ")" : "")
+                + ", cuerpo: " + motor.doing() + (viaPendiente ? ", búsqueda pendiente" : "");
     }
 
     /** For the checks: the phase it is in ("HOME_WALK"), and whether it is walking a way it remembers. */
@@ -1975,6 +1999,12 @@ public class ProspectingTask extends AbstractChoreTask {
         if (phase != Phase.SEEK) {
             return false;
         }
+        if (underground && mina.needsReturn()) {
+            Voluntad.contar(villager, "Mi recorrido ya es muy largo. Vuelvo mientras conservo toda la subida.",
+                    "This trip is getting long. I'll return while I still remember the whole way out.");
+            leave(world, villager, Trip.ROUTE);
+            return true;
+        }
         int picks = Progreso.countPicks(villager);
         if (underground && picks == 0 && progreso.needsSurface() && !Progreso.canCraftPick(villager)) {
             say("chore.mining.nopick2");
@@ -2079,6 +2109,10 @@ public class ProspectingTask extends AbstractChoreTask {
     /** Up and out, whatever for: back along its trail (or a staircase of its own), then home. */
     private void leave(ServerWorld world, VillagerEntityMCA villager, Trip why) {
         trip = why;
+        pieBusqueda = null;
+        pieSinPaso = null;
+        viaPendiente = false;
+        viaRetryAt = 0;
         BlockPos feet = Mining.pies(villager);
         if (campo != Campo.NADA) {
             endCampo(world, villager, world.getTime() + 1200);
@@ -2126,6 +2160,7 @@ public class ProspectingTask extends AbstractChoreTask {
             case FOOD -> "a buscar comida";
             case PICK -> "a la superficie a buscar madera para un pico";
             case CALLED -> "a casa porque me llamaron";
+            case ROUTE -> "a casa antes de agotar mi memoria del recorrido";
         } + " desde " + feet.getX() + " " + feet.getY() + " " + feet.getZ() + " (" + Entorno.lugar(world, villager).palabra() + ")", feet);
         // on its own staircase below the door (the open top of it, a few steps under the land) it is still in its mine:
         // up the staircase by its feet, not a walk home by the path finder that gives up and digs a way of its own
@@ -2225,6 +2260,12 @@ public class ProspectingTask extends AbstractChoreTask {
             surfaced(world, villager);
             return;
         }
+        if (now < viaRetryAt) {
+            villager.getNavigation().stop();
+            memory.doing("esperando antes de comprobar de nuevo la subida", now);
+            resetWatch();
+            return;
+        }
         if (trailDig) {
             trailDigStep(world, villager, feet, memory, now);
             return;
@@ -2254,6 +2295,12 @@ public class ProspectingTask extends AbstractChoreTask {
         }
         if (trailDig) {
             return; // up its own trail from the next tick on: nothing dug toward a staircase of its own meanwhile
+        }
+        if (goal == null && viaPendiente) {
+            villager.getNavigation().stop();
+            memory.doing("buscando cómo volver por su subida, sin cavar mientras piensa", now);
+            resetWatch();
+            return;
         }
         if (goal == null) {
             if (plan.isEmpty()) {
@@ -2352,7 +2399,9 @@ public class ProspectingTask extends AbstractChoreTask {
                     + feet.getZ() + (end == null ? "" : " a " + end.getX() + " " + end.getY() + " " + end.getZ()), feet);
             return true;
         }
-        startFallback(world, villager, feet, fromIdx);
+        if (!viaPendiente) {
+            startFallback(world, villager, feet, fromIdx);
+        }
         return false;
     }
 
@@ -2384,6 +2433,10 @@ public class ProspectingTask extends AbstractChoreTask {
 
     /** That way is the one it walks now (never digging), to {@code to} or out when null. */
     private void setVia(ServerWorld world, VillagerEntityMCA villager, BlockPos feet, List<BlockPos> way, @Nullable BlockPos to, String de) {
+        pieBusqueda = null;
+        pieSinPaso = null;
+        viaPendiente = false;
+        viaRetryAt = 0;
         via.clear();
         via.addAll(way);
         viaMemoria = true;
@@ -2411,6 +2464,8 @@ public class ProspectingTask extends AbstractChoreTask {
      * to {@code to} the steps it remembers, then any such way. True when it walks one now.
      */
     private boolean buscarVia(ServerWorld world, VillagerEntityMCA villager, BlockPos feet, @Nullable BlockPos to) {
+        viaPendiente = false;
+        int marca = intentos.size(); // a pass that ends pending is said again in full when the search has its answer
         List<BlockPos> way = List.of();
         String de = "";
         try {
@@ -2422,6 +2477,9 @@ public class ProspectingTask extends AbstractChoreTask {
             BlockPos meta = to != null ? to : door != null && door.isWithinDistance(feet, RESUME_DISTANCE) ? door : null;
             if (meta != null) {
                 List<BlockPos> pie = aPie(world, villager, feet, meta, to != null ? 1.0 : 0.5);
+                if (viaPendiente) {
+                    return false;
+                }
                 if (pie != null && pie.size() >= 2) {
                     way = pie.subList(1, pie.size());
                     de = to != null ? "un camino que conoce, a pie" : "su escalera, a pie";
@@ -2455,6 +2513,10 @@ public class ProspectingTask extends AbstractChoreTask {
                     if (boca != null && !boca.equals(door) && boca.isWithinDistance(feet, RESUME_DISTANCE)) {
                         // the mouth of a mine it remembers (an older one, its trail forgotten): on foot up to it
                         List<BlockPos> pie = aPie(world, villager, feet, boca, 0.5);
+                        if (viaPendiente) {
+                            intentos.subList(marca, intentos.size()).clear();
+                            return false;
+                        }
                         if (pie != null && pie.size() >= 2) {
                             way = pie.subList(1, pie.size());
                             de = "la boca de su mina, a pie";
@@ -2485,7 +2547,17 @@ public class ProspectingTask extends AbstractChoreTask {
             }
         } catch (RuntimeException e) {
             MCA.LOGGER.warn("[Tropeles] {} no pudo pensar en un camino sin cavar: {}", name(), e.toString());
+            if (phase == Phase.HOME_UP) {
+                // A failed query is not evidence that its staircase disappeared.
+                pieBusqueda = null;
+                pieSinPaso = null;
+                viaPendiente = true;
+                viaRetryAt = world.getTime() + 200;
+            }
             way = List.of();
+        }
+        if (!viaPendiente) {
+            pieSinPaso = null;
         }
         if (way.isEmpty()) {
             return false;
@@ -2537,28 +2609,47 @@ public class ProspectingTask extends AbstractChoreTask {
     @Nullable
     private List<BlockPos> aPie(ServerWorld world, VillagerEntityMCA villager, BlockPos feet, BlockPos goal, double within) {
         long now = world.getTime();
-        if (pieNadaDe != null && feet.isWithinDistance(pieNadaDe, 4.0) && goal.equals(pieNadaA) && now - pieNadaAt < 200) {
-            return null; // the same question a moment ago from nearly the same spot: the same answer, not thought out every tick
-        }
         Recuerdos r = Recuerdos.of(world, villager);
         VisualMemory vista = Retina.memory(villager);
-        Map<Long, Boolean> cache = new HashMap<>();
-        Predicate<BlockPos> conocida = c -> cache.computeIfAbsent(c.asLong(), k -> conoce(r, vista, c) && !r.cerrado(c, now));
-        int nodes = (int) Math.min(16000, 3000 + 60 * Math.sqrt(feet.getSquaredDistance(goal)));
-        List<BlockPos> way;
-        try {
-            way = Motor.findWalk(world, feet, goal, within, nodes, conocida);
-        } catch (RuntimeException e) {
-            MCA.LOGGER.warn("[Tropeles] {} no pudo pensar en un camino a pie: {}", name(), e.toString());
-            way = null;
+        Predicate<BlockPos> conocida = c -> conoce(r, vista, c) && !r.cerrado(c, world.getTime());
+        boolean returning = phase == Phase.HOME_UP && !fallback;
+        Motor.WalkSearch search;
+        if (returning) {
+            if (pieSinPaso != null && pieSinPaso.matches(feet, goal, within)) {
+                return null; // asked from these same feet a moment ago: no way on foot, while the next question is pending
+            }
+            if (pieBusqueda == null || !pieBusqueda.matches(feet, goal, within)) {
+                pieBusqueda = new Motor.WalkSearch(feet, goal, within);
+            }
+            search = pieBusqueda;
+        } else {
+            search = new Motor.WalkSearch(feet, goal, within);
         }
-        if (way == null) {
-            pieNadaDe = feet.toImmutable();
-            pieNadaA = goal.toImmutable();
-            pieNadaAt = now;
-            MCA.LOGGER.info("[Tropeles] {} no ve paso a pie de {} a {} ({} celdas pensadas)", name(), feet.toShortString(), goal.toShortString(), nodes);
+        Motor.WalkResult result = search.advance(world, returning ? walkBudget : 16000, conocida,
+                (from, to) -> !r.pasoCerrado(from, to, world.getTime()));
+        if (result.status() == Motor.WalkStatus.FOUND) {
+            pieBusqueda = null;
+            pieSinPaso = null;
+            viaPendiente = false;
+            return result.path();
         }
-        return way;
+        if (returning && result.status() == Motor.WalkStatus.BUDGET_EXHAUSTED) {
+            viaPendiente = true; // continue the same frontier next tick; never start excavating for this reason
+            return null;
+        }
+        pieBusqueda = null;
+        if (returning && result.status() == Motor.WalkStatus.SEARCH_LIMIT) {
+            viaPendiente = true;
+            viaRetryAt = now + 200;
+            MCA.LOGGER.warn("[Tropeles] {} aplaza la búsqueda de salida: límite de recursos tras {} celdas; no afirma que esté tapada", name(), result.expanded());
+            return null;
+        }
+        if (returning && result.status() == Motor.WalkStatus.NO_PATH) {
+            pieSinPaso = search;
+        }
+        MCA.LOGGER.info("[Tropeles] {} búsqueda a pie de {} a {}: {} ({} celdas)", name(), feet.toShortString(), goal.toShortString(),
+                result.status(), result.expanded());
+        return null;
     }
 
     /** Inside its own house: not under the open sky, a few steps from its bed, on the floor of the bed. */
@@ -2666,9 +2757,8 @@ public class ProspectingTask extends AbstractChoreTask {
         if (shut) {
             Recuerdos.of(world, villager).cerrar(cell, now + 6000);
         } else {
-            // open, but its legs got nowhere into it from here (a diagonal squeeze, a step with no room for the head):
-            // left out of its ways for a minute, so the next look takes another way instead of the same one again
-            Recuerdos.of(world, villager).cerrar(cell, now + 1200);
+            // Failure from these feet does not make every approach to the destination impossible.
+            Recuerdos.of(world, villager).cerrarPaso(feet, cell, now + 40);
         }
         BlockPos to = viaDestino;
         String was = viaDe;
@@ -2676,12 +2766,21 @@ public class ProspectingTask extends AbstractChoreTask {
         MCA.LOGGER.info("[Tropeles] {} no sigue por {}: {} {} (vez {} de {})", name(), was, cell.toShortString(), shut ? "está cerrado" : "sigue abierto, no avanzó",
                 viaFails + 1, VIA_TRIES);
         intentos.add(was + ": " + (shut ? "cerrado en " : "no avanzó en ") + cell.toShortString());
-        if (++viaFails < VIA_TRIES && buscarVia(world, villager, feet, to)) {
+        ++viaFails;
+        pieBusqueda = null;
+        pieSinPaso = null;
+        if (!shut && phase == Phase.HOME_UP && viaFails < VIA_TRIES) {
+            viaRetryAt = now + 40; // a body in the way or a missed jump gets a chance to clear before excavation
+            return;
+        }
+        if (viaFails < VIA_TRIES && buscarVia(world, villager, feet, to) || viaPendiente) {
             return;
         }
         if (phase == Phase.HOME_UP) {
-            Voluntad.contar(villager, "Por donde vine está tapado. Cavo una escalera nueva hacia arriba.",
-                    "The way I came is blocked. I'll dig a new staircase up.",
+            Voluntad.contar(villager, shut ? "He comprobado un bloqueo en la subida. Busco cómo salir."
+                            : "No consigo recorrer la subida. Busco otra forma de salir.",
+                    shut ? "I've checked an obstruction on the way up. I'm looking for a way out."
+                            : "I couldn't traverse the way up. I'm looking for another way out.",
                     intentos.isEmpty() ? null : "probé: " + String.join("; ", intentos));
             startFallback(world, villager, feet, mina.nearLow(world, feet));
         }
@@ -3260,7 +3359,7 @@ public class ProspectingTask extends AbstractChoreTask {
                 noFoodAtHome(world, villager);
             }
         }
-        if (trip == Trip.CALLED) {
+        if (trip == Trip.CALLED || trip == Trip.ROUTE) {
             phase = Phase.REST;
             restTicks = 0;
             progreso.wantKit();
@@ -4374,7 +4473,7 @@ public class ProspectingTask extends AbstractChoreTask {
             // nothing out there either: connected all the same, it goes on and tries again later
             noFoodAtHome(world, villager);
         }
-        if (trip == Trip.CALLED) {
+        if (trip == Trip.CALLED || trip == Trip.ROUTE) {
             enterHomeWalk();
             return;
         }
@@ -4505,7 +4604,8 @@ public class ProspectingTask extends AbstractChoreTask {
         boolean digging = breaking > 0 && breaking != lastBreak;
         lastBreak = breaking;
         breakingNow = digging;
-        boolean byChoice = phase == Phase.REST || troubled() || progreso.cooking() || villager.isSleeping() || digging;
+        boolean byChoice = phase == Phase.REST || troubled() || progreso.cooking() || villager.isSleeping() || digging
+                || phase == Phase.HOME_UP && (viaPendiente || now < viaRetryAt);
         Atasco.Remedio remedy = atasco.tick(world, villager, byChoice, memory.doing() + " (" + phase + ")");
         if (remedy == Atasco.Remedio.NINGUNO) {
             return false;

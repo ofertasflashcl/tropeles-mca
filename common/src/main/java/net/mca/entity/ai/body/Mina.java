@@ -25,8 +25,9 @@ import java.util.UUID;
  * miner that went home for food finds its mine and its work face again.
  */
 public final class Mina {
-    /** Crumbs kept at most; past that the oldest half (the door side) is dropped. */
-    public static final int MAX = 1024;
+    /** Active corridor budget. Never evict its entrance to make room for a deeper expedition. */
+    public static final int MAX = 16384;
+    private static final int RETURN_MARGIN = 64;
 
     private long[] cells = new long[64];
     private int size;
@@ -43,6 +44,11 @@ public final class Mina {
 
     public int size() {
         return size;
+    }
+
+    /** Return before the corridor fills; the margin covers movement between the miner's decisions. */
+    public boolean needsReturn() {
+        return size >= MAX - RETURN_MARGIN;
     }
 
     public BlockPos crumb(int i) {
@@ -163,12 +169,8 @@ public final class Mina {
             return false;
         }
         if (size >= MAX) {
-            // too long to keep it all: the deep half stays, the way out from it is found again by climbing
-            int drop = MAX / 2;
-            System.arraycopy(cells, drop, cells, 0, size - drop);
-            size -= drop;
-            door = false;
-            reindex();
+            // The recorder must not destroy a known escape corridor. The task turns back before this limit.
+            return false;
         }
         push(key);
         return true;
@@ -262,6 +264,9 @@ public final class Mina {
             for (int i = fromIndex; i < size; i++) {
                 order.add(cells[i]);
             }
+        }
+        if (order.size() > MAX) {
+            return false; // do not replace a complete corridor with a silently truncated rebase
         }
         int keepDir = dir;
         boolean keepLeft = left;
