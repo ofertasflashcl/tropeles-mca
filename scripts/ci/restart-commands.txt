@@ -1,5 +1,6 @@
 mca-prueba archivo-reinicio
 mca-prueba mina-rastro-reinicio
 mca-prueba planos-reinicio
+mca-prueba propuestas-reinicio
 mca-prueba resumen
 sleep 2

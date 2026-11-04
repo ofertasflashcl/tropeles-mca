@@ -90,3 +90,10 @@ construccion	obra-modelos
 construccion	obra-madera
 construccion	obra-seleccion
 construccion	obra-escolta
+propuestas	propuestas-palabras
+propuestas	propuestas-crear
+propuestas	propuestas-editar
+propuestas	propuestas-aprobar
+propuestas	propuestas-cancelar
+propuestas	propuestas-guardado
+propuestas	propuestas-preparar
