@@ -108,6 +108,12 @@ public final class Motor {
     private static final int COST_OFF_AXIS = 2;
     private static final int COST_SIDE = 4;
     private static final int COST_BACK = 8;
+    /**
+     * Breaking ticks per unit of the weights above: a stone block with a stone pickaxe (12 ticks) costs 2, as the old
+     * flat dig cost did, so with a pickaxe a staircase still beats a pillar (a pillar fills the cells it stood on, and
+     * the way back down is lost), while stone by hand (150 ticks, 19) still makes a pillar the better way.
+     */
+    private static final int TICKS_PER_COST = 8;
 
     /**
      * Extra push per tick when walking in water. A mob's legs give it 0.3 x 0.02 there while a current pushes
@@ -1033,7 +1039,7 @@ public final class Motor {
             stand = feet.offset(facing).up();
         }
         if (blocks && pillarSafe(world, villager, feet, dig, memory) && !Toques.forbidden(villager, feet, world.getTime())) {
-            int cost = (open(world, feet.up(2)) ? 0 : breakingCost(world, villager, feet.up(2))) + COST_PLACE + COST_PILLAR + pillarDetour;
+            int cost = (open(world, feet.up(2)) ? 0 : digCost(world, villager, feet.up(2))) + COST_PLACE + COST_PILLAR + pillarDetour;
             if (cost < best) {
                 best = cost;
                 kind = Kind.PILLAR;
@@ -1127,13 +1133,13 @@ public final class Motor {
                 return -1; // nothing to break on this walk; never a step it set just now, never a cell it keeps digging and filling
             }
             if (Hands.naturalLeaf(world, villager, cell) && !Mining.lavaSeen(memory, cell)) {
-                cost += breakingCost(world, villager, cell);
+                cost += digCost(world, villager, cell);
                 continue;
             }
             if (!dig || !Mining.mayDig(world, cell, world.getBlockState(cell)) || Mining.lavaSeen(memory, cell) || !Obras.mayBreak(world, villager, cell)) {
                 return -1;
             }
-            cost += breakingCost(world, villager, cell);
+            cost += digCost(world, villager, cell);
         }
         if (Mining.standable(world, step)) {
             return Mining.lavaSeen(memory, step) ? -1 : cost;
@@ -1165,6 +1171,11 @@ public final class Motor {
             }
         }
         return Math.min(1000000, Math.max(1, ticks));
+    }
+
+    /** {@link #breakingCost} in the units of the other climbing weights (see {@link #TICKS_PER_COST}). */
+    private static int digCost(ServerWorld world, VillagerEntityMCA villager, BlockPos pos) {
+        return (breakingCost(world, villager, pos) + TICKS_PER_COST - 1) / TICKS_PER_COST;
     }
 
     /** Whether it may go straight up from {@code feet} on blocks of its own, judged by what the eye has seen. */

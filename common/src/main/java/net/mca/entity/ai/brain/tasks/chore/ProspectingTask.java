@@ -342,6 +342,13 @@ public class ProspectingTask extends AbstractChoreTask {
     /** Walking search retained between return ticks; a spent slice is not a missing staircase. */
     @Nullable
     private Motor.WalkSearch pieBusqueda;
+    /**
+     * A question of this same wait that came out "no way on foot" (the door of its mine) while the next one (the mouth
+     * it remembers) is still being thought out: answered from here, so it never takes that one's place and starts it
+     * again every tick. Forgotten as soon as nothing is pending.
+     */
+    @Nullable
+    private Motor.WalkSearch pieSinPaso;
     private int walkBudget = 512;
     private boolean viaPendiente;
     private long viaRetryAt;
@@ -789,6 +796,7 @@ public class ProspectingTask extends AbstractChoreTask {
         // the job is over: the next one starts from the mine it left (when near), not from this trip's half-way state
         started = false;
         pieBusqueda = null;
+        pieSinPaso = null;
         viaPendiente = false;
         viaRetryAt = 0;
         phase = Phase.SEEK;
@@ -2102,6 +2110,7 @@ public class ProspectingTask extends AbstractChoreTask {
     private void leave(ServerWorld world, VillagerEntityMCA villager, Trip why) {
         trip = why;
         pieBusqueda = null;
+        pieSinPaso = null;
         viaPendiente = false;
         viaRetryAt = 0;
         BlockPos feet = Mining.pies(villager);
@@ -2425,6 +2434,7 @@ public class ProspectingTask extends AbstractChoreTask {
     /** That way is the one it walks now (never digging), to {@code to} or out when null. */
     private void setVia(ServerWorld world, VillagerEntityMCA villager, BlockPos feet, List<BlockPos> way, @Nullable BlockPos to, String de) {
         pieBusqueda = null;
+        pieSinPaso = null;
         viaPendiente = false;
         viaRetryAt = 0;
         via.clear();
@@ -2455,6 +2465,7 @@ public class ProspectingTask extends AbstractChoreTask {
      */
     private boolean buscarVia(ServerWorld world, VillagerEntityMCA villager, BlockPos feet, @Nullable BlockPos to) {
         viaPendiente = false;
+        int marca = intentos.size(); // a pass that ends pending is said again in full when the search has its answer
         List<BlockPos> way = List.of();
         String de = "";
         try {
@@ -2503,6 +2514,7 @@ public class ProspectingTask extends AbstractChoreTask {
                         // the mouth of a mine it remembers (an older one, its trail forgotten): on foot up to it
                         List<BlockPos> pie = aPie(world, villager, feet, boca, 0.5);
                         if (viaPendiente) {
+                            intentos.subList(marca, intentos.size()).clear();
                             return false;
                         }
                         if (pie != null && pie.size() >= 2) {
@@ -2538,10 +2550,14 @@ public class ProspectingTask extends AbstractChoreTask {
             if (phase == Phase.HOME_UP) {
                 // A failed query is not evidence that its staircase disappeared.
                 pieBusqueda = null;
+                pieSinPaso = null;
                 viaPendiente = true;
                 viaRetryAt = world.getTime() + 200;
             }
             way = List.of();
+        }
+        if (!viaPendiente) {
+            pieSinPaso = null;
         }
         if (way.isEmpty()) {
             return false;
@@ -2599,6 +2615,9 @@ public class ProspectingTask extends AbstractChoreTask {
         boolean returning = phase == Phase.HOME_UP && !fallback;
         Motor.WalkSearch search;
         if (returning) {
+            if (pieSinPaso != null && pieSinPaso.matches(feet, goal, within)) {
+                return null; // asked from these same feet a moment ago: no way on foot, while the next question is pending
+            }
             if (pieBusqueda == null || !pieBusqueda.matches(feet, goal, within)) {
                 pieBusqueda = new Motor.WalkSearch(feet, goal, within);
             }
@@ -2610,6 +2629,7 @@ public class ProspectingTask extends AbstractChoreTask {
                 (from, to) -> !r.pasoCerrado(from, to, world.getTime()));
         if (result.status() == Motor.WalkStatus.FOUND) {
             pieBusqueda = null;
+            pieSinPaso = null;
             viaPendiente = false;
             return result.path();
         }
@@ -2623,6 +2643,9 @@ public class ProspectingTask extends AbstractChoreTask {
             viaRetryAt = now + 200;
             MCA.LOGGER.warn("[Tropeles] {} aplaza la búsqueda de salida: límite de recursos tras {} celdas; no afirma que esté tapada", name(), result.expanded());
             return null;
+        }
+        if (returning && result.status() == Motor.WalkStatus.NO_PATH) {
+            pieSinPaso = search;
         }
         MCA.LOGGER.info("[Tropeles] {} búsqueda a pie de {} a {}: {} ({} celdas)", name(), feet.toShortString(), goal.toShortString(),
                 result.status(), result.expanded());
@@ -2745,6 +2768,7 @@ public class ProspectingTask extends AbstractChoreTask {
         intentos.add(was + ": " + (shut ? "cerrado en " : "no avanzó en ") + cell.toShortString());
         ++viaFails;
         pieBusqueda = null;
+        pieSinPaso = null;
         if (!shut && phase == Phase.HOME_UP && viaFails < VIA_TRIES) {
             viaRetryAt = now + 40; // a body in the way or a missed jump gets a chance to clear before excavation
             return;
