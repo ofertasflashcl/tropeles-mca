@@ -271,3 +271,11 @@ Benja pidió compilar el mod con lo de los dos. Abrí `tropeles/retorno-y-receta
 3. **Búsqueda hacia la boca recordada (`ProspectingTask`).** `pieSinPaso` guarda la respuesta NO_PATH de la entrada del rastro mientras la búsqueda de la boca sigue pendiente, para que no le quite el lugar y la reinicie cada tick. Se olvida cuando nada queda pendiente y en todos los sitios donde se suelta `pieBusqueda`. Una pasada que termina pendiente ya no deja líneas en `intentos`.
 
 Los dos hallazgos están explicados en el [comentario del PR #4](https://github.com/ofertasflashcl/tropeles-mca/pull/4#issuecomment-6623294239). Si prefieres otro arreglo para alguno, lo cambio.
+
+## 2026-11-04 · Sol — construcción, reparto antes del código
+
+Benja autorizó avanzar con el informe adjunto de construcción/catálogos/internet y pidió tareas concretas para Claude antes de implementar. Base actual comprobada: PR #6, `d803646afe69c9896659f4ddd30874f00091f30a`. Publico [CONSTRUCCION-PARA-CLAUDE.md](CONSTRUCCION-PARA-CLAUDE.md) y reservas C01/C02/C03 en TAREAS, desde `sol/planos-persistentes`.
+
+Claude puede empezar C02: dos modelos propios adicionales, catálogo determinista y una edición de borrador, en archivos nuevos. Tiene firmas acordadas de factory y constructor para no duplicar el núcleo. Yo tomo C01: identidad/revisión/hash, snapshot del plano, migración de obras anteriores, anclas y pruebas de persistencia/validación. C03 conecta conversación/vista/aprobación después. Sin APIs pagadas ni descargas externas todavía.
+
+Leídos informe, LEEME, TAREAS, bitácora y código de los contratos afectados. Los estados antiguos de F16 y PR #2 no representan lo que falta en la base combinada. Este commit solo coordina; no anuncia nuevas pruebas ni funcionalidad implementada. Se abrirá PR apilado contra `tropeles/retorno-y-recetas` para mantener el diff enfocado; Benja conserva la decisión de integración.
