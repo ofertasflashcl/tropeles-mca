@@ -2,7 +2,7 @@
 
 Hoja de estado de Claude para la entrega F16 del reparto de Sol ([PLAN-PARA-CLAUDE.md](PLAN-PARA-CLAUDE.md), rama `sol/mineria-retorno`). Lo más nuevo va al final.
 
-## 2026-11-04 04:55 UTC · rama y alcance
+## 2026-11-04 04:48 UTC · rama y alcance
 
 - **Rama:** `tropeles/claude-recetas`, desde la integración `553f37e8e`. El PR va hacia `tropeles/ojo-combate-mineria-1.20.1`; Sol lo revisa y Benja decide.
 - **Archivos que toco:** `entity/ai/body/Progreso.java`, `entity/ai/obra/Taller.java`, el paquete nuevo `entity/ai/crafting/*`, el archivo nuevo `server/command/PruebasRecetas.java` y esta hoja.
@@ -32,9 +32,9 @@ Pendiente conocido: `pan()` acepta todavía una mesa en la mochila como si la pu
 
 ### Pruebas para que las registres (Sol)
 
-Van en `server/command/PruebasRecetas.java`, con escenarios que extienden `Pruebas.Scenario`, y se arrancan con `PruebasRecetas.empezar(world, nombre)`, que da `true` si conoce el nombre. Los nombres y resultados terminales van en la próxima entrada, cuando estén escritos.
+Van en `server/command/PruebasRecetas.java`, con escenarios que extienden `Pruebas.Scenario`, y se arrancan con `PruebasRecetas.empezar(world, nombre)`, que da `true` si conoce el nombre. Los nombres y resultados terminales están en las entradas de abajo.
 
-## 2026-11-04 05:40 UTC · código y pruebas
+## 2026-11-04 05:02 UTC · código y pruebas
 
 Código en `tropeles/claude-recetas`:
 
@@ -73,3 +73,38 @@ Para el registro central, Sol:
 - `expected-checks.tsv`: diez filas `recetas<TAB>recetas-...`, una por resultado.
 
 Para tener resultados terminales de verdad antes de pasártelas, abro una rama **temporal** `tropeles/claude-recetas-ci`, con esas tres líneas encima de mi rama, solo para que el CI las corra. No se integra y la borro cuando tú hagas el registro. Ahí anoto los resultados.
+
+## 2026-11-04 05:30 UTC · resultados del CI
+
+Código `22ea09656`, sin cambios desde la entrada anterior.
+
+- [Mi rama, run 41776818561](https://github.com/ofertasflashcl/tropeles-mca/actions/runs/41776818561): **55/55** y reinicio **1/1**. Las pruebas de siempre pasan con `Progreso` y `Taller` fabricando por el ejecutor: `progreso`, `horno`, `hogar` y `explorar` hacen así sus picos, la mesa, el horno y el cofre.
+- [Rama temporal con el registro, run 41776842910](https://github.com/ofertasflashcl/tropeles-mca/actions/runs/41776842910): **65/65** y reinicio **1/1**. Las diez de recetas pasaron a la primera.
+- [Workflow del PR #5, run 41776917521](https://github.com/ofertasflashcl/tropeles-mca/actions/runs/41776917521): **54/55** en los dos intentos; solo falló `ia-red`. En los dos, para «¿me echas una mano y caminas a mi lado?» el modelo `mca` eligió `start-escort`; la tarea ESCORT de MCA se corta («Force-stopped chore because assigning player was not present») porque `getJobAssigner` busca al jugador con `world.getPlayerByUuid` y el jugador falso del CI no está en la lista del mundo. Es lo mismo de la bitácora de las 02:15. Este PR no toca la charla ni esa prueba. En las otras dos corridas el mismo modelo eligió `follow-player` y pasó.
+
+### Resultados terminales
+
+| Comando | Resultado | Lo que dijo el servidor |
+|---|---|---|
+| `mca-prueba recetas` | `recetas-heno-pan` | mesa al alcance true; HECHO; pan 3, trigo 0, heno 0 |
+| | `recetas-un-pan` | HECHO; pan 1, trigo 6, heno 0 |
+| | `recetas-sin-mesa` | sin mesa: SIN_MESA «Bread necesita una mesa de crafteo»; mesa a 8 bloques al alcance false; detrás de un muro al alcance false; heno 1, trigo 0 |
+| | `recetas-lleno` | con 2 balas: LLENO (heno 2, trigo 0); con 1: HECHO (heno 0, trigo 9); tierra 1664 → 1664 |
+| | `recetas-restos` | HECHO; pastel 1, cubos vacíos 3, con leche 0 |
+| | `recetas-ciclo` | trigo de trigo false (2 pasos probados); heno de trigo true en 1 paso; trigo sin nada false; pan sin nada: le falta Wheat |
+| | `recetas-cambio` | plan 2 pasos, mesa true; sin el heno: FALTA (trigo 0, pan 0); con el heno de vuelta: HECHO, pan 3 |
+| | `recetas-reserva` | con trigo propio: HECHO, pan 1, trigo con nombre 3, trigo suelto 6; heno guardado: FALTA, heno 1 |
+| | `recetas-progreso` | pan ahora true (pan 1, trigo 6); hazme pan con heno: puede; sin nada: «Me faltan 9 de trigo para eso.» |
+| | `recetas-tablas` | abedul HECHO (4), carmesí HECHO (4), palos HECHO (4, quedan 6 tablas) |
+
+Para registrarlas copia las tres líneas de la entrada de las 05:02. Están probadas tal cual en `tropeles/claude-recetas-ci` (commit `c23a9decf`, encima de mi rama): un `case` en `Pruebas`, una línea `mca-prueba recetas` antes de `await-checks 320` y diez filas en `expected-checks.tsv`. La arena (x 10000..10196, z 34..46) no se cruza con las tuyas de `PruebasNavegacion` (x 25200..25442) ni con `regreso-sin-pico` (x 24950). Cuando las registres, borro la rama temporal.
+
+### Tu PR #4
+
+Lo revisé y dejé [un comentario](https://github.com/ofertasflashcl/tropeles-mca/pull/4#issuecomment-6623294239) con dos hallazgos:
+
+1. Con `breakingCost` en ticks y los demás pesos en unidades viejas, el modo escalera siempre hace pilar en roca.
+2. La búsqueda hacia la boca recordada se reinicia cada tick si la entrada del rastro no tiene paso a pie.
+
+Los dos PR no comparten archivos.
+
