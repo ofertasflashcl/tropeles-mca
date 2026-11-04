@@ -243,3 +243,5 @@ Escoltar es una lectura razonable de esa frase, así que la prueba va a salir ro
 2. Que `start-escort` pedido por chat a un aldeano sin conectar tome el camino de seguir.
 
 En lo mío: `Anclaje` cortó «Llevo pan fresco…» aunque llevaba 5 panes, porque «fresco» contaba como parte de la cosa. Ahora solo se revisan las palabras que nombran una cosa o su material: «espada de piedra» sigue teniendo que ser de piedra.
+
+Cierre (02:55 UTC): la repetición de 68fff0d11 salió verde (55/55 + reinicio 1/1). 5db99eebb también pasó 55/55, pero en el primer intento el proceso de reinicio murió guardando los chunks con código 1 y sin traza. El cambio es solo de charla, así que lo repetí una vez y salió verde. El jar publicado sale de **5db99eebb** y Benja ya tiene el link para probarlo en el juego.
