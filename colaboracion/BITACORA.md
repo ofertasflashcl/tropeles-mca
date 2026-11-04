@@ -315,3 +315,7 @@ Límite: colocación de casas con posición/suministros asistidos, no una casa a
 
 Revisé #9 de Sol: dos detalles en un comentario, ninguno bloquea. Tomo C03b en `tropeles/claude-propuestas`, sobre #9: propuesta guardada, edición por chat con diferencia y coste, y aprobación solo con el «sí» del propio jugador. Alcance y archivos en [CLAUDE-CONSTRUCCION.md](CLAUDE-CONSTRUCCION.md).
 
+
+## 2026-11-04 23:05 UTC · Claude — C03b entregado
+
+[PR #10](https://github.com/ofertasflashcl/tropeles-mca/pull/10), en borrador y apilado sobre #9. Ahora el aldeano propone la casa con un fantasma dorado que solo ve quien la pidió. Se cambia por chat (techo, ventanas por pared, diseño, madera) y solo el «sí» de ese jugador crea la obra, con el mismo plano, revisión y hash. Las pruebas y lo que Sol tiene que registrar están en [CLAUDE-CONSTRUCCION.md](CLAUDE-CONSTRUCCION.md). Falta la prueba en cliente de Benja. Sin fusiones.

@@ -141,3 +141,22 @@ Esto es lo que hoy impide que un aldeano construya otra casa:
   - `obra/Proyeccion.java` y `client/render/Fantasmas.java`, para el fantasma de la propuesta con el mismo `FantasmaMessage`, sin paquetes nuevos.
 - No toco `Constructor`, `Plano`, `Taller`, `Progreso`, los codecs ni el registro de pruebas. Te paso los nombres de las pruebas al terminar.
 
+
+## 2026-11-04 23:05 UTC · Claude — entrego C03b
+
+- **PR:** [#10](https://github.com/ofertasflashcl/tropeles-mca/pull/10), borrador sobre #9. Código `c6972bde5` en `tropeles/claude-propuestas`.
+- **Hecho:** los cinco puntos de arriba. Al aprobar se vuelve a revisar el sitio exacto; si el suelo cambió, se muestra la casa donde quedaría y se pregunta otra vez. Un «sí» de otro jugador, un «sí» con cambios o una pregunta no aprueban.
+- **Distinto de lo anunciado:**
+  - El «sí» y el «no» se leen en `Companero.bondQuestion`, junto a la respuesta a las ofertas, y no en `ChatAI.onPlayerChat`.
+  - El lector de cambios vive aparte, en `obra/CambioCasa.java`.
+  - `chatAI/OpenAIChatAI.java` solo suma alias de `edit-house`.
+- **Pruebas para tu registro.** Están en `PruebasPropuestas` y no las registré. Corren en la rama temporal `tropeles/claude-propuestas-ci`, que no es para fusionar:
+  - `Pruebas.java`: `case "propuestas", "propuestas-reinicio" -> PruebasPropuestas.run(world, which);`
+  - `commands.txt`: `mca-prueba propuestas`, después de `mca-prueba construccion`.
+  - `expected-checks.tsv`: `propuestas` con `propuestas-palabras`, `propuestas-crear`, `propuestas-editar`, `propuestas-aprobar`, `propuestas-cancelar`, `propuestas-guardado` y `propuestas-preparar`.
+  - `restart-commands.txt`: `mca-prueba propuestas-reinicio`, antes de `mca-prueba resumen`.
+  - `restart-checks.tsv`: `propuestas-reinicio`, con `propuestas-reinicio`.
+- **Límites:**
+  - Sin paquetes nuevos ni cambios de formato en tus codecs.
+  - Hay un archivo de guardado nuevo, `mca_tropeles_propuestas`.
+  - No se prueba la charla con modelo, ni el fantasma dorado en un cliente real, ni la construcción de la casa aprobada en juego. Esa prueba en cliente es de Benja.
