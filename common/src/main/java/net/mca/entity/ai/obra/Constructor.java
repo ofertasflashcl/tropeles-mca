@@ -437,7 +437,7 @@ public final class Constructor {
                 continue;
             }
             l.total++;
-            if (Plano.hecho(rol, c.state(), s)) {
+            if (Obra.hecha(world, c)) {
                 l.hechas++;
                 continue;
             }
@@ -541,7 +541,7 @@ public final class Constructor {
             }
             Plano.Rol rol = c.rol();
             if (rol != Plano.Rol.AIRE && rol != Plano.Rol.PUERTA_ARRIBA && rol != Plano.Rol.PUERTA
-                    && Hands.findSlot(inv, s -> Plano.acepta(rol, s)) < 0) {
+                    && Hands.findSlot(inv, s -> Plano.acepta(rol, c.state(), s)) < 0) {
                 continue; // the ground stays where a block goes until it has that block: no holes in the floor for nothing
             }
             if (!Obras.mayBreak(world, villager, c.pos())) {
@@ -578,7 +578,7 @@ public final class Constructor {
             if (rol == Plano.Rol.PUERTA && !world.getBlockState(c.pos().up()).isReplaceable()) {
                 continue;
             }
-            if (Hands.findSlot(inv, s -> Plano.acepta(rol, s)) < 0) {
+            if (Hands.findSlot(inv, s -> Plano.acepta(rol, c.state(), s)) < 0) {
                 continue;
             }
             cands.add(new Objetivo(Tipo.PIEZA, c.pos(), c));
@@ -1057,7 +1057,7 @@ public final class Constructor {
                 }
                 Hands.aim(villager, Vec3d.ofCenter(o.pos));
                 List<Taller.Receta> todo = recetasMesa(villager, leer(world, villager, now), fuego(world));
-                if (todo.isEmpty() || !Taller.hacer(villager, todo.get(0), obra.madera, reservaTroncos(world, villager))) {
+                if (todo.isEmpty() || !Taller.hacer(villager, todo.get(0), maderaObjetivo(), reservaTroncos(world, villager))) {
                     accion = Accion.PENSAR;
                     proximoPensar = now;
                     return;
@@ -1154,10 +1154,14 @@ public final class Constructor {
      * Sets one block of the plan from the bag, against a face its eye sees, exactly as planned (turned, the door's two
      * halves); it counts as the player's build from then on (nobody digs a house away for a tunnel).
      */
-    private boolean colocar(ServerWorld world, VillagerEntityMCA villager, Obra.Celda c) {
+    public static boolean colocar(ServerWorld world, VillagerEntityMCA villager, Obra.Celda c) {
+        if (villager.getWorld() != world || !villager.isAlive() || !world.isChunkLoaded(c.pos())
+                || c.rol() == Plano.Rol.PUERTA && !world.isChunkLoaded(c.pos().up())) {
+            return false;
+        }
         SimpleInventory inv = villager.getInventory();
         Plano.Rol rol = c.rol();
-        int slot = Hands.findSlot(inv, s -> Plano.acepta(rol, s));
+        int slot = Hands.findSlot(inv, s -> Plano.acepta(rol, c.state(), s));
         if (slot < 0) {
             return false;
         }
@@ -1182,13 +1186,27 @@ public final class Constructor {
             return false;
         }
         Hands.aim(villager, face.getPos());
-        BlockState placed = Block.postProcessState(state, world, pos);
+        BlockState before = world.getBlockState(pos);
+        BlockState beforeUpper = upper == null ? null : world.getBlockState(pos.up());
+        // DoorBlock removes an orphan lower half during post-processing. Place the pair as vanilla's DoorItem does.
+        BlockState placed = upper == null ? Block.postProcessState(state, world, pos) : state;
+        if (placed.getBlock() != state.getBlock()) {
+            return false;
+        }
         if (!world.setBlockState(pos, placed, Block.NOTIFY_ALL)) {
             return false;
         }
         if (upper != null) {
-            world.setBlockState(pos.up(), upper, Block.NOTIFY_ALL);
-            Obras.placedByPlayer(world, pos.up());
+            boolean set = world.setBlockState(pos.up(), upper, Block.NOTIFY_ALL);
+            if (!set || !Plano.hecho(Plano.Rol.PUERTA_ARRIBA, upper, world.getBlockState(pos.up()))
+                    || !Plano.hecho(rol, state, world.getBlockState(pos))) {
+                world.setBlockState(pos.up(), beforeUpper, Block.FORCE_STATE | Block.NOTIFY_LISTENERS);
+                world.setBlockState(pos, before, Block.FORCE_STATE | Block.NOTIFY_LISTENERS);
+                return false;
+            }
+        } else if (!Plano.hecho(rol, state, world.getBlockState(pos))) {
+            world.setBlockState(pos, before, Block.FORCE_STATE | Block.NOTIFY_LISTENERS);
+            return false;
         }
         long now = world.getTime();
         BlockSoundGroup sound = placed.getSoundGroup();
@@ -1196,6 +1214,9 @@ public final class Constructor {
         world.emitGameEvent(villager, GameEvent.BLOCK_PLACE, pos);
         stack.decrement(1);
         inv.markDirty();
+        if (upper != null) {
+            Obras.placedByPlayer(world, pos.up());
+        }
         Obras.placedByPlayer(world, pos);
         Toques.placed(villager, pos, now);
         villager.swingHand(Hand.MAIN_HAND);
@@ -1237,6 +1258,35 @@ public final class Constructor {
     }
 
     // ------------------------------------------------------------------ crafting
+
+    /** Supply hints must follow the frozen blueprint, even if the old wood field was changed afterwards. */
+    private Plano.Madera maderaObjetivo() {
+        for (Plano.Pieza p : obra.plano().piezas) {
+            Plano.Madera m = Plano.Madera.de(p.state().getBlock());
+            if (m != null) {
+                return m;
+            }
+        }
+        return obra.madera;
+    }
+
+    private Item itemObjetivo(Plano.Rol rol) {
+        for (Plano.Pieza p : obra.plano().piezas) {
+            if (p.rol() == rol) {
+                return Plano.item(rol, p.state());
+            }
+        }
+        return Plano.item(rol, maderaObjetivo());
+    }
+
+    private int contar(SimpleInventory inv, Plano.Rol rol) {
+        Item item = itemObjetivo(rol);
+        return Taller.contar(inv, s -> s.isOf(item));
+    }
+
+    private boolean troncoDeObra(ItemStack stack) {
+        return stack.isOf(maderaObjetivo().log.asItem());
+    }
 
     /** The logs it keeps as logs: the corners still to set, and one for each charcoal it still has to burn. */
     private int reservaTroncos(ServerWorld world, VillagerEntityMCA villager) {
@@ -1280,8 +1330,8 @@ public final class Constructor {
         SimpleInventory inv = villager.getInventory();
         Necesidad n = necesidad(world, villager, l, fuego);
         int reserva = n.reservaTroncos;
-        int tablas = Taller.contar(inv, Taller.TABLAS);
-        int troncos = Taller.contar(inv, Taller.TRONCOS);
+        int tablas = contar(inv, Plano.Rol.TABLA);
+        int troncos = Taller.contar(inv, this::troncoDeObra);
         int palos = Taller.contar(inv, Taller.PALOS);
         int tablasMas = Math.max(0, n.tablas - tablas);
         for (int i = 0; i < Math.min(ceil(tablasMas, 4), troncos - reserva); i++) {
@@ -1322,7 +1372,7 @@ public final class Constructor {
         }
         Taller.Receta r = mano.remove(0);
         int reserva = reservaTroncos(world, villager);
-        if (Taller.hacer(villager, r, obra.madera, reserva)) {
+        if (Taller.hacer(villager, r, maderaObjetivo(), reserva)) {
             villager.swingHand(Hand.MAIN_HAND);
             hace("hago " + switch (r) {
                 case TABLAS -> "tablas";
@@ -1364,16 +1414,16 @@ public final class Constructor {
         nLectura = l;
         nTick = now;
         SimpleInventory inv = villager.getInventory();
-        int escalones = Taller.contar(inv, s -> Plano.acepta(Plano.Rol.ESCALON, s));
+        int escalones = contar(inv, Plano.Rol.ESCALON);
         int paneles = Taller.contar(inv, s -> s.isOf(Items.GLASS_PANE));
         int antorchas = Taller.contar(inv, s -> s.isOf(Items.TORCH));
-        int piedra = Taller.contar(inv, s -> Plano.acepta(Plano.Rol.BASE, s));
+        int piedra = contar(inv, Plano.Rol.BASE);
         int vidrio = Taller.contar(inv, Taller.VIDRIO);
         int arena = Taller.contar(inv, Taller.ARENA);
         int carbon = Taller.contar(inv, Taller.CARBON);
         int palos = Taller.contar(inv, Taller.PALOS);
         n.escalones = Math.max(0, l.f(Plano.Rol.ESCALON) - escalones);
-        n.puerta = l.f(Plano.Rol.PUERTA) > 0 && Taller.contar(inv, s -> Plano.acepta(Plano.Rol.PUERTA, s)) == 0;
+        n.puerta = l.f(Plano.Rol.PUERTA) > 0 && contar(inv, Plano.Rol.PUERTA) == 0;
         n.cofre = l.f(Plano.Rol.COFRE) > 0 && Taller.contar(inv, s -> s.isOf(Items.CHEST)) == 0;
         boolean mesaItem = l.f(Plano.Rol.MESA) > 0 && Taller.contar(inv, s -> s.isOf(Items.CRAFTING_TABLE)) == 0;
         n.paneles = obra.sinVidrio ? 0 : Math.max(0, l.f(Plano.Rol.VIDRIO) - paneles);
@@ -1397,7 +1447,7 @@ public final class Constructor {
         n.tablas = l.f(Plano.Rol.TABLA) + 6 * ceil(n.escalones, 4) + (n.puerta ? 6 : 0) + (n.cofre ? 8 : 0) + (mesaItem ? 4 : 0) + (mesaFalta ? 4 : 0)
                 + (n.pico ? 3 : 0) + 2 * ceil(Math.max(0, n.palos - palos), 4) + combustible;
         n.reservaTroncos = l.f(Plano.Rol.TRONCO) + n.carbonPorHacer;
-        n.troncos = n.reservaTroncos + ceil(Math.max(0, n.tablas - Taller.contar(inv, Taller.TABLAS)), 4);
+        n.troncos = n.reservaTroncos + ceil(Math.max(0, n.tablas - contar(inv, Plano.Rol.TABLA)), 4);
         return n;
     }
 
@@ -1412,16 +1462,16 @@ public final class Constructor {
         if (n.pico && Taller.puede(villager, Taller.Receta.PICO, 0)) {
             list.add(Taller.Receta.PICO);
         }
-        if (n.escalones > 0 && Taller.puede(villager, Taller.Receta.ESCALERAS, 0)) {
+        if (n.escalones > 0 && Taller.puede(villager, Taller.Receta.ESCALERAS, 0, maderaObjetivo())) {
             list.add(Taller.Receta.ESCALERAS);
         }
-        if (n.puerta && Taller.puede(villager, Taller.Receta.PUERTA, 0)) {
+        if (n.puerta && Taller.puede(villager, Taller.Receta.PUERTA, 0, maderaObjetivo())) {
             list.add(Taller.Receta.PUERTA);
         }
         if (n.cofre && Taller.puede(villager, Taller.Receta.COFRE, 0)) {
             list.add(Taller.Receta.COFRE);
         }
-        int piedra = Taller.contar(inv, s -> Plano.acepta(Plano.Rol.BASE, s));
+        int piedra = contar(inv, Plano.Rol.BASE);
         if (n.horno && Taller.puede(villager, Taller.Receta.HORNO, 0) && piedra - 8 >= 0 && (piedra >= n.piedra || l.f(Plano.Rol.BASE) == 0
                 || piedra - 8 >= l.f(Plano.Rol.BASE))) {
             list.add(Taller.Receta.HORNO);
@@ -1569,8 +1619,8 @@ public final class Constructor {
         if (n.vidrioPorHacer > 0 && Taller.contar(inv, Taller.ARENA) > 0) {
             return Taller.ARENA;
         }
-        if (n.carbonPorHacer > 0 && Taller.contar(inv, Taller.TRONCOS) > n.reservaTroncos - n.carbonPorHacer) {
-            return Taller.TRONCOS;
+        if (n.carbonPorHacer > 0 && Taller.contar(inv, this::troncoDeObra) > n.reservaTroncos - n.carbonPorHacer) {
+            return this::troncoDeObra;
         }
         return null;
     }
@@ -1596,7 +1646,7 @@ public final class Constructor {
         Predicate<ItemStack> what = f.getStack(0).isEmpty() ? cargaHorno(villager, n) : null;
         if (what != null) {
             int amount = what == Taller.ARENA ? Math.min(n.vidrioPorHacer, Taller.contar(inv, Taller.ARENA))
-                    : Math.min(n.carbonPorHacer, Taller.contar(inv, Taller.TRONCOS) - (n.reservaTroncos - n.carbonPorHacer));
+                    : Math.min(n.carbonPorHacer, Taller.contar(inv, this::troncoDeObra) - (n.reservaTroncos - n.carbonPorHacer));
             amount = Math.min(64, Math.max(1, amount));
             int slot = Hands.findSlot(inv, what);
             if (slot >= 0) {
@@ -1672,7 +1722,7 @@ public final class Constructor {
     private Fin conseguir(ServerWorld world, VillagerEntityMCA villager, ProspectingTask task, Lectura l, Fuego fuego, long now) {
         Necesidad n = necesidad(world, villager, l, fuego);
         SimpleInventory inv = villager.getInventory();
-        int troncos = Taller.contar(inv, Taller.TRONCOS);
+        int troncos = Taller.contar(inv, this::troncoDeObra);
         if (faltanAndamios && Hands.buildingBlockCount(villager) < MAX_PILAR) {
             // blocks to climb on (or to fill a dip under the floor): dirt from round the site, quick and right there
             BlockPos dirt = tierraCerca(world, villager);
@@ -1688,18 +1738,18 @@ public final class Constructor {
         if (troncos < n.troncos && now >= sinArbolesHasta) {
             // wood, in loads it can carry: the house grows as it comes
             lenaObjetivo = troncos + Math.min(n.troncos - troncos, 32);
-            task.progreso().pedirTroncos(lenaObjetivo);
+            task.progreso().pedirTroncos(lenaObjetivo, maderaObjetivo().log.asItem());
             lenaQuieto = 0;
             accion = Accion.LENA;
             hace("talo árboles para la casa", "chopping trees for the house");
             if (now - avisoLena > 2400) {
                 avisoLena = now;
-                Voluntad.contar(villager, "Voy a talar: me faltan unos " + (n.troncos - troncos) + " troncos para la casa.",
-                        "I'm off to chop: I need about " + (n.troncos - troncos) + " more logs for the house.");
+                Voluntad.contar(villager, "Voy a talar: me faltan unos " + (n.troncos - troncos) + " troncos de " + maderaObjetivo().es + " para la casa.",
+                        "I'm off to chop: I need about " + (n.troncos - troncos) + " more " + maderaObjetivo().en + " logs for the house.");
             }
             return Fin.SIGUE;
         }
-        int piedra = Taller.contar(inv, s -> Plano.acepta(Plano.Rol.BASE, s));
+        int piedra = contar(inv, Plano.Rol.BASE);
         if (piedra < n.piedra && Progreso.bestPickTier(villager) > 0) {
             accion = Accion.CANTERA;
             subiendoCantera = false;
@@ -1745,7 +1795,7 @@ public final class Constructor {
     private void lena(ServerWorld world, VillagerEntityMCA villager, ProspectingTask task) {
         Progreso progreso = task.progreso();
         long now = world.getTime();
-        int logs = Progreso.troncos(villager);
+        int logs = Progreso.troncos(villager, maderaObjetivo().log.asItem());
         if (logs >= lenaObjetivo) {
             progreso.olvidarPedidos(world, villager);
             accion = Accion.PENSAR;
@@ -1753,7 +1803,7 @@ public final class Constructor {
             return;
         }
         if (!progreso.pidiendo()) {
-            progreso.pedirTroncos(lenaObjetivo);
+            progreso.pedirTroncos(lenaObjetivo, maderaObjetivo().log.asItem());
         }
         boolean busy = progreso.tick(world, villager, (k, p) -> {
         });
@@ -1825,7 +1875,7 @@ public final class Constructor {
             Hands.collect(world, villager, Mining.pies(villager), 3.0);
         }
         Necesidad n = necesidad(world, villager, leer(world, villager, now), fuego(world));
-        int piedra = Taller.contar(villager.getInventory(), s -> Plano.acepta(Plano.Rol.BASE, s));
+        int piedra = contar(villager.getInventory(), Plano.Rol.BASE);
         if (obra.cantera == null) {
             obra.cantera = elegirCantera(world, villager);
             obra.canteraPasos = 0;
@@ -2179,11 +2229,11 @@ public final class Constructor {
         Necesidad n = c.necesidad(world, villager, l, c.fuego(world));
         SimpleInventory inv = villager.getInventory();
         List<String> needs = new ArrayList<>();
-        int logs = Taller.contar(inv, Taller.TRONCOS);
+        int logs = Taller.contar(inv, c::troncoDeObra);
         if (n.troncos > logs) {
-            needs.add(es ? "unos " + (n.troncos - logs) + " troncos" : "about " + (n.troncos - logs) + " logs");
+            needs.add(es ? "unos " + (n.troncos - logs) + " troncos de " + c.maderaObjetivo().es : "about " + (n.troncos - logs) + " " + c.maderaObjetivo().en + " logs");
         }
-        int stone = Taller.contar(inv, s -> Plano.acepta(Plano.Rol.BASE, s));
+        int stone = c.contar(inv, Plano.Rol.BASE);
         if (n.piedra > stone) {
             int k = n.piedra - stone;
             needs.add(es ? k + " de piedra" + (n.horno ? " (la base y un horno)" : " para la base") : k + " stone" + (n.horno ? " (the footing and a furnace)" : " for the footing"));
@@ -2217,11 +2267,14 @@ public final class Constructor {
 
     /** The bill of materials of a whole house, roughly, for the first words about it. */
     public static String materiales(Plano plano, boolean es) {
-        int planks = plano.materiales.getOrDefault(Plano.Rol.TABLA, 0) + 6 * ceil(plano.materiales.getOrDefault(Plano.Rol.ESCALON, 0), 4) + 6 + 8 + 4 + 16;
-        int logs = plano.materiales.getOrDefault(Plano.Rol.TRONCO, 0) + ceil(planks, 4) + 1;
-        int stone = plano.materiales.getOrDefault(Plano.Rol.BASE, 0) + 8;
+        int planks = plano.materiales.getOrDefault(Plano.Rol.TABLA, 0) + 6 * ceil(plano.materiales.getOrDefault(Plano.Rol.ESCALON, 0), 4)
+                + 6 * ceil(plano.materiales.getOrDefault(Plano.Rol.PUERTA, 0), 3)
+                + 8 * plano.materiales.getOrDefault(Plano.Rol.COFRE, 0) + 4 * plano.materiales.getOrDefault(Plano.Rol.MESA, 0);
+        int logs = plano.materiales.getOrDefault(Plano.Rol.TRONCO, 0) + ceil(planks, 4);
+        int stone = plano.materiales.getOrDefault(Plano.Rol.BASE, 0);
         int panes = plano.materiales.getOrDefault(Plano.Rol.VIDRIO, 0);
-        return es ? "unos " + logs + " troncos, " + stone + " de piedra, arena para " + panes + " vidrios y carbón para las antorchas"
-                : "about " + logs + " logs, " + stone + " stone, sand for " + panes + " windows and coal for the torches";
+        int sand = 6 * ceil(panes, 16);
+        return es ? "de base unos " + logs + " troncos, " + stone + " de piedra y " + sand + " de arena; herramientas y combustible aparte"
+                : "a baseline of about " + logs + " logs, " + stone + " stone and " + sand + " sand; tools and fuel separately";
     }
 }

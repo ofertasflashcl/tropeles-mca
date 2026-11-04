@@ -1,6 +1,8 @@
 package net.mca.entity.ai.obra;
 
 import net.minecraft.block.BlockState;
+import net.minecraft.block.DoorBlock;
+import net.minecraft.block.enums.DoubleBlockHalf;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtElement;
 import net.minecraft.nbt.NbtList;
@@ -189,7 +191,9 @@ public final class Obra {
 
     /** Whether this cell is done in the world as it is now. */
     public static boolean hecha(World world, Celda c) {
-        return Plano.hecho(c.rol(), c.state(), world.getBlockState(c.pos()));
+        return Plano.hecho(c.rol(), c.state(), world.getBlockState(c.pos()))
+                && (c.rol() != Plano.Rol.PUERTA || Plano.hecho(Plano.Rol.PUERTA_ARRIBA,
+                c.state().with(DoorBlock.HALF, DoubleBlockHalf.UPPER), world.getBlockState(c.pos().up())));
     }
 
     /** How many blocks are done (the door once). */

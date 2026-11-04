@@ -131,10 +131,10 @@ public class TriggerCommandInfos {
                         if (Voluntad.conectado(v)) {
                             return Voluntad.seguir(v, p, spanish(v));
                         }
-                        v.getVillagerBrain().assignJob(Chore.ESCORT, p);
-                        return null;
+                        v.getVillagerBrain().setMoveState(MoveState.FOLLOW, p);
+                        return "You are following the player and guarding them.";
                     },
-                    (p, v) -> Voluntad.conectado(v) || v.getVillagerBrain().getCurrentJob() != Chore.ESCORT),
+                    (p, v) -> true),
             new TriggerCommandInfo("craft-item", "Make something with your own hands at a crafting table (you set one down and pick it up again, "
                     + "and chop the wood it needs yourself): planks, sticks, a crafting table, a chest, torches, a furnace, bread, a ladder, a fishing "
                     + "rod, a bow, a shield, a wooden, stone, iron or diamond pickaxe, sword, axe, shovel or hoe, or iron or diamond armour",
@@ -142,10 +142,11 @@ public class TriggerCommandInfos {
                             + "add \"para ti\" when it is for yourself",
                     (p, v, what) -> Voluntad.encargar(v, p, Encargo.Tipo.HACER, what, spanish(v)),
                     (p, v) -> Voluntad.conectado(v)),
-            new TriggerCommandInfo("build-house", "Build the player a two-floor house with your own hands: you chop the trees, dig the stone, find "
+            new TriggerCommandInfo("build-house", "Build a log cabin, a long house or the default two-floor house with your own hands: you chop the trees, dig the stone, find "
                     + "the sand, craft and smelt everything and set every block yourself, and they see the whole plan first as a see-through ghost; "
                     + "also to go on with a house you left. Not for crafting one item (that is craft-item)",
-                    "\"aquí\" when they want it right where they are looking, and the wood if they name one (\"de abeto\", \"spruce\"); else empty",
+                    "Include the design in the player's words (\"cabaña\", \"casa larga\", \"dos pisos\"), \"aquí\" for where they look, "
+                            + "and their wood (\"de abeto\", \"spruce\"); do not drop the requested design or wood",
                     (p, v, how) -> Voluntad.construir(v, p, how == null ? "" : how, spanish(v)),
                     (p, v) -> Voluntad.conectado(v)),
             new TriggerCommandInfo("cancel-house", "Give up the house you are building for good (what is already built stays); to only pause it, "
