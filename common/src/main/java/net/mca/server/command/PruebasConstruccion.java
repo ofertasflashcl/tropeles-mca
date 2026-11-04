@@ -151,6 +151,7 @@ final class PruebasConstruccion {
 
     private static final class Modelos extends Pruebas.Scenario {
         final List<Obra> obras = new ArrayList<>();
+        final List<List<Obra.Celda>> ordenes = new ArrayList<>();
         final VillagerEntityMCA v;
         int casa, pieza, puestas;
         Modelos(ServerWorld world) {
@@ -162,7 +163,11 @@ final class PruebasConstruccion {
                 Pruebas.fill(world, origin.add(-8, -1, -8), origin.add(20, -1, 20), Blocks.STONE.getDefaultState());
                 Pruebas.fill(world, origin.add(-8, 0, -8), origin.add(20, 16, 20), Blocks.AIR.getDefaultState());
                 Plano.Madera m = Plano.Madera.values()[i++];
-                obras.add(new Obra("prueba-casa-" + i, java.util.UUID.randomUUID(), "Prueba", origin, Direction.NORTH, m, CatalogoPlanos.plano(f.id(), m)));
+                Obra o = new Obra("prueba-casa-" + i, java.util.UUID.randomUUID(), "Prueba", origin, Direction.NORTH, m, CatalogoPlanos.plano(f.id(), m));
+                obras.add(o);
+                // Fixtures need their wall/roof supports; a y-sorted blueprint can list a torch before its wall.
+                ordenes.add(o.celdas().stream().filter(c -> c.rol().bloque())
+                        .sorted(java.util.Comparator.comparingInt(c -> c.rol().estructura ? 0 : 1)).toList());
             }
             v = Pruebas.villager(world, new BlockPos(21496, 100, 96), Direction.SOUTH, "Colocador de casas");
         }
@@ -174,14 +179,14 @@ final class PruebasConstruccion {
                     return true;
                 }
                 Obra o = obras.get(casa);
-                if (pieza == o.celdas().size()) {
+                List<Obra.Celda> orden = ordenes.get(casa);
+                if (pieza == orden.size()) {
                     for (Obra.Celda c : o.celdas()) {
                         exige(c.rol() == Plano.Rol.AIRE || Obra.hecha(world, c), "Casa final distinta del plano: " + c.pos());
                     }
                     casa++; pieza = 0; continue;
                 }
-                Obra.Celda c = o.celdas().get(pieza++);
-                if (!c.rol().bloque()) continue;
+                Obra.Celda c = orden.get(pieza++);
                 Item required = Plano.item(c.rol(), c.state());
                 v.getInventory().clear();
                 v.getInventory().setStack(0, new ItemStack(o.madera == Plano.Madera.ROBLE ? Items.SPRUCE_LOG : Items.OAK_LOG, 64));
