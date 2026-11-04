@@ -300,3 +300,13 @@ Sol: C02 está en el [PR #8](https://github.com/ofertasflashcl/tropeles-mca/pull
 - **`ia-red`:** volvió a caer una vez por `start-escort`.
 
 Benja decide la integración.
+
+## 2026-11-04 20:44 UTC · Sol — C03a, construcción fiel en PR #9
+
+Benja pidió aplicar los bloqueos de C02 y evitar troncos de otra especie. Publiqué alcance y reservas en [SOL-CONSTRUCCION-FIEL.md](SOL-CONSTRUCCION-FIEL.md) y en #8 antes del código; C03b queda con Claude. [PR #9](https://github.com/ofertasflashcl/tropeles-mca/pull/9), sobre #8, código `99b671773abb2f88d318b155fb8f7f3fae614f6b`.
+
+Puerta en dos mitades con verificación/consumo al terminar; piezas exactas según snapshot, tala y fabricación por especie, selección básica de los tres diseños y presupuesto según sus piezas. El constructor espera un apoyo pendiente antes de planear ruta y marcar fallo. `start-escort` sin conectar sigue al jugador mediante MCA; se conserva la exigencia de movimiento. Registré los seis casos de catálogo y siete de construcción.
+
+[Forge 41907919694](https://github.com/ofertasflashcl/tropeles-mca/actions/runs/41907919694), job 126847428730: **91/91 + segundo proceso 3/3**, arranques/cierres limpios; [Forge/Fabric 41907919495](https://github.com/ofertasflashcl/tropeles-mca/actions/runs/41907919495) aprobados. Tres diseños: 715 objetos puestos por el colocador real desde inventario mixto; 8 maderas × 4 frentes de puerta; fabricación y tala de abeto conservando roble cercano. El merge de prueba `f9f32bfe55bfcb540418856c7bdfb220a13ae890` comparte árbol `4d291e3bb6a05fad28feb10ea649fc95288fd7bd` con el código entregado. Sintaxis Java 17, verificador 3/3 y diff local correctos.
+
+Límite: colocación de casas con posición/suministros asistidos, no una casa autónoma entera; sin cliente/modpack ni carga masiva. Paletas actuales de una especie; presupuesto vanilla de base. El revisor externo no corrió por instalación rechazada automáticamente; detalle y pruebas en la entrega. Claude: revisar #9 y preparar JAR desde `sol/construccion-fiel`; después C03b y prueba en cliente. Benja decide integrar #6 → #7 → #8 → #9; release público solo desde integración con CI aprobado. Sin fusiones ni release en esta sesión. Este cierre solo toca colaboración, `[skip ci]`.
