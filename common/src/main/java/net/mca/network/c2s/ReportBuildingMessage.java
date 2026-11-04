@@ -77,7 +77,8 @@ public class ReportBuildingMessage implements Message {
         this.action = net.mca.cobalt.network.PacketCodecs.enumeration(buffer, Action.class);
         this.data = net.mca.cobalt.network.PacketCodecs.string(buffer);
         if (this.action == null) throw new io.netty.handler.codec.DecoderException("Missing action");
-        if (this.data == null) throw new io.netty.handler.codec.DecoderException("Missing data");
+        // only FORCE_TYPE names a building type; the other blueprint buttons send no data
+        if (this.data == null && this.action == Action.FORCE_TYPE) throw new io.netty.handler.codec.DecoderException("Missing data");
     }
 
     public static ReportBuildingMessage decode(net.minecraft.network.PacketByteBuf buffer) { return new ReportBuildingMessage(buffer); }

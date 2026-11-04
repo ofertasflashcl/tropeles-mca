@@ -77,6 +77,11 @@ public class ChatAI {
     private static final int MAX_PENDING = 2;
     /** The watchdog answers this long after the longest a mind may take. */
     private static final long GRACE_MS = 8_000;
+    /**
+     * The turn's lease outlives the watchdog by this much: the watchdog fires when the lease would have run out, so
+     * without it the villager's own answer was always too late and it said nothing. One answer only, still.
+     */
+    private static final long RESCUE_MS = 5_000;
     /** "Inas está pensando…" is shown again this often while it thinks. */
     private static final long THINKING_REPEAT_MS = 2_500;
 
@@ -138,7 +143,7 @@ public class ChatAI {
             this.received = received;
             this.hardMs = hardMs;
             this.es = MenteLocal.speaksSpanish(msg, villagerName, speaker.getUuid());
-            this.lease = ActionTurn.capture(speaker, villager, Math.max(0, received + hardMs - System.currentTimeMillis()));
+            this.lease = ActionTurn.capture(speaker, villager, Math.max(0, received + hardMs + RESCUE_MS - System.currentTimeMillis()));
         }
     }
 

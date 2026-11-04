@@ -258,7 +258,9 @@ public class OpenAIChatAI implements ChatAIStrategy {
     @Nullable
     static StructuredResponse actionChoice(String content, Set<String> allowed) {
         try {
-            JsonElement value = JsonParser.parseString(content.trim());
+            // the wrapping free models add around JSON (a <think> block, a ```json fence) is not prose
+            String text = content.replaceAll("(?s)<think>.*?</think>", "").replace("```json", "").replace("```", "").trim();
+            JsonElement value = JsonParser.parseString(text);
             if (!value.isJsonObject()) return null;
             JsonObject o = value.getAsJsonObject();
             if (!o.keySet().equals(Set.of("optionalCommand", "argument"))) return null;
@@ -531,7 +533,7 @@ public class OpenAIChatAI implements ChatAIStrategy {
                     refused = true;
                     outcome = permission.outcome();
                     CommandPolicy.report(villager, intent.command(), permission);
-                } else if (hearts < -25 && !"open-trade-window".equals(intent.command())) {
+                } else if (hearts < -25 && !"open-trade-window".equals(intent.command()) && !"sorry".equals(intent.command())) {
                     refused = true;
                 } else if ("give-item".equals(intent.command())) {
                     given = Acciones.hand(player, villager, intent.argument());

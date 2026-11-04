@@ -83,7 +83,8 @@ public class DestinyMessage implements Message {
     private DestinyMessage(net.minecraft.network.PacketByteBuf buffer) {
         this.location = net.mca.cobalt.network.PacketCodecs.string(buffer);
         this.isClosing = buffer.readBoolean();
-        if (this.location == null) throw new io.netty.handler.codec.DecoderException("Missing location");
+        // closing the screen (DestinyMessage(true)) carries no location; only a chosen destiny needs one
+        if (this.location == null && !this.isClosing) throw new io.netty.handler.codec.DecoderException("Missing location");
     }
 
     public static DestinyMessage decode(net.minecraft.network.PacketByteBuf buffer) { return new DestinyMessage(buffer); }

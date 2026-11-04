@@ -23,6 +23,8 @@ public final class CommandPolicy {
     }
     private static final Decision YES = new Decision(true, "", "");
     private static final Set<String> PUBLIC = Set.of("open-trade-window", "trade", "gift", "location", "apologize", "slap", "dialogue");
+    /** What the local mind reads as an intent but that asks nothing of the villager's body. */
+    private static final Set<String> SPEECH = Set.of("sorry");
     private static final Set<String> CLOSE = Set.of("give-item", "open-trade-window", "trade");
     private static final Set<String> MENU = Set.of("pick_up", "ridehorse", "sethome", "gohome", "setworkplace", "trade", "inventory",
             "gift", "adopt", "procreate", "divorcePapers", "divorceConfirm", "execute", "pardon", "stay_in_village", "hire_short",
@@ -42,6 +44,8 @@ public final class CommandPolicy {
         if (raw == null || raw.length() > 256) return no("No entiendo esa orden.", "That order is invalid.");
         String command = raw.split("\\.", 2)[0];
         boolean chat = source == Source.LOCAL || source == Source.MODEL;
+        // "perdón" (MenteLocal's "sorry") is words, not an order: the villager weighs it itself (Nucleo.perdon)
+        if (chat && SPEECH.contains(command)) return YES;
         if (chat && !Config.getInstance().villagerChatAIUseTools)
             return no("Las acciones por chat están desactivadas.", "Chat actions are disabled.");
         boolean assigned = villager.getVillagerBrain().getJobAssignerUuid().filter(player.getUuid()::equals).isPresent();
