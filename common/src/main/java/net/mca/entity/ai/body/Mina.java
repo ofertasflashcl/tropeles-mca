@@ -48,7 +48,7 @@ public final class Mina {
 
     /** Return before the corridor fills; the margin covers movement between the miner's decisions. */
     public boolean needsReturn() {
-        return door && size >= MAX - RETURN_MARGIN;
+        return size >= MAX - RETURN_MARGIN;
     }
 
     public BlockPos crumb(int i) {
@@ -264,6 +264,9 @@ public final class Mina {
             for (int i = fromIndex; i < size; i++) {
                 order.add(cells[i]);
             }
+        }
+        if (order.size() > MAX) {
+            return false; // do not replace a complete corridor with a silently truncated rebase
         }
         int keepDir = dir;
         boolean keepLeft = left;

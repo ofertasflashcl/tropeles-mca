@@ -12,16 +12,27 @@ import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
 
-import java.util.List;
 import java.util.UUID;
 import java.util.function.Predicate;
 
 /** Regression checks against real server geometry and the real recorder/search, not a copy of their algorithms. */
 final class PruebasNavegacion {
+    private static final UUID SAVED_MINE = UUID.fromString("00000000-0000-0000-0000-000000c13704");
+
     private PruebasNavegacion() {
     }
 
     static void run(ServerWorld world, String which) {
+        if (which.equals("mina-rastro-reinicio")) {
+            Mina saved = Mina.load(world, SAVED_MINE);
+            boolean passed = saved != null && saved.size() == 1500 && saved.entrance() != null
+                    && saved.entrance().equals(new BlockPos(27000, 70, 0)) && saved.last().equals(new BlockPos(28499, 70, 0));
+            for (int i = 0; passed && i < 1500; i++) {
+                passed = saved.crumb(i).equals(new BlockPos(27000 + i, 70, 0));
+            }
+            Pruebas.check(which, passed, "leyó sin recrear 1500 pasos y la entrada en otro proceso del mismo mundo: " + passed);
+            return;
+        }
         if (which.equals("mina-rastro")) {
             rastro(world);
             return;
@@ -56,7 +67,7 @@ final class PruebasNavegacion {
         old.putLongArray("c", cells);
         old.putBoolean("door", true);
         Mina mine = Mina.fromNbt(old);
-        UUID id = UUID.randomUUID();
+        UUID id = SAVED_MINE;
         mine.save(world, id);
         Mina restored = Mina.load(world, id);
         boolean kept = restored != null && restored.size() == cells.length && BlockPos.fromLong(cells[0]).equals(restored.entrance())
@@ -75,7 +86,6 @@ final class PruebasNavegacion {
         boolean protectedRoute = capped.size() == Mina.MAX && capped.needsReturn()
                 && BlockPos.fromLong(full[0]).equals(capped.entrance())
                 && capped.last().equals(BlockPos.fromLong(full[Mina.MAX - 1]));
-        Mina.forget(world, id);
         Pruebas.check("mina-rastro", everyStep && protectedRoute,
                 "1500 pasos y boca conservados al serializar/cargar: " + everyStep + ", límite sin perder la subida: " + protectedRoute);
     }

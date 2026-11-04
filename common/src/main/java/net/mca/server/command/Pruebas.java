@@ -113,7 +113,7 @@ public final class Pruebas {
                 case "vista-oido" -> start(new VistaOido(world));
                 case "escalera-real" -> start(new EscaleraReal(world));
                 case "regreso-sin-pico" -> start(new EscaleraReal(world, true));
-                case "mina-rastro", "ruta-presupuesto", "ruta-transicion", "coste-rotura" -> PruebasNavegacion.run(world, which);
+                case "mina-rastro", "mina-rastro-reinicio", "ruta-presupuesto", "ruta-transicion", "coste-rotura" -> PruebasNavegacion.run(world, which);
                 case "bajada-lado" -> start(new BajadaLado(world));
                 case "vida-contratos", "vida-permisos", "vida-red-codecs", "vida-miedo", "vida-vinculo", "archivo-preparar", "archivo-reinicio", "archivo-revisiones", "robo-actor" -> PruebasVida.run(world, which);
                 case "resumen" -> resumen();
@@ -3381,6 +3381,9 @@ public final class Pruebas {
             task.setFood(20);
             task.setNoche(false);
             walked = new java.util.Set[5];
+            if (sinPico) {
+                task.setWalkBudget(1); // force a real multi-tick return search as well as a return without a pickaxe
+            }
             for (int i = 0; i < 5; i++) {
                 walked[i] = new java.util.HashSet<>();
             }

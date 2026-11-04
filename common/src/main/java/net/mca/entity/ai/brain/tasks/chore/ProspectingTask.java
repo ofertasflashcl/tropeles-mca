@@ -342,8 +342,10 @@ public class ProspectingTask extends AbstractChoreTask {
     /** Walking search retained between return ticks; a spent slice is not a missing staircase. */
     @Nullable
     private Motor.WalkSearch pieBusqueda;
+    private int walkBudget = 512;
     private boolean viaPendiente;
     private long viaRetryAt;
+
     /** It could not get into its house this trip: its chest may go right by the house, outside. */
     private boolean homeOutside;
     /** The ripe crop it is going to harvest, and for how long it has been at it. */
@@ -750,6 +752,9 @@ public class ProspectingTask extends AbstractChoreTask {
         BlockPos face = saved.last();
         if (face == null || age < 0 || age > RESUME_AGE) {
             return false;
+        }
+        if (saved.nearLowAny(Mining.pies(villager)) >= 0) {
+            return true; // a restart in the middle of a long known corridor is not a different mine
         }
         BlockPos door = saved.entrance();
         return horizontalSq(face, villager) <= RESUME_DISTANCE * RESUME_DISTANCE
@@ -1436,6 +1441,14 @@ public class ProspectingTask extends AbstractChoreTask {
     }
 
     /** For the in-game checks: how full its food bar is, and where home is. */
+    /** Bounded work per return tick; a smaller slice also lets server checks exercise continuation. */
+    public void setWalkBudget(int nodes) {
+        if (nodes < 1 || nodes > 512) {
+            throw new IllegalArgumentException("walk budget must be 1..512");
+        }
+        walkBudget = nodes;
+    }
+
     public void setFood(int points) {
         food = points;
         comidaLeida = true; // set on purpose: what the villager kept from before does not overwrite it
@@ -2235,6 +2248,7 @@ public class ProspectingTask extends AbstractChoreTask {
             return;
         }
         if (now < viaRetryAt) {
+            villager.getNavigation().stop();
             memory.doing("esperando antes de comprobar de nuevo la subida", now);
             resetWatch();
             return;
@@ -2270,6 +2284,7 @@ public class ProspectingTask extends AbstractChoreTask {
             return; // up its own trail from the next tick on: nothing dug toward a staircase of its own meanwhile
         }
         if (goal == null && viaPendiente) {
+            villager.getNavigation().stop();
             memory.doing("buscando cómo volver por su subida, sin cavar mientras piensa", now);
             resetWatch();
             return;
@@ -2581,7 +2596,7 @@ public class ProspectingTask extends AbstractChoreTask {
         } else {
             search = new Motor.WalkSearch(feet, goal, within);
         }
-        Motor.WalkResult result = search.advance(world, returning ? 512 : 16000, conocida,
+        Motor.WalkResult result = search.advance(world, returning ? walkBudget : 16000, conocida,
                 (from, to) -> !r.pasoCerrado(from, to, world.getTime()));
         if (result.status() == Motor.WalkStatus.FOUND) {
             pieBusqueda = null;
@@ -4555,7 +4570,8 @@ public class ProspectingTask extends AbstractChoreTask {
         boolean digging = breaking > 0 && breaking != lastBreak;
         lastBreak = breaking;
         breakingNow = digging;
-        boolean byChoice = phase == Phase.REST || troubled() || progreso.cooking() || villager.isSleeping() || digging;
+        boolean byChoice = phase == Phase.REST || troubled() || progreso.cooking() || villager.isSleeping() || digging
+                || phase == Phase.HOME_UP && (viaPendiente || now < viaRetryAt);
         Atasco.Remedio remedy = atasco.tick(world, villager, byChoice, memory.doing() + " (" + phase + ")");
         if (remedy == Atasco.Remedio.NINGUNO) {
             return false;
