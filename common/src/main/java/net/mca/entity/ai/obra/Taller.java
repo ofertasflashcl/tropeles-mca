@@ -1,13 +1,15 @@
 package net.mca.entity.ai.obra;
 
 import net.mca.entity.VillagerEntityMCA;
-import net.mca.entity.ai.body.Progreso;
+import net.mca.entity.ai.crafting.Ejecutor;
+import net.mca.entity.ai.crafting.Reserva;
 import net.minecraft.inventory.SimpleInventory;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.registry.Registries;
 import net.minecraft.registry.tag.ItemTags;
+import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.Identifier;
 import org.jetbrains.annotations.Nullable;
 
@@ -96,13 +98,17 @@ final class Taller {
         };
     }
 
-    /** One craft of {@code r}: true when it made something. {@code pref} is the wood it would rather use. */
+    /**
+     * One craft of {@code r}: true when it made something. {@code pref} is the wood it would rather use. The server's own
+     * recipe does it, with the bag's own things on the grid ({@link Ejecutor}); the logs the house still needs are kept.
+     */
     static boolean hacer(VillagerEntityMCA villager, Receta r, Plano.Madera pref, int reservaTroncos) {
-        if (!puede(villager, r, reservaTroncos)) {
+        if (!puede(villager, r, reservaTroncos) || !(villager.getWorld() instanceof ServerWorld world)) {
             return false;
         }
         SimpleInventory inv = villager.getInventory();
-        switch (r) {
+        Reserva reserva = Reserva.normal().guarda(TRONCOS, reservaTroncos);
+        Ejecutor.Resultado hecho = switch (r) {
             case TABLAS -> {
                 // the log of the house's own wood first: its walls and roof should be one colour
                 int slot = -1;
@@ -112,56 +118,26 @@ final class Taller {
                         slot = i;
                     }
                 }
-                if (slot < 0) {
-                    return false;
-                }
-                Item planks = Progreso.planksFor(inv.getStack(slot).getItem());
-                inv.getStack(slot).decrement(1);
-                inv.markDirty();
-                dar(villager, new ItemStack(planks, 4));
+                yield slot < 0 ? null : Ejecutor.desde(world, villager, slot, TABLAS, reserva, true);
             }
-            case PALOS -> {
-                quitar(inv, TABLAS, 2);
-                dar(villager, new ItemStack(Items.STICK, 4));
-            }
-            case MESA -> {
-                quitar(inv, TABLAS, 4);
-                dar(villager, new ItemStack(Items.CRAFTING_TABLE));
-            }
-            case ANTORCHAS -> {
-                quitar(inv, CARBON, 1);
-                quitar(inv, PALOS, 1);
-                dar(villager, new ItemStack(Items.TORCH, 4));
-            }
+            case PALOS -> Ejecutor.hacer(world, villager, Items.STICK, 4, false, reserva, true);
+            case MESA -> Ejecutor.hacer(world, villager, Items.CRAFTING_TABLE, 1, false, reserva, true);
+            case ANTORCHAS -> Ejecutor.hacer(world, villager, Items.TORCH, 4, false, reserva, true);
             case ESCALERAS, PUERTA -> {
                 Item planks = mismaMadera(inv, 6, pref.planks.asItem());
                 if (planks == null) {
-                    return false;
+                    yield null;
                 }
-                Item made = variante(planks, r == Receta.ESCALERAS ? "_stairs" : "_door",
-                        r == Receta.ESCALERAS ? pref.stairs.asItem() : pref.door.asItem());
-                quitar(inv, s -> s.isOf(planks), 6);
-                dar(villager, new ItemStack(made, r == Receta.ESCALERAS ? 4 : 3));
+                boolean escalera = r == Receta.ESCALERAS;
+                Item made = variante(planks, escalera ? "_stairs" : "_door", escalera ? pref.stairs.asItem() : pref.door.asItem());
+                yield Ejecutor.hacer(world, villager, made, escalera ? 4 : 3, true, reserva, true);
             }
-            case COFRE -> {
-                quitar(inv, TABLAS, 8);
-                dar(villager, new ItemStack(Items.CHEST));
-            }
-            case HORNO -> {
-                quitar(inv, PIEDRA, 8);
-                dar(villager, new ItemStack(Items.FURNACE));
-            }
-            case PANELES -> {
-                quitar(inv, VIDRIO, 6);
-                dar(villager, new ItemStack(Items.GLASS_PANE, 16));
-            }
-            case PICO -> {
-                quitar(inv, TABLAS, 3);
-                quitar(inv, PALOS, 2);
-                dar(villager, new ItemStack(Items.WOODEN_PICKAXE));
-            }
-        }
-        return true;
+            case COFRE -> Ejecutor.hacer(world, villager, Items.CHEST, 1, true, reserva, true);
+            case HORNO -> Ejecutor.hacer(world, villager, Items.FURNACE, 1, true, reserva, true);
+            case PANELES -> Ejecutor.hacer(world, villager, Items.GLASS_PANE, 16, true, reserva, true);
+            case PICO -> Ejecutor.hacer(world, villager, Items.WOODEN_PICKAXE, 1, true, reserva, true);
+        };
+        return hecho != null && hecho.ok();
     }
 
     /** Planks of one wood it has at least {@code n} of ({@code pref} when it can), or null. */

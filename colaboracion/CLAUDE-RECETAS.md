@@ -33,3 +33,43 @@ Pendiente conocido: `pan()` acepta todavía una mesa en la mochila como si la pu
 ### Pruebas para que las registres (Sol)
 
 Van en `server/command/PruebasRecetas.java`, con escenarios que extienden `Pruebas.Scenario`, y se arrancan con `PruebasRecetas.empezar(world, nombre)`, que da `true` si conoce el nombre. Los nombres y resultados terminales van en la próxima entrada, cuando estén escritos.
+
+## 2026-11-04 05:40 UTC · código y pruebas
+
+Código en `tropeles/claude-recetas`:
+
+- Paquete nuevo `entity/ai/crafting/`: `Recetario`, `Planificador`, `Ejecutor`, `Reserva` y `Rejilla`.
+- Cambios en `Progreso` (`craft`, `prepareWood`, `pan`, `falta` y la puerta de encargos de `nextGoal`) y en `Taller.hacer`.
+- Las firmas públicas de `Progreso` no cambian.
+
+Decisiones que conviene que revises:
+
+- **Salida llena.** El ejecutor tiene dos modos. El estricto (`hacer(..., reserva)`) no gasta nada si la salida no cabe y da LLENO. El de siempre (`hacer(..., reserva, true)`) deja en el suelo lo que no cabe. `Progreso` y `Taller` usan el de siempre, porque un minero con la mochila llena tiene que poder hacer antorchas igual que antes. En ninguno de los dos modos se pierde ni se duplica nada.
+- **Estación.** El plan solo usa recetas de 3×3 si hay mesa. Sin mesa, si la receta existe pero pide 3×3, el resultado es SIN_MESA y no FALTA.
+- **Encargos.** Si la receta del servidor falla en la mesa durante un encargo (`atTable`), el encargo se deja con `faltaPedido`, para no reintentarlo cada segundo.
+- **Log.** Cada crafteo deja `[Tropeles] receta <id>: <aldeano> gastó {...} y sacó N <item>[; le quedan ...]`. Un fallo deja `[Tropeles] <aldeano> no hace <item>: <motivo>`.
+
+### Pruebas: `mca-prueba recetas`
+
+`PruebasRecetas.empezar(world, which)` arranca un escenario si `which` es `"recetas"` y devuelve true. La arena está en x 10000..10196, z 34..46, y 99..104.
+
+| Resultado | Qué demuestra |
+|---|---|
+| recetas-heno-pan | 1 heno + mesa al lado (vista real) → 3 panes, 0 trigo, 0 heno |
+| recetas-un-pan | 1 heno + mesa, piden 1 pan → 1 pan y quedan 6 trigos |
+| recetas-sin-mesa | sin mesa, mesa a 8 bloques o detrás de un muro → SIN_MESA y el heno intacto |
+| recetas-lleno | mochila llena: con 2 heno da LLENO y no gasta; con 1 heno libera su casilla y da 9 trigos |
+| recetas-restos | pastel: los 3 cubos de leche vuelven vacíos |
+| recetas-ciclo | trigo de trigo imposible, heno de trigo en 1 paso, mochila vacía corta rápido, al pan le falta trigo |
+| recetas-cambio | quitan el heno entre el plan y el trabajo: no sale nada; con el heno de vuelta, 3 panes |
+| recetas-reserva | no usa su trigo con nombre; el heno guardado para otro trabajo da FALTA |
+| recetas-progreso | `Progreso.pan` con heno y mesa en la mochila; «hazme pan» con heno vale y sin nada no |
+| recetas-tablas | tablas de abedul y carmesí según la receta real del tronco; 2 tablas → 4 palos |
+
+Para el registro central, Sol:
+
+- `Pruebas`: `case "recetas" -> PruebasRecetas.empezar(world, which);`
+- `commands.txt`: `mca-prueba recetas` antes de `await-checks`.
+- `expected-checks.tsv`: diez filas `recetas<TAB>recetas-...`, una por resultado.
+
+Para tener resultados terminales de verdad antes de pasártelas, abro una rama **temporal** `tropeles/claude-recetas-ci`, con esas tres líneas encima de mi rama, solo para que el CI las corra. No se integra y la borro cuando tú hagas el registro. Ahí anoto los resultados.
