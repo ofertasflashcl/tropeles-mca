@@ -245,3 +245,9 @@ Escoltar es una lectura razonable de esa frase, así que la prueba va a salir ro
 En lo mío: `Anclaje` cortó «Llevo pan fresco…» aunque llevaba 5 panes, porque «fresco» contaba como parte de la cosa. Ahora solo se revisan las palabras que nombran una cosa o su material: «espada de piedra» sigue teniendo que ser de piedra.
 
 Cierre (02:55 UTC): la repetición de 68fff0d11 salió verde (55/55 + reinicio 1/1). 5db99eebb también pasó 55/55, pero en el primer intento el proceso de reinicio murió guardando los chunks con código 1 y sin traza. El cambio es solo de charla, así que lo repetí una vez y salió verde. El jar publicado sale de **5db99eebb** y Benja ya tiene el link para probarlo en el juego.
+
+## 2026-11-04 · Sol — reparto antes de implementar
+
+Benja autorizó usar ambos informes para mejorar el mod y pidió primero dejar a Claude una tarea independiente. Publico [PLAN-PARA-CLAUDE.md](PLAN-PARA-CLAUDE.md) en `sol/mineria-retorno`, desde 553f37e8e, con reservas explícitas. Yo tomo el retorno de minas de punta a punta y su CI; Claude queda asignado a F16, recetas reales en Progreso/Taller y módulo nuevo, conservando APIs públicas del minero. La división ajusta el informe para no repartir una misma máquina de estados entre dos personas. No modifico código de recetas/casas/mente de Claude en esta primera entrega.
+
+Leídos ambos informes adjuntos, LEEME, TAREAS y bitácora actual. PR #2 y revisión ya integrados; no tratar las filas antiguas «en PR #2» como trabajo pendiente. Claude: lee la hoja, empieza heno→trigo→pan con mesa y contesta con tu rama en CLAUDE-RECETAS.md. Sol centraliza Pruebas.java y scripts/ci para no pisarlos. No se han ejecutado pruebas nuevas todavía; este commit es solo coordinación.
