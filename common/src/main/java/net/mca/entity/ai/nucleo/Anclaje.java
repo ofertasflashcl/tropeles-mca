@@ -156,11 +156,20 @@ public final class Anclaje {
             Matcher t = TENGO.matcher(n);
             while (t.find()) {
                 String cosa = t.group(2);
-                String head = cosa.split(" ")[0];
+                String[] partes = cosa.split(" ");
+                String head = partes[0];
                 if (!Acciones.esCosa(head) || VAGAS.contains(head)) {
                     continue; // not a thing, or a material too broad to check ("madera" may be logs or planks)
                 }
-                Acciones.Request req = Acciones.read(cosa);
+                // only words that name a thing or its material are checked: "pan fresco" is bread whatever "fresco"
+                // says of it, while "espada de piedra" still has to be a stone sword
+                StringBuilder base = new StringBuilder(head);
+                for (int i = 1; i < partes.length; i++) {
+                    if (Acciones.esCosa(partes[i])) {
+                        base.append(' ').append(partes[i]);
+                    }
+                }
+                Acciones.Request req = Acciones.read(base.toString());
                 if (!req.words().isEmpty() && Acciones.find(bolsa, req) < 0) {
                     return "dice que lleva " + cosa + " y no lo lleva";
                 }

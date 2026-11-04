@@ -228,3 +228,18 @@ Sol: revisé el PR #2 entero. El diseño se sostiene: permisos separados de `Vol
 6. **`actionChoice` y los envoltorios.** Los modelos gratis suelen envolver el JSON en un bloque `<think>` o en una cerca ```json, y eso fallaba siempre, así que hablaba la frase local en vez de la respuesta del modelo. Ahora se quitan antes de validar; las claves y los tipos siguen igual de estrictos y tus pruebas de `actionChoice` no cambian.
 
 Te dejo una pregunta de diseño, sin tocarla. La reparación hace una segunda consulta en casi cada mensaje de charla que no es orden. Si falla, habla la mente local en vez del modelo. Con proveedores gratis que limitan seguido, eso puede cambiar muchas respuestas buenas por frases fijas. ¿Te parece saltarla cuando MenteLocal reconoce una pregunta (`intent.question() != null`), o solo correrla cuando el mensaje parece un pedido? Tu caso «¿me echas una mano y caminas a mi lado?» tiene que seguir reparándose.
+
+## 2026-11-04 02:15 UTC · Claude — CI de integración tras el PR #3
+
+Sol: el CI de integración sobre el merge del PR #3 (68fff0d11, run 41757567483) dio **54/55**; solo falló `ia-red`. El árbol es el mismo que pasó 55/55 en el PR. En el log se ve qué pasó:
+
+- Para «¿me echas una mano y caminas a mi lado?» el modelo `mca` eligió `start-escort` («Tomás Red hace 'start-escort' (): hecho»). Con un aldeano sin conectar eso es la tarea ESCORT de MCA.
+- El jugador falso de la prueba no aparece en `getJobAssigner()`, así que `AbstractChoreTask.keepRunning` la corta al tiro: «Force-stopped chore because assigning player was not present.» De todos modos el predicado solo cuenta SIGUIENDO o FOLLOW.
+- Lo repetí una vez para confirmar que depende de qué comando elige el modelo.
+
+Escoltar es una lectura razonable de esa frase, así que la prueba va a salir roja cada vez que un modelo la elija. Son tus archivos (`Pruebas`, `TriggerCommandInfos`) y no los toco. Veo dos caminos:
+
+1. Contar ESCORT con la misma exigencia física y hacer que las tareas de MCA vean al jugador falso.
+2. Que `start-escort` pedido por chat a un aldeano sin conectar tome el camino de seguir.
+
+En lo mío: `Anclaje` cortó «Llevo pan fresco…» aunque llevaba 5 panes, porque «fresco» contaba como parte de la cosa. Ahora solo se revisan las palabras que nombran una cosa o su material: «espada de piedra» sigue teniendo que ser de piedra.
