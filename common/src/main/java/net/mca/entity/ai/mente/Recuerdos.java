@@ -119,6 +119,7 @@ public final class Recuerdos {
     private final Map<Long, Long> cerrados = new HashMap<>();
     private long ultimoPie = Long.MIN_VALUE;
     private long tocado;
+    private long revision = 1;
     @Nullable
     private Registro registro;
 
@@ -937,6 +938,7 @@ public final class Recuerdos {
 
     private void dirty(long now) {
         tocado = now;
+        revision = Math.incrementExact(revision);
         if (registro != null) {
             registro.markDirty();
         }
@@ -984,6 +986,7 @@ public final class Recuerdos {
         nbt.put("w", marks);
         nbt.putInt("wn", marcasN);
         nbt.putLong("tocado", tocado);
+        nbt.putLong("revision", revision);
         return nbt;
     }
 
@@ -1016,6 +1019,7 @@ public final class Recuerdos {
         }
         r.marcasN = Math.max(nbt.getInt("wn"), r.marcas.isEmpty() ? 0 : r.marcas.get(r.marcas.size() - 1).n());
         r.tocado = nbt.getLong("tocado");
+        r.revision = net.mca.server.world.data.ArchivoTropeles.revision(nbt);
         return r;
     }
 

@@ -36,32 +36,25 @@ public class InworldAI implements ChatAIStrategy {
      */
     public Optional<String> answer(ServerPlayerEntity player, VillagerEntityMCA villager, String msg) {
 
-        // Create status update event for Character (Includes relationship and current emotional state)
-        TriggerEvent.Parameter relationshipTrigger = relationshipModule.getRelationshipTriggerParameter(player, villager);
-        TriggerEvent.Parameter emotionTrigger = emotionModule.getEmotionTriggerParameter(villager);
-        TriggerEvent event = new TriggerEvent("status-update", new TriggerEvent.Parameter[]{relationshipTrigger, emotionTrigger});
+        return answer(player, villager, msg, null);
+    }
 
-        // Get response
-        Optional<Interaction> optionalResponse = sessionModule.getResponse(player, msg, event);
-        if (optionalResponse.isPresent()) {
-            Interaction response = optionalResponse.get();
-
-            // Use response data to update heart level
-            relationshipModule.updateRelationship(response, player, villager);
-
-            // Use response data to update move state
-            triggerModule.processTriggers(response, player, villager);
-
-            // Answer, or be silent if there is no answer (e.g., on triggers)
-            String answer = String.join("", response.textList());
-            if (answer.isEmpty()) {
-                return Optional.empty();
-            } else {
-                return Optional.of(answer);
-            }
-        } else {
-            player.sendMessage(Text.translatable("mca.ai_broken").formatted(Formatting.RED), false);
-            return Optional.empty();
-        }
+    public Optional<String> answer(ServerPlayerEntity player, VillagerEntityMCA villager, String msg, ActionTurn existing) {
+        var server = player.getServer();
+        if (server == null) return Optional.empty();
+        ActionTurn lease = existing != null ? existing : OpenAIChatAI.onServer(server, null,
+                () -> ActionTurn.capture(player, villager, 30_000));
+        if (lease == null) return Optional.empty();
+        TriggerEvent event = OpenAIChatAI.onServer(server, lease, () -> new TriggerEvent("status-update", new TriggerEvent.Parameter[]{
+                relationshipModule.getRelationshipTriggerParameter(player, villager), emotionModule.getEmotionTriggerParameter(villager)}));
+        if (event == null) return Optional.empty();
+        Optional<Interaction> response = sessionModule.getResponse(player, msg, event);
+        if (response.isEmpty()) return Optional.empty();
+        String line = OpenAIChatAI.onServer(server, lease, () -> {
+            relationshipModule.updateRelationship(response.get(), player, villager);
+            String denial = triggerModule.processTriggers(response.get(), player, villager, lease);
+            return denial != null ? denial : String.join("", response.get().textList());
+        });
+        return line == null || line.isBlank() ? Optional.empty() : Optional.of(line);
     }
 }

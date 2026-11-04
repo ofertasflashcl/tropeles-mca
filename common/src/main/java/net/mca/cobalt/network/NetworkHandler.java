@@ -5,8 +5,8 @@ import net.minecraft.server.network.ServerPlayerEntity;
 public abstract class NetworkHandler {
     private static Impl INSTANCE;
 
-    public static <T extends Message> void registerMessage(Class<T> msg) {
-        INSTANCE.registerMessage(msg);
+    public static <T extends Message> void registerMessage(Class<T> msg, java.util.function.Function<net.minecraft.network.PacketByteBuf, T> decoder, boolean toServer) {
+        INSTANCE.registerMessage(msg, decoder, toServer);
     }
 
     public static void sendToServer(Message m) {
@@ -22,7 +22,7 @@ public abstract class NetworkHandler {
             INSTANCE = this;
         }
 
-        public abstract <T extends Message> void registerMessage(Class<T> msg);
+        public abstract <T extends Message> void registerMessage(Class<T> msg, java.util.function.Function<net.minecraft.network.PacketByteBuf, T> decoder, boolean toServer);
 
         public abstract void sendToServer(Message m);
 

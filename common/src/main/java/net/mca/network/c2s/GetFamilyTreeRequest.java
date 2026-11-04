@@ -7,7 +7,6 @@ import net.mca.server.world.data.FamilyTree;
 import net.mca.server.world.data.FamilyTreeNode;
 import net.minecraft.server.network.ServerPlayerEntity;
 
-import java.io.Serial;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
@@ -15,8 +14,6 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 public class GetFamilyTreeRequest implements Message {
-    @Serial
-    private static final long serialVersionUID = -6232925305386763715L;
 
     final UUID uuid;
 
@@ -35,5 +32,19 @@ public class GetFamilyTreeRequest implements Message {
 
             NetworkHandler.sendToPlayer(new GetFamilyTreeResponse(uuid, familyEntries), player);
         });
+    }
+
+    private GetFamilyTreeRequest(net.minecraft.network.PacketByteBuf buffer) {
+        this.uuid = net.mca.cobalt.network.PacketCodecs.uuid(buffer);
+        if (this.uuid == null) throw new io.netty.handler.codec.DecoderException("Missing uuid");
+    }
+
+    public static GetFamilyTreeRequest decode(net.minecraft.network.PacketByteBuf buffer) { return new GetFamilyTreeRequest(buffer); }
+
+    @Override
+    public void encode(net.minecraft.network.PacketByteBuf buffer) {
+        buffer.writeVarInt(net.mca.cobalt.network.PacketCodecs.VERSION);
+        net.mca.cobalt.network.PacketCodecs.uuid(buffer, this.uuid);
+        if (buffer.readableBytes() > net.mca.cobalt.network.PacketCodecs.MAX_PACKET) throw new io.netty.handler.codec.EncoderException("MCA packet too large");
     }
 }

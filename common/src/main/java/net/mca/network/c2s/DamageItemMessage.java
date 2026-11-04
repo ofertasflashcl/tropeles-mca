@@ -8,12 +8,9 @@ import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.util.Hand;
 import net.minecraft.util.Identifier;
 
-import java.io.Serial;
 import java.util.Arrays;
 
 public class DamageItemMessage implements Message {
-    @Serial
-    private static final long serialVersionUID = -8975978126445189429L;
 
     private final String itemIdentifier;
 
@@ -29,5 +26,19 @@ public class DamageItemMessage implements Message {
                 stack.damage(1, player, e -> e.sendEquipmentBreakStatus(EquipmentSlot.MAINHAND));
             }
         });
+    }
+
+    private DamageItemMessage(net.minecraft.network.PacketByteBuf buffer) {
+        this.itemIdentifier = net.mca.cobalt.network.PacketCodecs.string(buffer);
+        if (this.itemIdentifier == null) throw new io.netty.handler.codec.DecoderException("Missing itemIdentifier");
+    }
+
+    public static DamageItemMessage decode(net.minecraft.network.PacketByteBuf buffer) { return new DamageItemMessage(buffer); }
+
+    @Override
+    public void encode(net.minecraft.network.PacketByteBuf buffer) {
+        buffer.writeVarInt(net.mca.cobalt.network.PacketCodecs.VERSION);
+        net.mca.cobalt.network.PacketCodecs.string(buffer, this.itemIdentifier);
+        if (buffer.readableBytes() > net.mca.cobalt.network.PacketCodecs.MAX_PACKET) throw new io.netty.handler.codec.EncoderException("MCA packet too large");
     }
 }

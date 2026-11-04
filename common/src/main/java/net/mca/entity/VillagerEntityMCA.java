@@ -12,7 +12,6 @@ import net.mca.entity.ai.pathfinder.VillagerNavigation;
 import net.mca.entity.ai.relationship.*;
 import net.mca.entity.interaction.VillagerCommandHandler;
 import net.mca.item.ItemsMCA;
-import net.mca.network.c2s.InteractionVillagerMessage;
 import net.mca.resources.Names;
 import net.mca.resources.Rank;
 import net.mca.resources.Tasks;
@@ -459,11 +458,10 @@ public class VillagerEntityMCA extends VillagerEntity implements VillagerLike<Vi
             //make sure dialogueType is synced in case the client needs it
             getDialogueType(player);
 
-            if (player.isSneaking()) {
-                if (player instanceof ServerPlayerEntity e) {
-                    NetworkHandler.sendToPlayer(new InteractionVillagerMessage("trade", uuid), e);
-                }
-            } else {
+            // sneaking skips the MCA menu. It used to send InteractionVillagerMessage("trade") to the client, where it did
+            // nothing; that message is registered client -> server only now, and Forge drops the connection on a packet
+            // in the wrong direction, so nothing is sent
+            if (!player.isSneaking()) {
                 playWelcomeSound();
                 interactedWith = true;
                 return interactions.interactAt(player, pos, hand);

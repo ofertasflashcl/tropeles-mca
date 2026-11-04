@@ -43,6 +43,8 @@ public class VillagerCommandHandler extends EntityCommandHandler<VillagerEntityM
      */
     @Override
     public boolean handle(ServerPlayerEntity player, String command) {
+        if (!net.mca.entity.ai.chatAI.CommandPolicy.menu(player, entity, command)) return false;
+        if (!net.mca.entity.ai.mente.Voluntad.conectado(entity)) net.mca.entity.ai.mente.Voluntad.nuevaGeneracion(entity.getUuid());
         Memories memory = entity.getVillagerBrain().getMemoriesForPlayer(player);
 
         boolean connected = net.mca.entity.ai.mente.Voluntad.conectado(entity);

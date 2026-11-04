@@ -5,11 +5,8 @@ import net.mca.server.world.data.Village;
 import net.mca.server.world.data.VillageManager;
 import net.minecraft.server.network.ServerPlayerEntity;
 
-import java.io.Serial;
 
 public class SaveVillageMessage implements Message {
-    @Serial
-    private static final long serialVersionUID = -4830365225086158551L;
 
     private final int id;
     private final float taxes;
@@ -30,5 +27,25 @@ public class SaveVillageMessage implements Message {
             village.setPopulationThreshold(populationThreshold);
             village.setMarriageThreshold(marriageThreshold);
         });
+    }
+
+    private SaveVillageMessage(net.minecraft.network.PacketByteBuf buffer) {
+        this.id = buffer.readInt();
+        this.taxes = buffer.readFloat();
+        this.populationThreshold = buffer.readFloat();
+        this.marriageThreshold = buffer.readFloat();
+        if (!Float.isFinite(taxes) || !Float.isFinite(populationThreshold) || !Float.isFinite(marriageThreshold)) throw new io.netty.handler.codec.DecoderException("Non-finite village data");
+    }
+
+    public static SaveVillageMessage decode(net.minecraft.network.PacketByteBuf buffer) { return new SaveVillageMessage(buffer); }
+
+    @Override
+    public void encode(net.minecraft.network.PacketByteBuf buffer) {
+        buffer.writeVarInt(net.mca.cobalt.network.PacketCodecs.VERSION);
+        buffer.writeInt(this.id);
+        buffer.writeFloat(this.taxes);
+        buffer.writeFloat(this.populationThreshold);
+        buffer.writeFloat(this.marriageThreshold);
+        if (buffer.readableBytes() > net.mca.cobalt.network.PacketCodecs.MAX_PACKET) throw new io.netty.handler.codec.EncoderException("MCA packet too large");
     }
 }

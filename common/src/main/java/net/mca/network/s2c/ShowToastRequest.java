@@ -4,11 +4,8 @@ import net.mca.ClientProxy;
 import net.mca.cobalt.network.Message;
 import net.minecraft.text.Text;
 
-import java.io.Serial;
 
 public class ShowToastRequest implements Message {
-    @Serial
-    private static final long serialVersionUID = 1055734972572313374L;
 
     private final String title;
     private final String message;
@@ -29,5 +26,20 @@ public class ShowToastRequest implements Message {
     @Override
     public void receive() {
         ClientProxy.getNetworkHandler().handleToastMessage(this);
+    }
+
+    private ShowToastRequest(net.minecraft.network.PacketByteBuf buffer) {
+        this.title = net.mca.cobalt.network.PacketCodecs.string(buffer);
+        this.message = net.mca.cobalt.network.PacketCodecs.string(buffer);
+    }
+
+    public static ShowToastRequest decode(net.minecraft.network.PacketByteBuf buffer) { return new ShowToastRequest(buffer); }
+
+    @Override
+    public void encode(net.minecraft.network.PacketByteBuf buffer) {
+        buffer.writeVarInt(net.mca.cobalt.network.PacketCodecs.VERSION);
+        net.mca.cobalt.network.PacketCodecs.string(buffer, this.title);
+        net.mca.cobalt.network.PacketCodecs.string(buffer, this.message);
+        if (buffer.readableBytes() > net.mca.cobalt.network.PacketCodecs.MAX_PACKET) throw new io.netty.handler.codec.EncoderException("MCA packet too large");
     }
 }

@@ -10,13 +10,10 @@ import net.mca.server.world.data.GraveyardManager;
 import net.mca.server.world.data.Village;
 import net.minecraft.server.network.ServerPlayerEntity;
 
-import java.io.Serial;
 import java.util.Optional;
 import java.util.Set;
 
 public class GetVillageRequest implements Message {
-    @Serial
-    private static final long serialVersionUID = -1302412553466016247L;
 
     @Override
     public void receive(ServerPlayerEntity player) {
@@ -32,5 +29,19 @@ public class GetVillageRequest implements Message {
         } else {
             NetworkHandler.sendToPlayer(new GetVillageFailedResponse(), player);
         }
+    }
+
+    public GetVillageRequest() { }
+
+    private GetVillageRequest(net.minecraft.network.PacketByteBuf buffer) {
+
+    }
+
+    public static GetVillageRequest decode(net.minecraft.network.PacketByteBuf buffer) { return new GetVillageRequest(buffer); }
+
+    @Override
+    public void encode(net.minecraft.network.PacketByteBuf buffer) {
+        buffer.writeVarInt(net.mca.cobalt.network.PacketCodecs.VERSION);
+        if (buffer.readableBytes() > net.mca.cobalt.network.PacketCodecs.MAX_PACKET) throw new io.netty.handler.codec.EncoderException("MCA packet too large");
     }
 }

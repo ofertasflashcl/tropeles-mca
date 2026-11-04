@@ -77,6 +77,11 @@ public class ChatAI {
     private static final int MAX_PENDING = 2;
     /** The watchdog answers this long after the longest a mind may take. */
     private static final long GRACE_MS = 8_000;
+    /**
+     * The turn's lease outlives the watchdog by this much: the watchdog fires when the lease would have run out, so
+     * without it the villager's own answer was always too late and it said nothing. One answer only, still.
+     */
+    private static final long RESCUE_MS = 5_000;
     /** "Inas está pensando…" is shown again this often while it thinks. */
     private static final long THINKING_REPEAT_MS = 2_500;
 
@@ -121,6 +126,7 @@ public class ChatAI {
         final long received;
         final long hardMs;
         final boolean es;
+        final ActionTurn lease;
         final AtomicBoolean said = new AtomicBoolean();
         volatile boolean shown;
         /** The villager's own answer, once it read the world (and carried out any order). */
@@ -137,6 +143,7 @@ public class ChatAI {
             this.received = received;
             this.hardMs = hardMs;
             this.es = MenteLocal.speaksSpanish(msg, villagerName, speaker.getUuid());
+            this.lease = ActionTurn.capture(speaker, villager, Math.max(0, received + hardMs + RESCUE_MS - System.currentTimeMillis()));
         }
     }
 
@@ -153,13 +160,18 @@ public class ChatAI {
 
     /** As above, with the online minds done by {@code deadline}; {@code early} gets the villager's own answer once ready. */
     static Optional<String> answer(ServerPlayerEntity player, VillagerEntityMCA villager, String msg, long deadline, @Nullable Consumer<String> early) {
+        return answer(player, villager, msg, deadline, early, null);
+    }
+
+    static Optional<String> answer(ServerPlayerEntity player, VillagerEntityMCA villager, String msg, long deadline,
+                                   @Nullable Consumer<String> early, @Nullable ActionTurn lease) {
         ChatAIStrategy strategy = computeStrategyIfAbsent(villager.getUuid());
         if (strategy instanceof OpenAIChatAI open) {
-            return open.answer(player, villager, msg, deadline, early);
+            return open.answer(player, villager, msg, deadline, early, lease);
         }
         Optional<String> said = Optional.empty();
         try {
-            said = strategy.answer(player, villager, msg);
+            said = strategy instanceof InworldAI inworld ? inworld.answer(player, villager, msg, lease) : Optional.empty();
         } catch (RuntimeException e) {
             MCA.LOGGER.error("[Tropeles] InworldAI falló para {}", villager.getName().getString(), e);
         }
@@ -167,7 +179,7 @@ public class ChatAI {
             return said;
         }
         // InworldAI said nothing (an error, or a trigger with no words): the usual minds answer
-        return new OpenAIChatAI().answer(player, villager, msg, deadline, early);
+        return new OpenAIChatAI().answer(player, villager, msg, deadline, early, lease);
     }
 
     /**
@@ -186,6 +198,15 @@ public class ChatAI {
      * Clears the strategy for a specific villager
      * @param villagerID UUID of the villager
      */
+    public static void clearSession() {
+        strategies.clear();
+        currentConversations.clear();
+        LANES.clear();
+        PENDING.clear();
+        LOGGED.set(false);
+        OpenAIChatAI.clearSession();
+    }
+
     public static void clearStrategy(UUID villagerID) {
         strategies.remove(villagerID);
     }
@@ -216,14 +237,20 @@ public class ChatAI {
             }
             VillagerEntityMCA villager = to.get().villager();
             MCA.LOGGER.info("[Tropeles] {} → {} ({}): «{}»", speaker.getName().getString(), villager.getName().getString(), to.get().how(), msg);
+            if (!ServerRuntime.accept(server, speaker.getUuid() + ":" + villager.getUuid() + ":" + receivedMs + ":" + msg)) {
+                MCA.LOGGER.info("[Tropeles] charla repetida descartada para {}", villager.getUuid());
+                return;
+            }
             // "¡para!": it stops this very tick and asks, ahead of every mind and of the answers it still owed
-            if (net.mca.entity.ai.mente.Interrupcion.oir(speaker, villager, msg)) {
+            if (CommandPolicy.check(speaker, villager, "alert", CommandPolicy.Source.LOCAL).allowed()
+                    && net.mca.entity.ai.mente.Interrupcion.oir(speaker, villager, msg)) {
                 currentConversations.put(speaker.getUuid(), new OpenConversation(villager.getUuid(), System.currentTimeMillis(),
                         villager.getWorld() != speaker.getWorld() || villager.distanceTo(speaker) > NEAR_RANGE));
                 return;
             }
             // its name, how they identify, the two of them, its hunger: a companion answers that at once, itself
-            if (net.mca.entity.ai.mente.Companero.oir(speaker, villager, msg)) {
+            if (CommandPolicy.check(speaker, villager, "follow-player", CommandPolicy.Source.LOCAL).allowed()
+                    && net.mca.entity.ai.mente.Companero.oir(speaker, villager, msg)) {
                 currentConversations.put(speaker.getUuid(), new OpenConversation(villager.getUuid(), System.currentTimeMillis(),
                         villager.getWorld() != speaker.getWorld() || villager.distanceTo(speaker) > NEAR_RANGE));
                 return;
@@ -275,18 +302,16 @@ public class ChatAI {
             if (offline) {
                 Cerebros.OFFLINE.set(true);
             }
-            net.mca.entity.ai.mente.Interrupcion.turno(turn.received);
-            if (!turn.said.get() && !net.mca.entity.ai.mente.Interrupcion.despues(turn.villagerId, turn.received)) {
-                line = answer(turn.speaker, turn.villager, turn.msg, deadline, local -> turn.fallback = local).orElse(null);
+            if (!turn.said.get() && !turn.lease.finished()) {
+                line = answer(turn.speaker, turn.villager, turn.msg, deadline, local -> turn.fallback = local, turn.lease).orElse(null);
             }
         } catch (Throwable t) {
             MCA.LOGGER.error("[Tropeles] la charla con {} falló", turn.villagerName, t);
         } finally {
-            net.mca.entity.ai.mente.Interrupcion.turno(null);
             Cerebros.OFFLINE.set(false);
             pending.decrementAndGet();
         }
-        if (turn.said.get()) {
+        if (turn.said.get() || turn.lease.finished()) {
             if (line != null) {
                 MCA.LOGGER.info("[Tropeles] {} pensó demasiado; ya había contestado, no dice «{}»", turn.villagerName, line);
             }
@@ -297,7 +322,7 @@ public class ChatAI {
         }
         if (line == null || line.isBlank()) {
             try {
-                line = OpenAIChatAI.lastResort(turn.server, turn.speaker, turn.villager, turn.msg);
+                line = OpenAIChatAI.lastResort(turn.server, turn.speaker, turn.villager, turn.msg, turn.lease);
             } catch (Throwable t) {
                 MCA.LOGGER.error("[Tropeles] ni la mente local de {} pudo contestar", turn.villagerName, t);
                 line = MenteLocal.shrug(turn.es);
@@ -319,12 +344,12 @@ public class ChatAI {
 
     /** The watchdog: the minds took far too long, so the villager's own mind answers now (server thread). */
     private static void rescue(Turn turn) {
-        if (!turn.server.isOnThread() || turn.said.get()) {
+        if (!turn.server.isOnThread() || turn.said.get() || !turn.lease.valid()) {
             return;
         }
         String line = turn.fallback;
         if (line == null || line.isBlank()) {
-            line = OpenAIChatAI.lastResort(turn.server, turn.speaker, turn.villager, turn.msg);
+            line = OpenAIChatAI.lastResort(turn.server, turn.speaker, turn.villager, turn.msg, turn.lease);
         }
         MCA.LOGGER.warn("[Tropeles] {} tardó más de {} s en pensar: contesta su propia mente", turn.villagerName, turn.hardMs / 1000);
         say(turn, line);
@@ -332,12 +357,7 @@ public class ChatAI {
 
     /** Says the answer once (server thread): the first of the worker and the watchdog wins. */
     private static void say(Turn turn, String line) {
-        if (!turn.server.isOnThread() || !turn.said.compareAndSet(false, true)) {
-            return;
-        }
-        if (net.mca.entity.ai.mente.Interrupcion.despues(turn.villagerId, turn.received)) {
-            // stopped with "¡para!" after this was asked: what it was about to say no longer fits
-            MCA.LOGGER.info("[Tropeles] {} se detuvo después de «{}»; no dice «{}»", turn.villagerName, turn.msg, line);
+        if (!turn.server.isOnThread() || !turn.lease.complete() || !turn.said.compareAndSet(false, true)) {
             return;
         }
         OpenAIChatAI.remember(turn.villagerId, turn.speakerId, turn.msg, line);
@@ -350,7 +370,7 @@ public class ChatAI {
     /** "Inas está pensando…" above the hotbar of the one who asked, while it thinks (server thread). */
     private static void thinking(Turn turn, long delay) {
         CompletableFuture.delayedExecutor(delay, TimeUnit.MILLISECONDS, turn.server).execute(() -> {
-            if (!turn.server.isOnThread() || turn.said.get() || System.currentTimeMillis() - turn.received > turn.hardMs) {
+            if (!turn.server.isOnThread() || turn.said.get() || !turn.lease.valid()) {
                 return;
             }
             ServerPlayerEntity player = turn.server.getPlayerManager().getPlayer(turn.speakerId);

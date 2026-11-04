@@ -23,6 +23,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 /**
@@ -86,7 +87,8 @@ public class OpenAIChatAI implements ChatAIStrategy {
     private record Prepared(String playerName, String villagerName, List<Pair<String, String>> history,
                             MenteLocal.Intent intent, @Nullable String outcome, boolean refused, boolean done, String open,
                             String inHouse, List<Cerebros.Mind> minds, String local, @Nullable String image,
-                            @Nullable Boolean goesBack, @Nullable BlockPos pos, @Nullable net.mca.entity.ai.nucleo.Anclaje anclaje) {
+                            @Nullable Boolean goesBack, @Nullable BlockPos pos, @Nullable net.mca.entity.ai.nucleo.Anclaje anclaje,
+                            Map<String, String> actions) {
     }
 
     /**
@@ -135,25 +137,34 @@ public class OpenAIChatAI implements ChatAIStrategy {
      * if the minds take too long; the caller then remembers what was really said ({@link #remember}). Never empty.
      */
     public Optional<String> answer(ServerPlayerEntity player, VillagerEntityMCA villager, String msg, long deadline, @Nullable Consumer<String> early) {
+        return answer(player, villager, msg, deadline, early, null);
+    }
+
+    public Optional<String> answer(ServerPlayerEntity player, VillagerEntityMCA villager, String msg, long deadline,
+                                   @Nullable Consumer<String> early, @Nullable ActionTurn existing) {
         MinecraftServer server = player.getServer();
         if (server == null) {
             return Optional.of(MenteLocal.shrug(MenteLocal.spanish(msg)));
         }
+        ActionTurn lease = existing != null ? existing : onServer(server, () -> ActionTurn.capture(player, villager,
+                Math.max(1_000L, deadline - System.currentTimeMillis()) + 8_000L));
+        if (lease == null) return Optional.empty();
         // the answer to a question it asked about a rumour ("¿es verdad?") is weighed by its own mind
-        String verdict = onServer(server, () -> net.mca.entity.ai.nucleo.Nucleo.respuesta(villager, player, msg));
+        String verdict = onServer(server, lease, () -> net.mca.entity.ai.nucleo.Nucleo.respuesta(villager, player, msg));
         if (verdict != null) {
             if (early == null) {
-                remember(villager.getUuid(), player.getUuid(), msg, verdict);
+                if (!finish(server, lease, villager.getUuid(), player.getUuid(), msg, verdict)) return Optional.empty();
             }
             return Optional.of(verdict);
         }
         // the in-game checks keep this thread offline; the world is read on the server thread, so it is told
         boolean offline = Cerebros.OFFLINE.get();
-        Prepared prep = onServer(server, () -> prepare(player, villager, msg, offline));
+        Prepared prep = onServer(server, lease, () -> prepare(player, villager, msg, offline, lease));
         if (prep == null) {
-            String line = lastResort(server, player, villager, msg);
+            if (lease.finished()) return Optional.empty();
+            String line = lastResort(server, player, villager, msg, lease);
             if (early == null) {
-                remember(villager.getUuid(), player.getUuid(), msg, line);
+                if (!finish(server, lease, villager.getUuid(), player.getUuid(), msg, line)) return Optional.empty();
             }
             return Optional.of(line);
         }
@@ -168,11 +179,12 @@ public class OpenAIChatAI implements ChatAIStrategy {
             MCA.LOGGER.info("[Tropeles] {} no pudo con la orden '{}': contesta su propia mente", prep.villagerName(), prep.intent().command());
         } else {
             try {
-                Cerebros.Reply reply = Cerebros.ask(prep.minds(), mind -> mind.inHouse() ? prep.inHouse() : prep.open(),
+                Cerebros.Reply reply = askMinds(prep.minds(), mind -> mind.inHouse() ? prep.inHouse() : prep.open(),
                         prep.history(), msg, prep.playerName(), prep.villagerName(), villager.getUuid(), deadline, prep.image());
                 if (reply != null) {
                     StructuredResponse said = structured(reply.content(), prep.villagerName());
-                    line = speak(server, player, villager, prep, said);
+                    said = repairAction(server, villager, prep, msg, said, lease, deadline);
+                    line = speak(server, player, villager, prep, said, lease);
                     MCA.LOGGER.info("[Tropeles] {} pensó con {} en {} ms (orden '{}'){}", prep.villagerName(), reply.mind(), reply.millis(),
                             said.optionalCommand(), reply.saw() ? ", mirando la foto de lo que ve" : "");
                 }
@@ -196,9 +208,80 @@ public class OpenAIChatAI implements ChatAIStrategy {
             line = clip(line, MAX_LINE - at.length()) + at;
         }
         if (early == null) {
-            remember(villager.getUuid(), player.getUuid(), msg, line);
+            return finish(server, lease, villager.getUuid(), player.getUuid(), msg, line) ? Optional.of(line) : Optional.empty();
         }
-        return Optional.of(line);
+        return lease.finished() ? Optional.empty() : Optional.of(line);
+    }
+
+    /** Kept separate from world effects so the complete dialogue path can be tested without an HTTP service. */
+    protected Cerebros.Reply askMinds(List<Cerebros.Mind> minds, Function<Cerebros.Mind, String> system,
+                                     List<Pair<String, String>> history, String msg, String playerName,
+                                     String villagerName, UUID villager, long deadline, @Nullable String image) {
+        return Cerebros.ask(minds, system, history, msg, playerName, villagerName, villager, deadline, image);
+    }
+
+    /** A small, bounded second pass when the storyteller omitted the action. No effects occur in this pass. */
+    private StructuredResponse repairAction(MinecraftServer server, VillagerEntityMCA villager, Prepared prep, String msg,
+                                            StructuredResponse said, ActionTurn lease, long deadline) {
+        if (prep.intent().order() || prep.refused() || prep.actions().isEmpty()
+                || !command(said.optionalCommand()).isEmpty()
+                || said.message() != null && MenteLocal.promise(said.message()) != null) return said;
+        // A late answer must not start another request, much less act through one.
+        if (System.currentTimeMillis() >= deadline || !Boolean.TRUE.equals(onServer(server, lease, () -> true))) {
+            return new StructuredResponse(prep.local(), "", "");
+        }
+        String prompt = "Select the action requested in the player's latest message, including indirect requests. "
+                + "Do not roleplay or write dialogue. Return ONLY JSON {\"optionalCommand\":\"\",\"argument\":\"\"}. "
+                + "Choose exactly one command from the list below, or an empty command for conversation, questions, "
+                + "hypothetical/future plans, negated requests or a refusal in your previous reply. "
+                + "Never invent a command. The argument must be a string.\n"
+                + prep.actions().entrySet().stream().map(e -> e.getKey() + ": " + e.getValue()).collect(java.util.stream.Collectors.joining("\n"));
+        JsonObject data = new JsonObject();
+        data.addProperty("playerMessage", msg);
+        data.addProperty("previousReply", said.message());
+        Cerebros.Reply repair = askMinds(prep.minds(), mind -> prompt, List.of(), data.toString(),
+                prep.playerName(), prep.villagerName(), villager.getUuid(), deadline, null);
+        StructuredResponse choice = repair == null ? null : actionChoice(repair.content(), prep.actions().keySet());
+        if (choice == null) {
+            MCA.LOGGER.info("[Tropeles] {} no obtuvo una decisión de acción válida; contesta su propia mente", prep.villagerName());
+            return new StructuredResponse(prep.local(), "", "");
+        }
+        if (!choice.optionalCommand().isEmpty()) {
+            MCA.LOGGER.info("[Tropeles] {} completó la orden omitida: '{}'", prep.villagerName(), choice.optionalCommand());
+            // Speak from the execution result, not the original story that omitted it.
+            return new StructuredResponse(null, choice.optionalCommand(), choice.argument());
+        }
+        return said;
+    }
+
+    /** The action-only reply is stricter than free speech: no prose, aliases, nested values or unlisted actions. */
+    @Nullable
+    static StructuredResponse actionChoice(String content, Set<String> allowed) {
+        try {
+            // the wrapping free models add around JSON (a <think> block, a ```json fence) is not prose
+            String text = content.replaceAll("(?s)<think>.*?</think>", "").replace("```json", "").replace("```", "").trim();
+            JsonElement value = JsonParser.parseString(text);
+            if (!value.isJsonObject()) return null;
+            JsonObject o = value.getAsJsonObject();
+            if (!o.keySet().equals(Set.of("optionalCommand", "argument"))) return null;
+            for (String key : o.keySet()) {
+                if (!o.get(key).isJsonPrimitive() || !o.get(key).getAsJsonPrimitive().isString()) return null;
+            }
+            String chosen = o.get("optionalCommand").getAsString().trim();
+            String argument = o.get("argument").getAsString().trim();
+            if ((!chosen.isEmpty() && !allowed.contains(chosen)) || argument.length() > 256) return null;
+            return new StructuredResponse(null, chosen, argument);
+        } catch (RuntimeException invalid) {
+            return null;
+        }
+    }
+
+    private static boolean finish(MinecraftServer server, ActionTurn lease, UUID villager, UUID player, String msg, String line) {
+        return Boolean.TRUE.equals(onServer(server, lease, () -> {
+            if (!lease.complete() || line == null) return false;
+            remember(villager, player, msg, line);
+            return true;
+        }));
     }
 
     /**
@@ -207,7 +290,7 @@ public class OpenAIChatAI implements ChatAIStrategy {
      * (agreeing to an order it refused, or in the wrong language) give way to the villager's own answer.
      */
     @Nullable
-    private static String speak(MinecraftServer server, ServerPlayerEntity player, VillagerEntityMCA villager, Prepared prep, StructuredResponse said) {
+    private static String speak(MinecraftServer server, ServerPlayerEntity player, VillagerEntityMCA villager, Prepared prep, StructuredResponse said, ActionTurn lease) {
         boolean es = prep.intent().spanish();
         String message = said.message() == null ? null : clean(said.message());
         if (message != null && message.isBlank()) {
@@ -261,12 +344,11 @@ public class OpenAIChatAI implements ChatAIStrategy {
             return message;
         }
         String chosen = command;
-        if (net.mca.entity.ai.mente.Interrupcion.despues(villager.getUuid(), 0)) {
-            // told to stop while this was being thought: the model's order comes from before "¡para!"
-            MCA.LOGGER.info("[Tropeles] {} se detuvo mientras pensaba; no hace '{}'", prep.villagerName(), chosen);
-            return message;
-        }
-        Acted acted = onServer(server, () -> act(player, villager, chosen, said.argument(), es));
+        Acted acted = onServer(server, lease, () -> {
+            if (!lease.claimAction()) return null;
+            try { return act(player, villager, chosen, said.argument(), es); }
+            finally { lease.acknowledgeAction(); }
+        });
         if (acted == null) {
             return message;
         }
@@ -278,7 +360,7 @@ public class OpenAIChatAI implements ChatAIStrategy {
             // already say that decision, otherwise its own answer gives the verdict and the reasons
             MenteLocal.Intent weighed = new MenteLocal.Intent(chosen, "", null, es);
             boolean fits = message != null && agrees(message, acted.goesBack()) && !contradicts(message, acted.goesBack());
-            return fits ? message : onServer(server, () -> MenteLocal.answer(player, villager, weighed, acted.how(), null, null, false));
+            return fits ? message : onServer(server, lease, () -> MenteLocal.answer(player, villager, weighed, acted.how(), null, null, false));
         }
         if (message != null && !("alert".equals(chosen) && !message.contains("?"))) {
             String words = MenteLocal.promise(message);
@@ -290,7 +372,7 @@ public class OpenAIChatAI implements ChatAIStrategy {
         }
         String outcome = acted.how() != null ? acted.how() : acted.done() ? "done" : null;
         MenteLocal.Intent intent = new MenteLocal.Intent(chosen, said.argument(), null, es);
-        return onServer(server, () -> MenteLocal.answer(player, villager, intent, outcome, acted.given(), acted.stored(), false));
+        return onServer(server, lease, () -> MenteLocal.answer(player, villager, intent, outcome, acted.given(), acted.stored(), false));
     }
 
     /** The orders that take it home: climbing out of a mine is going home. */
@@ -373,7 +455,11 @@ public class OpenAIChatAI implements ChatAIStrategy {
      * so it never confirms one it may not have carried out.
      */
     public static String lastResort(MinecraftServer server, ServerPlayerEntity player, VillagerEntityMCA villager, String msg) {
-        String line = onServer(server, () -> {
+        return lastResort(server, player, villager, msg, null);
+    }
+
+    public static String lastResort(MinecraftServer server, ServerPlayerEntity player, VillagerEntityMCA villager, String msg, @Nullable ActionTurn lease) {
+        String line = onServer(server, lease, () -> {
             Vistazo.fresh(villager);
             MenteLocal.Intent intent = MenteLocal.read(msg, villager.getName().getString());
             return intent.order() ? MenteLocal.shrug(intent.spanish()) : MenteLocal.answer(player, villager, intent, null, null, null, false);
@@ -387,17 +473,28 @@ public class OpenAIChatAI implements ChatAIStrategy {
      */
     @Nullable
     private static <T> T onServer(MinecraftServer server, Supplier<T> task) {
+        return onServer(server, null, task);
+    }
+
+    @Nullable
+    static <T> T onServer(MinecraftServer server, @Nullable ActionTurn lease, Supplier<T> task) {
+        java.util.concurrent.CompletableFuture<T> submitted = null;
+        Supplier<T> guarded = () -> lease == null || lease.valid() ? task.get() : null;
         try {
             if (server.isOnThread()) {
-                return task.get();
+                return guarded.get();
             }
             if (!server.isRunning()) {
                 // shutting down: a stopped server's submit() runs the task right here, off its thread, while the
                 // worlds are being saved; nobody is left to answer anyway
                 return null;
             }
-            return server.submit(task).get(15, TimeUnit.SECONDS);
+            submitted = server.submit(guarded);
+            return submitted.get(15, TimeUnit.SECONDS);
         } catch (Exception e) {
+            if (lease != null) lease.cancel("espera del servidor interrumpida");
+            if (submitted != null) submitted.cancel(false);
+            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
             MCA.LOGGER.error("[Tropeles] no se pudo leer el mundo para la charla", e);
             return null;
         }
@@ -405,7 +502,7 @@ public class OpenAIChatAI implements ChatAIStrategy {
 
     // ------------------------------------------------------------------ on the server thread
 
-    private static Prepared prepare(ServerPlayerEntity player, VillagerEntityMCA villager, String msg, boolean offline) {
+    private static Prepared prepare(ServerPlayerEntity player, VillagerEntityMCA villager, String msg, boolean offline, ActionTurn lease) {
         Config config = Config.getInstance();
         // fresh eyes first (at most every few seconds): an idle villager has just looked around before it answers
         Vistazo.fresh(villager);
@@ -427,10 +524,16 @@ public class OpenAIChatAI implements ChatAIStrategy {
         Acciones.Given given = null;
         Cofres.Store stored = null;
         Boolean goesBack = null;
+        CommandPolicy.Decision permission = intent.order() ? CommandPolicy.check(player, villager, intent.command(), CommandPolicy.Source.LOCAL) : null;
         if (intent.order()) {
+            if (!lease.claimAction()) return null;
             try {
                 int hearts = villager.getVillagerBrain().getMemoriesForPlayer(player).getHearts();
-                if (hearts < -25 && !"open-trade-window".equals(intent.command())) {
+                if (permission != null && !permission.allowed()) {
+                    refused = true;
+                    outcome = permission.outcome();
+                    CommandPolicy.report(villager, intent.command(), permission);
+                } else if (hearts < -25 && !"open-trade-window".equals(intent.command()) && !"sorry".equals(intent.command())) {
                     refused = true;
                 } else if ("give-item".equals(intent.command())) {
                     given = Acciones.hand(player, villager, intent.argument());
@@ -465,6 +568,8 @@ public class OpenAIChatAI implements ChatAIStrategy {
                 MCA.LOGGER.error("[Tropeles] {} no pudo cumplir la orden '{}'", villagerName, intent.command(), e);
                 outcome = null;
                 done = false;
+            } finally {
+                lease.acknowledgeAction();
             }
             MCA.LOGGER.info("[Tropeles] {} entendió la orden '{}' ({}): {}", villagerName, intent.command(), intent.argument(),
                     refused ? "se niega" : outcome == null ? "ya lo estaba haciendo" : outcome);
@@ -476,7 +581,8 @@ public class OpenAIChatAI implements ChatAIStrategy {
         // its own answer, ready now: said when no model answers in time
         String local;
         try {
-            local = MenteLocal.answer(player, villager, intent, outcome, given, stored, refused);
+            local = permission != null && !permission.allowed() ? permission.line(es)
+                    : MenteLocal.answer(player, villager, intent, outcome, given, stored, refused);
         } catch (RuntimeException e) {
             MCA.LOGGER.error("[Tropeles] la mente local de {} falló", villagerName, e);
             local = MenteLocal.shrug(es);
@@ -538,6 +644,7 @@ public class OpenAIChatAI implements ChatAIStrategy {
                     .append(" Tell them in your own words, matching what really happened. Use no command.\n");
         }
         List<TriggerCommandInfo> valid = intent.order() || refused ? List.of() : TriggerCommandInfos.triggerCommands.stream()
+                .filter(c -> CommandPolicy.check(player, villager, c.command, CommandPolicy.Source.MODEL).allowed())
                 .filter(c -> c.isActive == null || c.isActive.test(player, villager))
                 .toList();
         orders.append("Reply with exactly one JSON object and nothing else: {\"message\": \"what you say\", \"optionalCommand\": \"\", \"argument\": \"\"}\n");
@@ -591,7 +698,9 @@ public class OpenAIChatAI implements ChatAIStrategy {
         BlockPos pos = !intent.order() && ("where".equals(intent.question()) || "coords".equals(intent.question())) ? villager.getBlockPos() : null;
         return new Prepared(playerName, villagerName, history, intent, outcome, refused, done, open, inHouse.toString(),
                 minds, local, image, goesBack, pos, net.mca.entity.ai.nucleo.Anclaje.de(villager, player, open + "\n" + inHouse + "\n" + msg + "\n"
-                        + local + "\n" + history.stream().map(h -> h.getLeft() + "\n" + h.getRight()).collect(java.util.stream.Collectors.joining("\n"))));
+                        + local + "\n" + history.stream().map(h -> h.getLeft() + "\n" + h.getRight()).collect(java.util.stream.Collectors.joining("\n"))),
+                valid.stream().collect(java.util.stream.Collectors.toUnmodifiableMap(c -> c.command,
+                        c -> c.description + (c.argument == null ? "" : " (argument: " + c.argument + ")"))));
     }
 
     /**
@@ -646,6 +755,11 @@ public class OpenAIChatAI implements ChatAIStrategy {
      */
     private static Acted act(ServerPlayerEntity player, VillagerEntityMCA villager, String name, String argument, boolean spanish) {
         try {
+            CommandPolicy.Decision permission = CommandPolicy.check(player, villager, name, CommandPolicy.Source.MODEL);
+            if (!permission.allowed()) {
+                CommandPolicy.report(villager, name, permission);
+                return new Acted(false, permission.line(spanish), null, null, permission.outcome());
+            }
             if (name.equals("give-item")) {
                 Acciones.Given given = Acciones.hand(player, villager, argument);
                 MCA.LOGGER.info("[Tropeles] {} da '{}': {}", villager.getName().getString(), argument, given.status());
@@ -813,6 +927,10 @@ public class OpenAIChatAI implements ChatAIStrategy {
     }
 
     /** For the in-game checks: a fresh start, as if it never talked to anyone. */
+    static void clearSession() {
+        synchronized (memory) { memory.clear(); }
+    }
+
     public static void forget(UUID villager) {
         synchronized (memory) {
             memory.remove(villager);

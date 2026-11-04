@@ -104,6 +104,7 @@ public final class Mente {
     final Map<UUID, Long> yaConsolado = new HashMap<>();
 
     long tocado;
+    long revision = 1;
     @Nullable
     NucleoMundo mundo;
 
@@ -112,6 +113,7 @@ public final class Mente {
 
     void sucio(long now) {
         tocado = now;
+        revision = Math.incrementExact(revision);
         if (mundo != null) {
             mundo.markDirty();
         }
@@ -479,6 +481,7 @@ public final class Mente {
             n.putLong("ph", preguntaHasta);
         }
         n.putLong("tocado", tocado);
+        n.putLong("revision", revision);
         return n;
     }
 
@@ -531,6 +534,7 @@ public final class Mente {
             m.preguntaHasta = n.getLong("ph");
         }
         m.tocado = n.getLong("tocado");
+        m.revision = net.mca.server.world.data.ArchivoTropeles.revision(n);
         return m;
     }
 }

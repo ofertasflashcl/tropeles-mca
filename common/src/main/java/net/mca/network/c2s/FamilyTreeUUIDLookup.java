@@ -8,13 +8,10 @@ import net.mca.server.world.data.FamilyTree;
 import net.mca.server.world.data.FamilyTreeNode;
 import net.minecraft.server.network.ServerPlayerEntity;
 
-import java.io.Serial;
 import java.util.List;
 import java.util.stream.Collectors;
 
 public class FamilyTreeUUIDLookup implements Message {
-    @Serial
-    private static final long serialVersionUID = 3458196476082270702L;
 
     private final String search;
 
@@ -34,5 +31,19 @@ public class FamilyTreeUUIDLookup implements Message {
                 .limit(16)
                 .collect(Collectors.toList());
         NetworkHandler.sendToPlayer(new FamilyTreeUUIDResponse(list), player);
+    }
+
+    private FamilyTreeUUIDLookup(net.minecraft.network.PacketByteBuf buffer) {
+        this.search = net.mca.cobalt.network.PacketCodecs.string(buffer);
+        if (this.search == null) throw new io.netty.handler.codec.DecoderException("Missing search");
+    }
+
+    public static FamilyTreeUUIDLookup decode(net.minecraft.network.PacketByteBuf buffer) { return new FamilyTreeUUIDLookup(buffer); }
+
+    @Override
+    public void encode(net.minecraft.network.PacketByteBuf buffer) {
+        buffer.writeVarInt(net.mca.cobalt.network.PacketCodecs.VERSION);
+        net.mca.cobalt.network.PacketCodecs.string(buffer, this.search);
+        if (buffer.readableBytes() > net.mca.cobalt.network.PacketCodecs.MAX_PACKET) throw new io.netty.handler.codec.EncoderException("MCA packet too large");
     }
 }

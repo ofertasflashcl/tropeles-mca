@@ -656,6 +656,7 @@ public final class Conciencia {
         // the one who learned last goes to the end: when there are too many, the one silent the longest goes
         registro.lecciones.remove(villager.getUuid());
         registro.lecciones.put(villager.getUuid(), list);
+        registro.changed(villager.getUuid());
         registro.trim(villager.getUuid());
         registro.markDirty();
         return true;
@@ -678,8 +679,8 @@ public final class Conciencia {
         private static final int MAX_ALDEANOS = 256;
         private static final String ARCHIVO = "lecciones";
         final Map<UUID, List<String>> lecciones = new LinkedHashMap<>();
-        /** Asked of the archive and not there (not saved): no disk read every time it thinks. */
-        private final java.util.Set<UUID> sinArchivo = new java.util.HashSet<>();
+        private final Map<UUID, Long> revisiones = new java.util.HashMap<>();
+        private final java.util.Set<UUID> comprobados = new java.util.HashSet<>();
         @Nullable
         private MinecraftServer server;
 
@@ -695,7 +696,9 @@ public final class Conciencia {
                     for (int i = 0; i < raw.size(); i++) {
                         list.add(raw.getString(i));
                     }
-                    lecciones.put(UUID.fromString(key), list);
+                    UUID id = UUID.fromString(key);
+                    lecciones.put(id, list);
+                    revisiones.put(id, Math.max(1, nbt.getCompound("revisiones").getLong(key)));
                 } catch (IllegalArgumentException ignored) {
                     // not a villager id
                 }
@@ -712,17 +715,20 @@ public final class Conciencia {
         @Nullable
         List<String> de(UUID id) {
             List<String> list = lecciones.get(id);
-            if (list == null && !sinArchivo.contains(id)) {
-                NbtCompound n = net.mca.server.world.data.ArchivoTropeles.leer(server, ARCHIVO, id);
-                if (n == null) {
-                    sinArchivo.add(id);
-                } else {
+            if (comprobados.add(id)) {
+                NbtCompound saved = null;
+                if (list != null) {
+                    saved = raw(id, list);
+                }
+                NbtCompound archived = net.mca.server.world.data.ArchivoTropeles.leer(server, ARCHIVO, id);
+                NbtCompound selected = net.mca.server.world.data.ArchivoTropeles.masNuevo(saved, archived);
+                if (selected != null && selected != saved) {
                     list = new ArrayList<>();
-                    NbtList raw = n.getList("l", NbtElement.STRING_TYPE);
-                    for (int i = 0; i < raw.size(); i++) {
-                        list.add(raw.getString(i));
-                    }
+                    NbtList raw = selected.getList("l", NbtElement.STRING_TYPE);
+                    for (int i = 0; i < raw.size(); i++) list.add(raw.getString(i));
                     lecciones.put(id, list);
+                    revisiones.put(id, net.mca.server.world.data.ArchivoTropeles.revision(selected));
+                    markDirty();
                     trim(id);
                 }
             }
@@ -742,17 +748,29 @@ public final class Conciencia {
                 if (first == null) {
                     break;
                 }
-                NbtCompound n = new NbtCompound();
-                NbtList raw = new NbtList();
-                lecciones.get(first).forEach(l -> raw.add(NbtString.of(l)));
-                n.put("l", raw);
+                NbtCompound n = raw(first, lecciones.get(first));
                 if (!net.mca.server.world.data.ArchivoTropeles.guardar(server, ARCHIVO, first, n)) {
                     break; // the disk refused: it stays here rather than be lost
                 }
-                sinArchivo.remove(first);
                 lecciones.remove(first);
+                revisiones.remove(first);
+                comprobados.remove(first);
                 markDirty();
             }
+        }
+
+        void changed(UUID id) {
+            revisiones.merge(id, 1L, (a, b) -> Math.incrementExact(a));
+            markDirty();
+        }
+
+        private NbtCompound raw(UUID id, List<String> list) {
+            NbtCompound n = new NbtCompound();
+            NbtList items = new NbtList();
+            list.forEach(l -> items.add(NbtString.of(l)));
+            n.put("l", items);
+            n.putLong("revision", revisiones.getOrDefault(id, 1L));
+            return n;
         }
 
         @Override
@@ -764,6 +782,9 @@ public final class Conciencia {
                 all.put(id.toString(), raw);
             });
             nbt.put("lecciones", all);
+            NbtCompound versions = new NbtCompound();
+            revisiones.forEach((id, revision) -> versions.putLong(id.toString(), revision));
+            nbt.put("revisiones", versions);
             return nbt;
         }
     }

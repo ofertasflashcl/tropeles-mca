@@ -7,13 +7,10 @@ import net.mca.server.world.data.VillageManager;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
 
-import java.io.Serial;
 import java.util.Locale;
 import java.util.Optional;
 
 public class ReportBuildingMessage implements Message {
-    @Serial
-    private static final long serialVersionUID = 3510050513221709603L;
 
     private final Action action;
     private final String data;
@@ -74,5 +71,23 @@ public class ReportBuildingMessage implements Message {
         REMOVE,
         FORCE_TYPE,
         FULL_SCAN
+    }
+
+    private ReportBuildingMessage(net.minecraft.network.PacketByteBuf buffer) {
+        this.action = net.mca.cobalt.network.PacketCodecs.enumeration(buffer, Action.class);
+        this.data = net.mca.cobalt.network.PacketCodecs.string(buffer);
+        if (this.action == null) throw new io.netty.handler.codec.DecoderException("Missing action");
+        // only FORCE_TYPE names a building type; the other blueprint buttons send no data
+        if (this.data == null && this.action == Action.FORCE_TYPE) throw new io.netty.handler.codec.DecoderException("Missing data");
+    }
+
+    public static ReportBuildingMessage decode(net.minecraft.network.PacketByteBuf buffer) { return new ReportBuildingMessage(buffer); }
+
+    @Override
+    public void encode(net.minecraft.network.PacketByteBuf buffer) {
+        buffer.writeVarInt(net.mca.cobalt.network.PacketCodecs.VERSION);
+        buffer.writeVarInt(this.action.ordinal());
+        net.mca.cobalt.network.PacketCodecs.string(buffer, this.data);
+        if (buffer.readableBytes() > net.mca.cobalt.network.PacketCodecs.MAX_PACKET) throw new io.netty.handler.codec.EncoderException("MCA packet too large");
     }
 }

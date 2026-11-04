@@ -19,11 +19,31 @@ public class TriggerModule {
      * @param villager    Villager in the conversation
      */
     public void processTriggers(Interaction interaction, ServerPlayerEntity player, VillagerEntityMCA villager) {
-        // Get triggers sent from server
-        TriggerEvent[] triggerEvents = interaction.outgoingTriggers();
-        for (TriggerEvent event : triggerEvents) {
-            TriggerCommandInfos.findCommand(event.trigger(), player, villager)
-                    .ifPresent(commandInfo -> commandInfo.call.accept(player, villager));
+        processTriggers(interaction, player, villager, null);
+    }
+
+    public String processTriggers(Interaction interaction, ServerPlayerEntity player, VillagerEntityMCA villager,
+                                net.mca.entity.ai.chatAI.ActionTurn lease) {
+        for (TriggerEvent event : interaction.outgoingTriggers()) {
+            var found = TriggerCommandInfos.findCommand(event.trigger(), player, villager);
+            if (found.isEmpty()) continue;
+            var command = found.get();
+            boolean es = net.mca.entity.ai.mente.Voluntad.of(villager).spanish();
+            var permission = net.mca.entity.ai.chatAI.CommandPolicy.check(player, villager, command.command,
+                    net.mca.entity.ai.chatAI.CommandPolicy.Source.MODEL);
+            if (!permission.allowed()) {
+                net.mca.entity.ai.chatAI.CommandPolicy.report(villager, command.command, permission);
+                return permission.line(es);
+            }
+            if (lease != null && !lease.claimAction()) return null;
+            String outcome;
+            try { outcome = command.run(player, villager, ""); }
+            finally { if (lease != null) lease.acknowledgeAction(); }
+            if (outcome != null && outcome.startsWith("You have no")) {
+                return net.mca.entity.ai.chatAI.MenteLocal.answer(player, villager,
+                        new net.mca.entity.ai.chatAI.MenteLocal.Intent(command.command, "", null, es), outcome, null, null, false);
+            }
         }
+        return null;
     }
 }

@@ -8,14 +8,11 @@ import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.util.Hand;
 import net.minecraft.util.Identifier;
 
-import java.io.Serial;
 import java.util.Arrays;
 import java.util.UUID;
 
 
 public class SetTargetMessage implements Message {
-    @Serial
-    private static final long serialVersionUID = 7257172480717481644L;
 
     private final String itemIdentifier;
     private final String targetName;
@@ -36,5 +33,27 @@ public class SetTargetMessage implements Message {
                 stack.getOrCreateNbt().putUuid("targetUUID", UUID.fromString(targetUUID));
             }
         });
+    }
+
+    private SetTargetMessage(net.minecraft.network.PacketByteBuf buffer) {
+        this.itemIdentifier = net.mca.cobalt.network.PacketCodecs.string(buffer);
+        this.targetName = net.mca.cobalt.network.PacketCodecs.string(buffer);
+        this.targetUUID = net.mca.cobalt.network.PacketCodecs.string(buffer);
+        if (this.itemIdentifier == null) throw new io.netty.handler.codec.DecoderException("Missing itemIdentifier");
+        if (this.targetName == null) throw new io.netty.handler.codec.DecoderException("Missing targetName");
+        if (this.targetUUID == null) throw new io.netty.handler.codec.DecoderException("Missing targetUUID");
+        try { UUID.fromString(this.targetUUID); new Identifier(this.itemIdentifier); }
+        catch (IllegalArgumentException e) { throw new io.netty.handler.codec.DecoderException("Invalid target identity", e); }
+    }
+
+    public static SetTargetMessage decode(net.minecraft.network.PacketByteBuf buffer) { return new SetTargetMessage(buffer); }
+
+    @Override
+    public void encode(net.minecraft.network.PacketByteBuf buffer) {
+        buffer.writeVarInt(net.mca.cobalt.network.PacketCodecs.VERSION);
+        net.mca.cobalt.network.PacketCodecs.string(buffer, this.itemIdentifier);
+        net.mca.cobalt.network.PacketCodecs.string(buffer, this.targetName);
+        net.mca.cobalt.network.PacketCodecs.string(buffer, this.targetUUID);
+        if (buffer.readableBytes() > net.mca.cobalt.network.PacketCodecs.MAX_PACKET) throw new io.netty.handler.codec.EncoderException("MCA packet too large");
     }
 }

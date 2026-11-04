@@ -10,12 +10,9 @@ import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
 
-import java.io.Serial;
 import java.util.List;
 
 public class CivilRegistryPageRequest implements Message {
-    @Serial
-    private static final long serialVersionUID = 7108115056986169352L;
 
     private final int index;
     private final int from;
@@ -35,5 +32,22 @@ public class CivilRegistryPageRequest implements Message {
         }, () -> {
             NetworkHandler.sendToPlayer(new CivilRegistryResponse(index, List.of(Text.translatable("civil_registry.empty"))), player);
         });
+    }
+
+    private CivilRegistryPageRequest(net.minecraft.network.PacketByteBuf buffer) {
+        this.index = buffer.readInt();
+        this.from = buffer.readInt();
+        this.to = buffer.readInt();
+    }
+
+    public static CivilRegistryPageRequest decode(net.minecraft.network.PacketByteBuf buffer) { return new CivilRegistryPageRequest(buffer); }
+
+    @Override
+    public void encode(net.minecraft.network.PacketByteBuf buffer) {
+        buffer.writeVarInt(net.mca.cobalt.network.PacketCodecs.VERSION);
+        buffer.writeInt(this.index);
+        buffer.writeInt(this.from);
+        buffer.writeInt(this.to);
+        if (buffer.readableBytes() > net.mca.cobalt.network.PacketCodecs.MAX_PACKET) throw new io.netty.handler.codec.EncoderException("MCA packet too large");
     }
 }

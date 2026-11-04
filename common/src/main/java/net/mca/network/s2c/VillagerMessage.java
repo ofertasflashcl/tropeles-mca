@@ -5,12 +5,9 @@ import net.mca.cobalt.network.Message;
 import net.minecraft.text.MutableText;
 import net.minecraft.text.Text;
 
-import java.io.Serial;
 import java.util.UUID;
 
 public class VillagerMessage implements Message {
-    @Serial
-    private static final long serialVersionUID = -4135222437610000843L;
 
     private final String prefix;
     private final String message;
@@ -43,5 +40,22 @@ public class VillagerMessage implements Message {
 
     public UUID getUuid() {
         return uuid;
+    }
+
+    private VillagerMessage(net.minecraft.network.PacketByteBuf buffer) {
+        this.prefix = net.mca.cobalt.network.PacketCodecs.string(buffer);
+        this.message = net.mca.cobalt.network.PacketCodecs.string(buffer);
+        this.uuid = net.mca.cobalt.network.PacketCodecs.uuid(buffer);
+    }
+
+    public static VillagerMessage decode(net.minecraft.network.PacketByteBuf buffer) { return new VillagerMessage(buffer); }
+
+    @Override
+    public void encode(net.minecraft.network.PacketByteBuf buffer) {
+        buffer.writeVarInt(net.mca.cobalt.network.PacketCodecs.VERSION);
+        net.mca.cobalt.network.PacketCodecs.string(buffer, this.prefix);
+        net.mca.cobalt.network.PacketCodecs.string(buffer, this.message);
+        net.mca.cobalt.network.PacketCodecs.uuid(buffer, this.uuid);
+        if (buffer.readableBytes() > net.mca.cobalt.network.PacketCodecs.MAX_PACKET) throw new io.netty.handler.codec.EncoderException("MCA packet too large");
     }
 }

@@ -71,8 +71,16 @@ public class Dialogues extends JsonDataLoader {
 
     //selects a specific answer while being in given question
     public void selectAnswer(VillagerEntityMCA villager, ServerPlayerEntity player, String questionId, String answerId) {
+        var permission = net.mca.entity.ai.chatAI.CommandPolicy.check(player, villager, "dialogue", net.mca.entity.ai.chatAI.CommandPolicy.Source.MENU);
+        if (!permission.allowed()) {
+            net.mca.entity.ai.chatAI.CommandPolicy.report(villager, "dialogue", permission);
+            net.mca.entity.ai.chatAI.ChatAI.deliver(player, villager, permission.es());
+            return;
+        }
         Question question = getQuestion(questionId);
+        if (question == null || !question.getValidAnswers(player, villager).contains(answerId)) return;
         Answer answer = question.getAnswer(answerId);
+        if (answer == null || answer.getResults().isEmpty()) return;
 
         //fetch chances for each result
         int total = 0;

@@ -34,6 +34,7 @@ mca-prueba vista-lejos
 mca-prueba conectar
 mca-prueba ia-local
 mca-prueba ia-red
+mca-prueba ia-solo-promesa
 mca-prueba hojas
 mca-prueba bucle
 mca-prueba escalera-hecha
@@ -46,6 +47,14 @@ mca-prueba vista-oscuro
 mca-prueba vista-oido
 mca-prueba escalera-real
 mca-prueba bajada-lado
-sleep 320
+mca-prueba vida-contratos
+mca-prueba vida-permisos
+mca-prueba vida-red-codecs
+mca-prueba vida-miedo
+mca-prueba vida-vinculo
+mca-prueba archivo-preparar
+mca-prueba archivo-revisiones
+mca-prueba robo-actor
+await-checks 320
 mca-prueba resumen
 sleep 2

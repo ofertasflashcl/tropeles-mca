@@ -14,13 +14,10 @@ import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.Util;
 
-import java.io.Serial;
 import java.util.Optional;
 import java.util.UUID;
 
 public class GetVillagerRequest implements Message {
-    @Serial
-    private static final long serialVersionUID = -4415670234855916259L;
 
     private final UUID uuid;
 
@@ -67,5 +64,19 @@ public class GetVillagerRequest implements Message {
         storeNode(data, tree.getOrEmpty(entry.mother()), "mother");
 
         return data;
+    }
+
+    private GetVillagerRequest(net.minecraft.network.PacketByteBuf buffer) {
+        this.uuid = net.mca.cobalt.network.PacketCodecs.uuid(buffer);
+        if (this.uuid == null) throw new io.netty.handler.codec.DecoderException("Missing uuid");
+    }
+
+    public static GetVillagerRequest decode(net.minecraft.network.PacketByteBuf buffer) { return new GetVillagerRequest(buffer); }
+
+    @Override
+    public void encode(net.minecraft.network.PacketByteBuf buffer) {
+        buffer.writeVarInt(net.mca.cobalt.network.PacketCodecs.VERSION);
+        net.mca.cobalt.network.PacketCodecs.uuid(buffer, this.uuid);
+        if (buffer.readableBytes() > net.mca.cobalt.network.PacketCodecs.MAX_PACKET) throw new io.netty.handler.codec.EncoderException("MCA packet too large");
     }
 }

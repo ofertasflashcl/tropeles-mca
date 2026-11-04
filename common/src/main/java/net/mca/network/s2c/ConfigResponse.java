@@ -4,11 +4,8 @@ import net.mca.ClientProxy;
 import net.mca.CommonConfig;
 import net.mca.cobalt.network.Message;
 
-import java.io.Serial;
 
 public class ConfigResponse implements Message {
-    @Serial
-    private static final long serialVersionUID = -559319583580183137L;
 
     private final CommonConfig config;
 
@@ -23,5 +20,18 @@ public class ConfigResponse implements Message {
 
     public CommonConfig getConfig() {
         return config;
+    }
+
+    private ConfigResponse(net.minecraft.network.PacketByteBuf buffer) {
+        this.config = net.mca.cobalt.network.PacketCodecs.json(buffer, CommonConfig.class);
+    }
+
+    public static ConfigResponse decode(net.minecraft.network.PacketByteBuf buffer) { return new ConfigResponse(buffer); }
+
+    @Override
+    public void encode(net.minecraft.network.PacketByteBuf buffer) {
+        buffer.writeVarInt(net.mca.cobalt.network.PacketCodecs.VERSION);
+        net.mca.cobalt.network.PacketCodecs.json(buffer, this.config, CommonConfig.class);
+        if (buffer.readableBytes() > net.mca.cobalt.network.PacketCodecs.MAX_PACKET) throw new io.netty.handler.codec.EncoderException("MCA packet too large");
     }
 }

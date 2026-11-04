@@ -17,12 +17,9 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.ChunkPos;
 import net.minecraft.world.Heightmap;
 
-import java.io.Serial;
 import java.util.EnumSet;
 
 public class DestinyMessage implements Message {
-    @Serial
-    private static final long serialVersionUID = -782119062565197963L;
 
     private final String location;
     private final boolean isClosing;
@@ -81,5 +78,22 @@ public class DestinyMessage implements Message {
         if (player.getWorld().getServer() != null && player.getWorld().getServer().isHost(player.getGameProfile())) {
             player.getServerWorld().setSpawnPos(pos, 0.0f);
         }
+    }
+
+    private DestinyMessage(net.minecraft.network.PacketByteBuf buffer) {
+        this.location = net.mca.cobalt.network.PacketCodecs.string(buffer);
+        this.isClosing = buffer.readBoolean();
+        // closing the screen (DestinyMessage(true)) carries no location; only a chosen destiny needs one
+        if (this.location == null && !this.isClosing) throw new io.netty.handler.codec.DecoderException("Missing location");
+    }
+
+    public static DestinyMessage decode(net.minecraft.network.PacketByteBuf buffer) { return new DestinyMessage(buffer); }
+
+    @Override
+    public void encode(net.minecraft.network.PacketByteBuf buffer) {
+        buffer.writeVarInt(net.mca.cobalt.network.PacketCodecs.VERSION);
+        net.mca.cobalt.network.PacketCodecs.string(buffer, this.location);
+        buffer.writeBoolean(this.isClosing);
+        if (buffer.readableBytes() > net.mca.cobalt.network.PacketCodecs.MAX_PACKET) throw new io.netty.handler.codec.EncoderException("MCA packet too large");
     }
 }

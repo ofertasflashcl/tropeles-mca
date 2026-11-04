@@ -88,7 +88,8 @@ public final class Pruebas {
                 case "explorar" -> start(new Exploracion(world));
                 case "pelea-muro" -> start(new PeleaMuro(world));
                 case "ia-local" -> start(new IaLocal(world));
-                case "ia-red" -> start(new IaRed(world));
+                case "ia-red" -> start(new IaRed(world, false));
+                case "ia-solo-promesa" -> start(new IaRed(world, true));
                 case "conectar" -> start(new Conectar(world));
                 case "tala" -> start(new Tala(world));
                 case "puente" -> start(new Puente(world));
@@ -112,6 +113,7 @@ public final class Pruebas {
                 case "vista-oido" -> start(new VistaOido(world));
                 case "escalera-real" -> start(new EscaleraReal(world));
                 case "bajada-lado" -> start(new BajadaLado(world));
+                case "vida-contratos", "vida-permisos", "vida-red-codecs", "vida-miedo", "vida-vinculo", "archivo-preparar", "archivo-reinicio", "archivo-revisiones", "robo-actor" -> PruebasVida.run(world, which);
                 case "resumen" -> resumen();
                 default -> {
                     ctx.getSource().sendError(Text.literal("ojo | minar | espada | arco | progreso | nombre | obras | robo | regalo | arco-cerca | horno | hogar | cultivos | agua-tunel | agua-pozo | explorar | ia-local | ia-red | resumen"));
@@ -136,7 +138,7 @@ public final class Pruebas {
         RESULTS.put(name, "FALLA");
     }
 
-    private static void check(String name, boolean passed, String detail) {
+    static void check(String name, boolean passed, String detail) {
         if (passed) {
             ok(name, detail);
         } else {
@@ -173,13 +175,13 @@ public final class Pruebas {
         }
     }
 
-    private static void start(Scenario scenario) {
+    static void start(Scenario scenario) {
         RUNNING.add(scenario);
     }
 
     // ------------------------------------------------------------------ arena helpers
 
-    private static void load(ServerWorld world, BlockPos origin, int radius) {
+    static void load(ServerWorld world, BlockPos origin, int radius) {
         for (int cx = (origin.getX() - radius) >> 4; cx <= (origin.getX() + radius) >> 4; cx++) {
             for (int cz = (origin.getZ() - radius) >> 4; cz <= (origin.getZ() + radius) >> 4; cz++) {
                 world.setChunkForced(cx, cz, true);
@@ -188,17 +190,17 @@ public final class Pruebas {
         }
     }
 
-    private static void fill(ServerWorld world, BlockPos a, BlockPos b, BlockState state) {
+    static void fill(ServerWorld world, BlockPos a, BlockPos b, BlockState state) {
         for (BlockPos pos : BlockPos.iterate(a, b)) {
             world.setBlockState(pos, state, 2);
         }
     }
 
-    private static VillagerEntityMCA villager(ServerWorld world, BlockPos feet, Direction facing) {
+    static VillagerEntityMCA villager(ServerWorld world, BlockPos feet, Direction facing) {
         return villager(world, feet, facing, "Prueba");
     }
 
-    private static VillagerEntityMCA villager(ServerWorld world, BlockPos feet, Direction facing, String name) {
+    static VillagerEntityMCA villager(ServerWorld world, BlockPos feet, Direction facing, String name) {
         VillagerEntityMCA villager = VillagerFactory.newVillager(world)
                 .withGender(Gender.MALE)
                 .withAge(0)
@@ -225,7 +227,7 @@ public final class Pruebas {
         entity.prevPitch = pitch;
     }
 
-    private static ZombieEntity zombie(ServerWorld world, Vec3d at, boolean ai) {
+    static ZombieEntity zombie(ServerWorld world, Vec3d at, boolean ai) {
         ZombieEntity zombie = EntityType.ZOMBIE.create(world);
         if (zombie == null) {
             throw new IllegalStateException("no zombie");
@@ -387,7 +389,7 @@ public final class Pruebas {
 
     // ------------------------------------------------------------------ tick-driven checks
 
-    private abstract static class Scenario {
+    abstract static class Scenario {
         final String name;
         final ServerWorld world;
         final int limit;
@@ -3816,14 +3818,14 @@ public final class Pruebas {
 
     // ------------------------------------------------------------------ chests: theft and gifts
 
-    private static net.minecraft.server.network.ServerPlayerEntity fakePlayer(ServerWorld world, String name, Vec3d at) {
+    static net.minecraft.server.network.ServerPlayerEntity fakePlayer(ServerWorld world, String name, Vec3d at) {
         var player = new net.minecraft.server.network.ServerPlayerEntity(world.getServer(), world,
                 new com.mojang.authlib.GameProfile(java.util.UUID.nameUUIDFromBytes(("mca-prueba-" + name).getBytes()), name));
         player.refreshPositionAndAngles(at.x, at.y, at.z, 0, 0);
         return player;
     }
 
-    private static BlockPos chestFor(ServerWorld world, VillagerEntityMCA owner, BlockPos pos) {
+    static BlockPos chestFor(ServerWorld world, VillagerEntityMCA owner, BlockPos pos) {
         world.setBlockState(pos, Blocks.CHEST.getDefaultState(), 3);
         Cofres.claim(world, owner, pos);
         return pos;
@@ -3861,8 +3863,9 @@ public final class Pruebas {
             Cofres.remember(world, chest);
             var thief = fakePlayer(world, "Ladron", Vec3d.ofBottomCenter(chest.add(1, 0, 1)));
             int before = owner.getVillagerBrain().getMemoriesForPlayer(thief).getHearts();
-            inv.getStack(0).decrement(5);
-            int missing = Cofres.check(world, chest, thief);
+            var handler = net.minecraft.screen.GenericContainerScreenHandler.createGeneric9x3(1, thief.getInventory(), inv);
+            handler.onSlotClick(0, 1, net.minecraft.screen.slot.SlotActionType.PICKUP, thief);
+            int missing = 10 - inv.getStack(0).getCount();
             int after = owner.getVillagerBrain().getMemoriesForPlayer(thief).getHearts();
             boolean pending = !net.mca.server.world.data.TropelesMundo.get(world).theftsAgainst(owner.getUuid()).isEmpty();
             boolean passed = missing == 5 && after < before && !pending;
@@ -4694,15 +4697,28 @@ public final class Pruebas {
         private java.util.concurrent.CompletableFuture<String> order;
         private String minds = "";
         private String chatMind = "";
+        private final boolean promiseOnly;
+        private Vec3d followStart;
+        private double initialDistance;
+        private int followAt;
 
-        IaRed(ServerWorld world) {
-            super("ia-red", world, 3000);
-            BlockPos o = new BlockPos(3600, 100, 0);
-            load(world, o, 8);
-            fill(world, o.add(-5, -1, -5), o.add(5, -1, 5), Blocks.STONE.getDefaultState());
-            fill(world, o.add(-5, 0, -5), o.add(5, 4, 5), Blocks.AIR.getDefaultState());
+        IaRed(ServerWorld world, boolean promiseOnly) {
+            super(promiseOnly ? "ia-solo-promesa" : "ia-red", world, 3000);
+            this.promiseOnly = promiseOnly;
+            BlockPos o = new BlockPos(promiseOnly ? 3650 : 3600, 100, 0);
+            load(world, o.east(8), 24);
+            fill(world, o.add(-5, -1, -5), o.add(24, -1, 5), Blocks.STONE.getDefaultState());
+            fill(world, o.add(-5, 0, -5), o.add(24, 4, 5), Blocks.AIR.getDefaultState());
             v = villager(world, o, Direction.EAST, "Tomás Red");
-            p = fakePlayer(world, "Tropeles_CI", Vec3d.ofBottomCenter(o.east(3)));
+            p = fakePlayer(world, promiseOnly ? "Promesa_CI" : "Tropeles_CI", Vec3d.ofBottomCenter(o.east(3)));
+            // Negative control: plausible words, deliberately no command or network request.
+            // It must go through exactly the same physical success predicate as ia-red.
+            if (promiseOnly) {
+                probe = java.util.concurrent.CompletableFuture.completedFuture(Map.of());
+                chat = java.util.concurrent.CompletableFuture.completedFuture("Hola, llevo pan.");
+                order = java.util.concurrent.CompletableFuture.completedFuture("Claro, caminaré a tu lado.");
+                chatMind = "control-sin-accion";
+            }
             v.getInventory().addStack(new ItemStack(Items.BREAD, 5));
             v.getInventory().addStack(new ItemStack(Items.STONE_PICKAXE));
         }
@@ -4717,6 +4733,10 @@ public final class Pruebas {
 
         @Override
         Boolean step() {
+            if (!v.isAlive()) {
+                fail(name, "el aldeano murió durante la prueba");
+                return Boolean.FALSE;
+            }
             if (ticks < 40) {
                 return null;
             }
@@ -4747,13 +4767,37 @@ public final class Pruebas {
             if (!order.isDone()) {
                 return null;
             }
-            String orderMind = net.mca.entity.ai.chatAI.Cerebros.last(v.getUuid());
-            boolean follows = v.getVillagerBrain().getMoveState() == MoveState.FOLLOW;
-            MCA.LOGGER.info("PRUEBA ia-red orden con " + orderMind + ": «" + order.join() + "», lo sigue: " + follows);
-            boolean passed = !chat.join().isBlank() && !order.join().isBlank();
-            check(name, passed, "mentes gratis que respondieron desde el servidor: " + minds + "; charla con " + chatMind
-                    + "; orden que solo entiende la IA («caminas a mi lado») con " + orderMind + ", lo sigue: " + follows);
-            return passed;
+            if (followStart == null) {
+                followStart = v.getPos();
+                followAt = ticks;
+                // Move only the player. Never set FOLLOW or drive navigation from the check.
+                p.refreshPositionAndAngles(followStart.x + 10, followStart.y, followStart.z, 0, 0);
+                initialDistance = v.distanceTo(p);
+                MCA.LOGGER.info("PRUEBA {} orden: «{}»; observando movimiento real", name, order.join());
+                return null;
+            }
+            var will = net.mca.entity.ai.mente.Voluntad.of(v);
+            boolean willFollows = will.modo() == net.mca.entity.ai.mente.Voluntad.Modo.SIGUIENDO
+                    && p.getUuid().equals(will.quien());
+            boolean mcaFollows = v.getVillagerBrain().getMoveState() == MoveState.FOLLOW
+                    && v.getBrain().getOptionalMemory(MemoryModuleTypeMCA.PLAYER_FOLLOWING.get())
+                    .filter(player -> p.getUuid().equals(player.getUuid())).isPresent();
+            double moved = v.getPos().distanceTo(followStart);
+            double distance = v.distanceTo(p);
+            boolean follows = v.isAlive() && (willFollows || mcaFollows)
+                    && moved >= 2.0 && distance <= 3.5 && initialDistance - distance >= 4.0;
+            // Observe up to 200 ticks; an undesired success fails the negative control immediately.
+            if (ticks - followAt < 200 && !follows) {
+                return null;
+            }
+            String orderMind = promiseOnly ? "control-sin-accion" : net.mca.entity.ai.chatAI.Cerebros.last(v.getUuid());
+            boolean passed = !chat.join().isBlank() && !order.join().isBlank() && follows;
+            check(name, promiseOnly ? !passed : passed, "charla con " + chatMind + "; orden con " + orderMind
+                    + "; Voluntad sigue al jugador " + willFollows + "; MCA sigue al jugador " + mcaFollows
+                    + "; desplazamiento " + fmt(moved) + "; distancia " + fmt(initialDistance) + " -> " + fmt(distance)
+                    + "; seguimiento demostrado " + follows + "; control sin acción " + promiseOnly
+                    + "; mentes que respondieron " + minds);
+            return promiseOnly ? !passed : passed;
         }
 
         @Override
