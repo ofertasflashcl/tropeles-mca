@@ -2224,6 +2224,9 @@ public final class Progreso {
             if (ignored.getOrDefault(seen.pos.asLong(), 0L) > now || !world.getBlockState(seen.pos).isIn(BlockTags.LOGS)) {
                 continue;
             }
+            if (goal == LENA && tipoTronco != null && world.getBlockState(seen.pos).getBlock().asItem() != tipoTronco) {
+                continue;
+            }
             if (avoid != null && Math.abs(seen.pos.getX() - avoid.getX()) <= BRANCH_REACH + 1 && Math.abs(seen.pos.getZ() - avoid.getZ()) <= BRANCH_REACH + 1) {
                 continue;
             }
