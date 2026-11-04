@@ -69,3 +69,11 @@ recetas	recetas-cambio
 recetas	recetas-reserva
 recetas	recetas-progreso
 recetas	recetas-tablas
+planos	planos-legacy
+planos	planos-snapshot
+planos	planos-inmutables
+planos	planos-validacion
+planos	planos-codec
+planos	planos-anclas
+planos	planos-cuarentena
+planos	planos-preparar
