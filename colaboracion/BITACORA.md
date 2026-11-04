@@ -188,3 +188,30 @@ Sol: subí mi parte en b48333aac (V20, V21 y R83). Los escenarios de CI de hoy n
 Benja me pidió revisar lo último y hacer mi parte. Tomo B11, B02, V06/V29, F20/F21 y las pruebas V20/V21; después B03/B10. Trabajo en `sol/contratos-persistencia`, desde cadd848ea (CI verde), con la rama de B01 integrada sin reescribirla. PR #1 sigue abierto.
 
 Para V06/V29 harán falta cambios mínimos de serialización/revisión en los almacenes de Núcleo, Recuerdos y Registro, además de ArchivoTropeles; no cambiaré sus reglas de miedo/vínculo. Conservaré la separación entre permisos y Voluntad.quiere. Las pruebas de archivo usarán dos arranques y el borde de 256 identidades. Resultados pendientes; los anotaré al terminar.
+
+## 2026-11-04 00:28 UTC · Sol — entrega PR #2
+
+Implementación: B01, B02, B03, B10, B11, F20/F21, V06/V29 y pruebas V20/V21. La base de integración es cadd848ea; B01 y sus merges con Claude están conservados en la historia. El PR #2 reúne la entrega.
+
+- B11: turno con identidad de servidor/mundo/dimensión/jugador/aldeano, generación de intención y vencimiento monotónico. Valida dentro de la tarea del servidor; descarta frase y acción obsoletas. Una acción y una finalización por turno; deduplicación acotada por sesión del servidor. Incluye watchdog, alternativa local e Inworld.
+- B02: CommandPolicy común para menú, paquetes, chat local y modelo. Permisos, alcance, dueño y configuración se revalidan al ejecutar, aparte de Voluntad.quiere. Se cierran entradas alternativas de diálogo, inventario y edición.
+- B03: codecs explícitos para los mensajes registrados en Forge, Fabric y Quilt; tipos y dirección conocidos, límites de tamaño y rechazo de marcos inválidos. Protocolo Forge 2: cliente y servidor deben usar el mismo jar.
+- B10: la retirada se atribuye al jugador que hizo el clic y al inventario concreto. Cerrar un cofre cercano no acusa a terceros; inventarios con varios posibles dueños se omiten.
+- V06/V29: revisión lógica por mente, recuerdos y lecciones; rechazo de escrituras antiguas y de sustitución silenciosa de un archivo ilegible; la copia válida se conserva. La prueba usa 1000 identidades persistentes en cada almacén y la caché real de 256, no 1000 aldeanos activos.
+- F20/F21: SHA en versión/recurso/log del jar y rangos de versión compatibles con esta rama.
+- V20/V21: un golpe real de zombi modifica la elección de sitio para minar y la experiencia segura reduce el miedo; un control sin historia permite el mismo sitio. Dos golpes reales del jugador modifican la voluntad y cancelan el seguimiento conectado; desconocido y disculpas repetidas son controles negativos.
+
+Fallo encontrado al cerrar: el modelo gratuito MCA dijo «Vamos, no te me pierdas» sin comando. Se agregó una decisión estructurada breve cuando se omite la acción, dentro del presupuesto original, con lista cerrada de acciones y revalidación al ejecutar. Si la decisión es inválida o no llega a tiempo, habla la alternativa local. Casos controlados pasan por el ejecutor real y sustituyen solamente la respuesta HTTP: orden omitida, conversación sin acción, orden no permitida, reparación obsoleta, permiso cambiado y reintento del turno.
+
+Validación final: cabeza de código **30820bc02d94c6eba7ed7038a83708053a04fbcb**. El workflow de PR hizo checkout del merge de prueba **13c7f8674c20faf6cb90db488b2551f84d1f885e**; ese es el SHA estampado en el jar y verificado en ambos arranques. Su árbol coincide con el de la cabeza de código (`cf863c0e581a5b1f873efb454d69934ac3df63e3`). Resultados:
+
+- [Forge + servidor real, run 41745855761](https://github.com/ofertasflashcl/tropeles-mca/actions/runs/41745855761): verde. Primer proceso **55/55**; segundo proceso, mismo mundo, **1/1** (`archivo-reinicio`). Ambos arrancaron y cerraron limpiamente y verificaron el SHA del jar. El segundo proceso solo leyó los marcadores, sin recrearlos.
+- `ia-red`: MCA activó FOLLOW al destinatario correcto; desplazamiento **6.601 bloques**, distancia **10.000 → 3.399**. `ia-solo-promesa` pasó como control negativo. No se cambió ese predicado para obtener el verde.
+- `vida-miedo`: miedo **0.6666667 → 0.47468862**, con rechazo del sitio por historia y permiso del control sin historia. `vida-vinculo`, `vida-permisos`, `vida-contratos`, `vida-red-codecs`, `robo-actor` y los casos de archivo pasaron.
+- [Builds Forge y Fabric, run 41745855617](https://github.com/ofertasflashcl/tropeles-mca/actions/runs/41745855617): verde. Localmente: parseo Java 17 de las tres fuentes finales, tres tests Python del verificador, `bash -n` y `git diff --check` sin error.
+
+Este cierre solo actualiza `colaboracion/` con `[skip ci]`; no modifica el código validado. Las tareas de Sol quedan **en PR #2**, pendientes de revisión e integración. PR #1 queda sustituido por #2: su cabeza 46f4cb349 es ancestro del código probado y no se pierde su trabajo.
+
+Límites: ia-red depende de proveedores gratuitos externos y no garantiza disponibilidad futura. No se probaron conexión de un cliente real, ejecución de Quilt/Inworld, un modpack de Benja, pérdida abrupta de energía ni rendimiento con muchos aldeanos activos. Las pruebas de reinicio verifican los tres archivos de memoria; no añaden una demostración de reinicio de hambre/encargo (F22). El entorno local bloquea los sockets Unix de Loom; el build y la ejecución del juego se comprueban en CI. CodeRabbit no pudo autenticar en este entorno; no se presenta como revisión realizada.
+
+Para Claude: revisar el PR completo, especialmente la política de autoridad, codecs, copia de archivo y el coste/semántica de la segunda decisión del modelo. El predicado de ia-red conserva seguimiento del destinatario y desplazamiento físico; el control sin acción conserva las mismas exigencias. Tras tu revisión, Benja decide la integración. El CI de integración vuelve a generar el jar que publica la rama principal de trabajo.
