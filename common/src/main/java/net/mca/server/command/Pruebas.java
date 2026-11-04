@@ -112,6 +112,8 @@ public final class Pruebas {
                 case "vista-oscuro" -> start(new VistaOscuro(world));
                 case "vista-oido" -> start(new VistaOido(world));
                 case "escalera-real" -> start(new EscaleraReal(world));
+                case "regreso-sin-pico" -> start(new EscaleraReal(world, true));
+                case "mina-rastro", "ruta-presupuesto", "ruta-transicion", "coste-rotura" -> PruebasNavegacion.run(world, which);
                 case "bajada-lado" -> start(new BajadaLado(world));
                 case "vida-contratos", "vida-permisos", "vida-red-codecs", "vida-miedo", "vida-vinculo", "archivo-preparar", "archivo-reinicio", "archivo-revisiones", "robo-actor" -> PruebasVida.run(world, which);
                 case "resumen" -> resumen();
@@ -3336,9 +3338,17 @@ public final class Pruebas {
         private final String[] took = new String[5];
 
         @SuppressWarnings("unchecked")
+        private final boolean sinPico;
+        private int breaksAtReturn;
+
         EscaleraReal(ServerWorld world) {
-            super("escalera-real", world, 5400);
-            o = new BlockPos(8450, 100, 0);
+            this(world, false);
+        }
+
+        EscaleraReal(ServerWorld world, boolean sinPico) {
+            super(sinPico ? "regreso-sin-pico" : "escalera-real", world, 5400);
+            this.sinPico = sinPico;
+            o = new BlockPos(sinPico ? 24950 : 8450, 100, 0);
             load(world, o.add(4, 0, 0), 40);
             fill(world, o.add(-16, -16, -10), o.add(26, -2, 10), Blocks.STONE.getDefaultState());
             fill(world, o.add(-16, -1, -10), o.add(26, -1, 10), Blocks.GRASS_BLOCK.getDefaultState());
@@ -3492,12 +3502,30 @@ public final class Pruebas {
                 }
                 case 2 -> {
                     if (atFace()) {
-                        MCA.LOGGER.info("PRUEBA escalera-real: de vuelta en el frente en " + ticks + " ticks; lo llaman a casa");
+                        MCA.LOGGER.info("PRUEBA " + name + ": de vuelta en el frente en " + ticks + " ticks; lo llaman a casa");
+                        if (sinPico) {
+                            for (int slot = 0; slot < v.getInventory().size(); slot++) {
+                                if (v.getInventory().getStack(slot).getItem() instanceof net.minecraft.item.PickaxeItem) {
+                                    v.getInventory().setStack(slot, ItemStack.EMPTY);
+                                }
+                            }
+                            if (v.getMainHandStack().getItem() instanceof net.minecraft.item.PickaxeItem) {
+                                v.setStackInHand(net.minecraft.util.Hand.MAIN_HAND, ItemStack.EMPTY);
+                            }
+                            breaksAtReturn = breaks.size();
+                        }
                         ProspectingTask.callHome(v, false);
                         stage = 3;
                     }
                 }
                 case 3 -> {
+                    if (sinPico && f.equals("REST")) {
+                        boolean passed = v.getBlockPos().getY() >= o.getY() && onStair(3) >= Math.max(2, stair.size() / 2)
+                                && breaks.size() == breaksAtReturn;
+                        check(name, passed, "retorno sin pico por su escalera: " + onStair(3) + " escalones, bloques rotos al volver "
+                                + (breaks.size() - breaksAtReturn) + "; " + state());
+                        return passed;
+                    }
                     if (f.equals("REST")) {
                         ProspectingTask.backToWork(v);
                     } else if (f.equals("RETURN") && walked[3].stream().anyMatch(c -> c.getY() >= o.getY())) {

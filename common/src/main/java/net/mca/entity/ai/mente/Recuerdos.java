@@ -117,6 +117,11 @@ public final class Recuerdos {
     private final Map<String, Long> sitiosCuando = new HashMap<>();
     /** Cells found shut on a way it tried (a block fell in, someone built there): skipped until then. Not kept. */
     private final Map<Long, Long> cerrados = new HashMap<>();
+    /** Short-lived execution failures belong to directed transitions, not every approach to an open cell. */
+    private final Map<Transito, Long> pasosCerrados = new LinkedHashMap<>();
+
+    private record Transito(long from, long to) {
+    }
     private long ultimoPie = Long.MIN_VALUE;
     private long tocado;
     private long revision = 1;
@@ -254,7 +259,26 @@ public final class Recuerdos {
         }
     }
 
-    /** That cell is shut for its ways right now (it found it blocked, or its legs got nowhere through it). */
+    public void cerrarPaso(BlockPos from, BlockPos to, long until) {
+        pasosCerrados.put(new Transito(from.asLong(), to.asLong()), until);
+        if (pasosCerrados.size() > 256) {
+            Iterator<Transito> it = pasosCerrados.keySet().iterator();
+            it.next();
+            it.remove();
+        }
+    }
+
+    public boolean pasoCerrado(BlockPos from, BlockPos to, long now) {
+        Transito edge = new Transito(from.asLong(), to.asLong());
+        Long until = pasosCerrados.get(edge);
+        if (until != null && until <= now) {
+            pasosCerrados.remove(edge);
+            return false;
+        }
+        return until != null;
+    }
+
+    /** That cell was physically blocked; failed approaches have their own temporary directed record. */
     public boolean cerrado(BlockPos pos, long now) {
         return cerrado(pos.asLong(), now);
     }
@@ -362,7 +386,7 @@ public final class Recuerdos {
                             continue;
                         }
                         long next = BlockPos.asLong(a.getX() + dx, a.getY() + dy, a.getZ() + dz);
-                        if (parent.containsKey(next) || cerrado(next, now)) {
+                        if (parent.containsKey(next) || cerrado(next, now) || pasoCerrado(a, BlockPos.fromLong(next), now)) {
                             continue;
                         }
                         boolean walked = pasos.containsKey(next);
@@ -689,7 +713,7 @@ public final class Recuerdos {
                         continue; // up: no step there; level or down: no floor yet, the feet go on falling
                     }
                     // a cell with room: this is where the feet go (a step up, or the first landing going down)
-                    if (!cerrado(next, now)) {
+                    if (!cerrado(next, now) && !pasoCerrado(a, b, now)) {
                         boolean walked = pasos.containsKey(next);
                         int gapNext = walked ? 0 : gapHere + 1;
                         if (walked || gapNext <= GAP || gapNext <= SEEN_GAP && seenFloor(vista, b)) {

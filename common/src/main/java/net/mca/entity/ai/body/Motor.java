@@ -38,6 +38,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.PriorityQueue;
 import java.util.function.Predicate;
+import java.util.function.BiPredicate;
 
 /**
  * Moves a villager one block at a time the way a player gets through terrain: walks when the way is
@@ -102,7 +103,6 @@ public final class Motor {
     private static final int REFUSE_TICKS = 100;
 
     // what a way up costs, to choose between stairs and a pillar like a player would
-    private static final int COST_DIG = 2;
     private static final int COST_PLACE = 3;
     private static final int COST_PILLAR = 2;
     private static final int COST_OFF_AXIS = 2;
@@ -549,90 +549,141 @@ public final class Motor {
      */
     @Nullable
     public static List<BlockPos> findWalk(World world, BlockPos start, BlockPos goal, double within, int maxNodes, @Nullable Predicate<BlockPos> allowed) {
-        BlockPos begin = start.toImmutable();
-        double reach = within * within;
-        Map<Long, Long> cameFrom = new HashMap<>();
-        Map<Long, Double> cost = new HashMap<>();
-        PriorityQueue<Node> open = new PriorityQueue<>((a, b) -> Double.compare(a.f, b.f));
-        cost.put(begin.asLong(), 0.0);
-        open.add(new Node(Math.sqrt(begin.getSquaredDistance(goal)), begin.asLong()));
-        int looked = 0;
-        List<BlockPos> next = new ArrayList<>(8);
-        List<Double> price = new ArrayList<>(8);
-        while (!open.isEmpty() && looked < maxNodes) {
-            Node top = open.poll();
-            long key = top.key;
-            BlockPos cell = BlockPos.fromLong(key);
-            double g = cost.getOrDefault(key, Double.MAX_VALUE);
-            if (top.f - Math.sqrt(cell.getSquaredDistance(goal)) > g + 1.0E-6) {
-                continue; // a stale entry: a cheaper way here was found after it was queued
+        WalkResult result = new WalkSearch(start, goal, within).advance(world, maxNodes, allowed, null);
+        return result.status() == WalkStatus.FOUND ? result.path() : null;
+    }
+
+    public enum WalkStatus { FOUND, NO_PATH, BUDGET_EXHAUSTED, SEARCH_LIMIT }
+
+    /** BUDGET_EXHAUSTED is resumable, not evidence of a wall. SEARCH_LIMIT is a resource guard, not NO_PATH. */
+    public record WalkResult(WalkStatus status, List<BlockPos> path, int expanded) {
+    }
+
+    /** A walking-only query retained between ticks. The caller revalidates the resulting path as it walks it. */
+    public static final class WalkSearch {
+        private static final int MAX_SEARCH_CELLS = 131072;
+        private final BlockPos begin;
+        private final BlockPos goal;
+        private final double reach;
+        private final Map<Long, Long> cameFrom = new HashMap<>();
+        private final Map<Long, Double> cost = new HashMap<>();
+        private final PriorityQueue<Node> open = new PriorityQueue<>((a, b) -> Double.compare(a.f, b.f));
+        private int expanded;
+        @Nullable
+        private WalkResult terminal;
+
+        public WalkSearch(BlockPos start, BlockPos goal, double within) {
+            this.begin = start.toImmutable();
+            this.goal = goal.toImmutable();
+            this.reach = within * within;
+            cost.put(begin.asLong(), 0.0);
+            open.add(new Node(heuristic(begin), begin.asLong()));
+        }
+
+        public boolean matches(BlockPos start, BlockPos target, double within) {
+            return begin.equals(start) && goal.equals(target) && Double.compare(reach, within * within) == 0;
+        }
+
+        // Lower bound even for a three-block drop (Euclidean distance can overestimate that move's cost).
+        private double heuristic(BlockPos cell) {
+            return Math.max(Math.abs(cell.getX() - goal.getX()) + Math.abs(cell.getZ() - goal.getZ()),
+                    Math.abs(cell.getY() - goal.getY()) * 0.5);
+        }
+
+        private WalkResult finish(WalkStatus status, List<BlockPos> path) {
+            terminal = new WalkResult(status, List.copyOf(path), expanded);
+            return terminal;
+        }
+
+        public WalkResult advance(World world, int maxNodes, @Nullable Predicate<BlockPos> allowed,
+                                  @Nullable BiPredicate<BlockPos, BlockPos> transition) {
+            if (terminal != null) {
+                return terminal;
             }
-            looked++;
-            if (cell.getSquaredDistance(goal) <= reach) {
-                List<BlockPos> path = new ArrayList<>();
-                Long at = key;
-                while (at != null) {
-                    path.add(BlockPos.fromLong(at));
-                    at = cameFrom.get(at);
+            int used = 0;
+            List<BlockPos> next = new ArrayList<>(8);
+            List<Double> price = new ArrayList<>(8);
+            while (!open.isEmpty() && used < maxNodes) {
+                Node top = open.poll();
+                long key = top.key;
+                BlockPos cell = BlockPos.fromLong(key);
+                double g = cost.getOrDefault(key, Double.MAX_VALUE);
+                if (top.f - heuristic(cell) > g + 1.0E-6) {
+                    continue; // a stale entry: a cheaper way here was found after it was queued
                 }
-                Collections.reverse(path);
-                return path;
-            }
-            next.clear();
-            price.clear();
-            for (Direction d : Direction.Type.HORIZONTAL) {
-                BlockPos side = cell.offset(d);
-                if (standCell(world, side) || rung(world, side)) {
-                    next.add(side);
-                    price.add(1.0);
-                    continue;
+                used++;
+                expanded++;
+                if (cell.getSquaredDistance(goal) <= reach) {
+                    List<BlockPos> path = new ArrayList<>();
+                    Long at = key;
+                    while (at != null) {
+                        path.add(BlockPos.fromLong(at));
+                        at = cameFrom.get(at);
+                    }
+                    Collections.reverse(path);
+                    return finish(WalkStatus.FOUND, path);
                 }
-                // a step up: the step is solid with room over it, and room over its own head for the jump
-                if (Puertas.suelo(world, side) && standCell(world, side.up()) && open(world, cell.up(2))) {
-                    next.add(side.up());
-                    price.add(2.0);
-                    continue;
+                if (cost.size() >= MAX_SEARCH_CELLS) {
+                    return finish(WalkStatus.SEARCH_LIMIT, List.of());
                 }
-                // off an edge: the way over the drop is open, something to land on within SAFE_DROP
-                if (open(world, side) && open(world, side.up())) {
-                    BlockPos fall = side.down();
-                    for (int k = 1; k <= SAFE_DROP && open(world, fall); k++, fall = fall.down()) {
-                        if (standCell(world, fall)) {
-                            next.add(fall.toImmutable());
-                            price.add(1.0 + 0.5 * k);
-                            break;
+                next.clear();
+                price.clear();
+                for (Direction d : Direction.Type.HORIZONTAL) {
+                    BlockPos side = cell.offset(d);
+                    if (standCell(world, side) || rung(world, side)) {
+                        next.add(side);
+                        price.add(1.0);
+                        continue;
+                    }
+                    // a step up: the step is solid with room over it, and room over its own head for the jump
+                    if (Puertas.suelo(world, side) && standCell(world, side.up()) && open(world, cell.up(2))) {
+                        next.add(side.up());
+                        price.add(2.0);
+                        continue;
+                    }
+                    // off an edge: the way over the drop is open, something to land on within SAFE_DROP
+                    if (open(world, side) && open(world, side.up())) {
+                        BlockPos fall = side.down();
+                        for (int k = 1; k <= SAFE_DROP && open(world, fall); k++, fall = fall.down()) {
+                            if (standCell(world, fall)) {
+                                next.add(fall.toImmutable());
+                                price.add(1.0 + 0.5 * k);
+                                break;
+                            }
                         }
                     }
                 }
-            }
-            // a ladder or vines: straight up and down
-            if (ladderOrVine(world.getBlockState(cell)) || ladderOrVine(world.getBlockState(cell.up()))) {
-                BlockPos up = cell.up();
-                if (open(world, up.up()) && (rung(world, up) || standCell(world, up))) {
-                    next.add(up);
+                // a ladder or vines: straight up and down
+                if (ladderOrVine(world.getBlockState(cell)) || ladderOrVine(world.getBlockState(cell.up()))) {
+                    BlockPos up = cell.up();
+                    if (open(world, up.up()) && (rung(world, up) || standCell(world, up))) {
+                        next.add(up);
+                        price.add(1.5);
+                    }
+                }
+                BlockPos down = cell.down();
+                if (rung(world, down)) {
+                    next.add(down);
                     price.add(1.5);
                 }
-            }
-            BlockPos down = cell.down();
-            if (rung(world, down)) {
-                next.add(down);
-                price.add(1.5);
-            }
-            for (int i = 0; i < next.size(); i++) {
-                BlockPos n = next.get(i);
-                if (allowed != null && !n.equals(goal) && !allowed.test(n)) {
-                    continue;
-                }
-                long nk = n.asLong();
-                double ng = g + price.get(i);
-                if (ng < cost.getOrDefault(nk, Double.MAX_VALUE)) {
-                    cost.put(nk, ng);
-                    cameFrom.put(nk, key);
-                    open.add(new Node(ng + Math.sqrt(n.getSquaredDistance(goal)), nk));
+                for (int i = 0; i < next.size(); i++) {
+                    BlockPos n = next.get(i);
+                    if (allowed != null && !n.equals(goal) && !allowed.test(n)
+                            || transition != null && !transition.test(cell, n)) {
+                        continue;
+                    }
+                    long nk = n.asLong();
+                    double ng = g + price.get(i);
+                    if (ng < cost.getOrDefault(nk, Double.MAX_VALUE)) {
+                        cost.put(nk, ng);
+                        cameFrom.put(nk, key);
+                        open.add(new Node(ng + heuristic(n), nk));
+                    }
                 }
             }
+            return open.isEmpty() ? finish(WalkStatus.NO_PATH, List.of())
+                    : new WalkResult(WalkStatus.BUDGET_EXHAUSTED, List.of(), expanded);
         }
-        return null;
     }
 
     /** A cell waiting in {@link #findWalk}: its packed position and the cost so far plus the straight line still to go. */
@@ -982,7 +1033,7 @@ public final class Motor {
             stand = feet.offset(facing).up();
         }
         if (blocks && pillarSafe(world, villager, feet, dig, memory) && !Toques.forbidden(villager, feet, world.getTime())) {
-            int cost = (open(world, feet.up(2)) ? 0 : COST_DIG) + COST_PLACE + COST_PILLAR + pillarDetour;
+            int cost = (open(world, feet.up(2)) ? 0 : breakingCost(world, villager, feet.up(2))) + COST_PLACE + COST_PILLAR + pillarDetour;
             if (cost < best) {
                 best = cost;
                 kind = Kind.PILLAR;
@@ -1076,13 +1127,13 @@ public final class Motor {
                 return -1; // nothing to break on this walk; never a step it set just now, never a cell it keeps digging and filling
             }
             if (Hands.naturalLeaf(world, villager, cell) && !Mining.lavaSeen(memory, cell)) {
-                cost += COST_DIG; // leaves over the step: by hand, pick or no pick
+                cost += breakingCost(world, villager, cell);
                 continue;
             }
             if (!dig || !Mining.mayDig(world, cell, world.getBlockState(cell)) || Mining.lavaSeen(memory, cell) || !Obras.mayBreak(world, villager, cell)) {
                 return -1;
             }
-            cost += COST_DIG;
+            cost += breakingCost(world, villager, cell);
         }
         if (Mining.standable(world, step)) {
             return Mining.lavaSeen(memory, step) ? -1 : cost;
@@ -1101,6 +1152,19 @@ public final class Motor {
             }
         }
         return -1;
+    }
+
+    /** Estimate without changing the held item or consuming durability. Slow stone by hand is not cheap leaves. */
+    public static int breakingCost(ServerWorld world, VillagerEntityMCA villager, BlockPos pos) {
+        BlockState state = world.getBlockState(pos);
+        int ticks = Hands.ticksToBreak(villager, world, pos, state, villager.getMainHandStack());
+        for (int i = 0; i < villager.getInventory().size(); i++) {
+            ItemStack tool = villager.getInventory().getStack(i);
+            if (!tool.isEmpty()) {
+                ticks = Math.min(ticks, Hands.ticksToBreak(villager, world, pos, state, tool));
+            }
+        }
+        return Math.min(1000000, Math.max(1, ticks));
     }
 
     /** Whether it may go straight up from {@code feet} on blocks of its own, judged by what the eye has seen. */
