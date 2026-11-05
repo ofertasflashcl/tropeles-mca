@@ -29,6 +29,7 @@ import java.util.UUID;
 public final class Propuestas extends PersistentState {
     /** The ghost of a proposal goes by this, then its id: never mistaken for a building's. */
     public static final String PREFIJO = "propuesta:";
+    public static final String PARCELA = "parcela:";
     /** A day of play with no word about it: it is dropped. */
     public static final long CADUCA = 24000L;
     /** For this long after it was shown (or changed) a bare "sí" or "no" answers it. */
@@ -133,6 +134,7 @@ public final class Propuestas extends PersistentState {
         private long mostrada;
         /** Bumped every time it changes or moves: its ghost is sent again. */
         private int version;
+        private boolean pendienteSitio;
         @Nullable
         private Obra vista;
 
@@ -186,6 +188,24 @@ public final class Propuestas extends PersistentState {
             return version;
         }
 
+        public boolean pendienteSitio() {
+            return pendienteSitio;
+        }
+
+        public String llaveVista() {
+            return (pendienteSitio ? PARCELA : PREFIJO) + id;
+        }
+
+        public void pedirSitio(CatalogoPlanos.Borrador nuevo, long now) {
+            pendienteSitio = true;
+            cambiar(nuevo, origen, frente, now);
+        }
+
+        public void fijarSitio(BlockPos origen, Direction frente, long now) {
+            pendienteSitio = false;
+            cambiar(borrador, origen, frente, now);
+        }
+
         /** Shown again, or talked about: a bare yes answers it for a while more. */
         public void mostrada(long now) {
             mostrada = now;
@@ -210,7 +230,9 @@ public final class Propuestas extends PersistentState {
         /** The house as it would stand there, never put among the world's buildings: its cells for the ghost and the checks. */
         public Obra vista() {
             if (vista == null) {
-                Obra o = new Obra(PREFIJO + id, constructor, constructorNombre, origen, frente, borrador.madera(), plano);
+                BlockPos at = pendienteSitio ? BlockPos.ORIGIN : origen;
+                Direction direction = pendienteSitio ? Direction.NORTH : frente;
+                Obra o = new Obra(llaveVista(), constructor, constructorNombre, at, direction, borrador.madera(), plano);
                 o.para = para;
                 o.paraNombre = paraNombre;
                 o.version = version;
@@ -226,6 +248,10 @@ public final class Propuestas extends PersistentState {
         /** "una cabaña de troncos de abeto en 10 64 -3, con techo alto (revisión 2)". */
         public String resumen(boolean es) {
             Plano p = plano;
+            if (pendienteSitio) {
+                return es ? "una " + p.nombre + " de " + madera().es + " pendiente de parcela"
+                        : "a " + p.nombreEn + " in " + madera().en + " waiting for a plot";
+            }
             String techo = borrador.cubierta() == ModelosCasa.Cubierta.DOS_AGUAS ? "" : (es ? ", con " + borrador.cubierta().es : ", with a " + borrador.cubierta().en);
             return es ? "una " + p.nombre + " de " + madera().es + " en " + donde() + techo + " (revisión " + p.revision + ")"
                     : "a " + p.nombreEn + " in " + madera().en + " at " + donde() + techo + " (revision " + p.revision + ")";
@@ -241,6 +267,9 @@ public final class Propuestas extends PersistentState {
             n.putString("modelo", borrador.modelo().id());
             n.putString("madera", borrador.madera().name());
             n.putString("cubierta", borrador.cubierta().name());
+            if (borrador.balcon() != null) {
+                n.putString("balcon", borrador.balcon().name());
+            }
             n.putLongArray("abiertas", borrador.abiertas().stream().mapToLong(BlockPos::asLong).toArray());
             n.putLongArray("cerradas", borrador.cerradas().stream().mapToLong(BlockPos::asLong).toArray());
             n.putInt("revision", borrador.revision());
@@ -250,6 +279,7 @@ public final class Propuestas extends PersistentState {
             n.putLong("creada", creada);
             n.putLong("mostrada", mostrada);
             n.putInt("version", version);
+            n.putBoolean("pendienteSitio", pendienteSitio);
             return n;
         }
 
@@ -273,16 +303,20 @@ public final class Propuestas extends PersistentState {
                 for (long l : n.getLongArray("cerradas")) {
                     cerradas.add(BlockPos.fromLong(l));
                 }
+                CambioCasa.Lado balcon = n.contains("balcon", NbtElement.STRING_TYPE)
+                        ? CambioCasa.Lado.valueOf(n.getString("balcon")) : null;
                 CatalogoPlanos.Borrador b = new CatalogoPlanos.Borrador(modelo, Plano.Madera.valueOf(n.getString("madera")),
-                        ModelosCasa.Cubierta.valueOf(n.getString("cubierta")), abiertas, cerradas, n.getInt("revision"));
+                        ModelosCasa.Cubierta.valueOf(n.getString("cubierta")), abiertas, cerradas, n.getInt("revision"), balcon);
                 Plano guardado = PlanoCodec.leer(n.getCompound("plano"));
                 Plano dibujado = b.plano();
                 if (!guardado.hash().equals(dibujado.hash())) {
                     throw new IllegalArgumentException("the catalogue draws another plan for this draft now");
                 }
-                return new Propuesta(n.getString("id"), n.getUuid("constructor"), n.getString("constructorNombre"), n.getUuid("para"),
+                Propuesta p = new Propuesta(n.getString("id"), n.getUuid("constructor"), n.getString("constructorNombre"), n.getUuid("para"),
                         n.getString("paraNombre"), b, dibujado, BlockPos.fromLong(n.getLong("origen")), frente, n.getLong("creada"),
                         n.getLong("mostrada"), n.getInt("version"));
+                p.pendienteSitio = n.getBoolean("pendienteSitio");
+                return p;
             } catch (RuntimeException e) {
                 MCA.LOGGER.warn("[Tropeles] propuesta de casa {} descartada al leerla: {}", n.getString("id"), e.toString());
                 return null;

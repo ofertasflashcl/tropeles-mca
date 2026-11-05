@@ -70,3 +70,13 @@ Benja autorizó revisar, investigar y corregir fallos de autonomía. Alcance pub
 | V30 | Pruebas de diario/reinicio, fallos de archivo, minería física, camino bloqueado, HTTP y liberación de tickets propios | Sol | `PruebasAutonomia.java`, nuevo `PruebasChunks.java`, registro central y `scripts/ci/*`, filtro Forge | en PR #11 |
 
 El cambio puntual de `Constructor.java` solo pide la especie de madera requerida, como pidió Claude al revisar #9. Se conservan los contratos de construcción fiel. La crónica conserva descripciones del diario; no elimina límites de pasos, marcas o episodios del Núcleo ni reconstruye datos ya borrados. Evidencia final y continuación en la hoja de entrega. Sin merge ni release automáticos.
+
+## Obra viva y autonomía
+
+Sol toma el ciclo en `sol/obra-viva-autonomia`, sobre la compilación de Claude `5195fe6`. Trabaja en los contratos entre conversación, plano, parcela y construcción, y en la conducta de seguimiento, comida y exploración. Las ramas de Claude quedan como referencia.
+
+| Qué | Quién | Archivos reservados |
+|---|---|---|
+| Marcador de parcela, edición del balcón y vista previa durante el chat | Sol | `obra/`, `mente/Voluntad.java`, `chatAI/`, `item/MarcadorParcela.java`, render y recursos del marcador |
+| Provisiones, defensa, exploración y conducta al seguir | Sol | `body/`, `brain/tasks/FollowTask.java`, `ProspectingTask.java`, pruebas y manifiestos |
+| Revisión de la entrega | Claude | Revisar el flujo en Forge cliente y reproducir los escenarios de la bitácora sobre el JAR del PR |

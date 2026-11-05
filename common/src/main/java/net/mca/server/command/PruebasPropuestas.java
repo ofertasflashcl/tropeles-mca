@@ -13,11 +13,16 @@ import net.mca.entity.ai.obra.ObrasMundo;
 import net.mca.entity.ai.obra.Plano;
 import net.mca.entity.ai.obra.Propuestas;
 import net.mca.entity.ai.obra.Proyeccion;
+import net.mca.item.MarcadorParcela;
 import net.minecraft.block.Blocks;
+import net.minecraft.item.ItemStack;
+import net.minecraft.item.ItemUsageContext;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtElement;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
+import net.minecraft.util.Hand;
+import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
@@ -33,8 +38,8 @@ import java.util.UUID;
  */
 final class PruebasPropuestas {
     static final List<String> NOMBRES = List.of("propuestas-palabras", "propuestas-crear", "propuestas-editar", "propuestas-aprobar",
-            "propuestas-cancelar", "propuestas-guardado", "propuestas-preparar");
-    private static final List<String> EN_ARENA = List.of("propuestas-crear", "propuestas-editar", "propuestas-aprobar", "propuestas-cancelar");
+            "propuestas-cancelar", "propuestas-balcon", "propuestas-guardado", "propuestas-preparar");
+    private static final List<String> EN_ARENA = List.of("propuestas-crear", "propuestas-editar", "propuestas-aprobar", "propuestas-cancelar", "propuestas-balcon");
 
     private static final BlockPos O = new BlockPos(33000, 100, 33000);
     private static final UUID REINICIO = UUID.fromString("c03b0000-0000-4000-8000-00000000c03b");
@@ -63,6 +68,7 @@ final class PruebasPropuestas {
             caso("propuestas-editar", () -> editar(x));
             caso("propuestas-aprobar", () -> aprobar(x));
             caso("propuestas-cancelar", () -> cancelar(x));
+            caso("propuestas-balcon", () -> balcon(x));
         } catch (RuntimeException e) {
             for (String n : EN_ARENA) {
                 Pruebas.check(n, false, "no se pudo armar la arena: " + e);
@@ -181,15 +187,38 @@ final class PruebasPropuestas {
         exige(a.obra(a.v) == null, "Creó la obra sin el sí del jugador");
         exige(p.plano().id.equals(ModelosCasa.Modelo.CABANA.id()) && p.madera() == Plano.Madera.ABETO, "Diseño o madera equivocados: " + p.resumen(true));
         exige(p.para.equals(a.pide.getUuid()), "No quedó para quien la pidió");
-        exige(p.vista().celdas().size() == p.plano().piezas.size() && p.vista().id.startsWith(Propuestas.PREFIJO), "El fantasma no es el plano propuesto");
+        exige(p.pendienteSitio() && p.vista().celdas().size() == p.plano().piezas.size() && p.vista().id.startsWith(Propuestas.PARCELA),
+                "La vista que sigue al marcador no tiene el plano propuesto");
         exige(r.contains("only when they themselves say yes"), "Al modelo no se le dijo que no puede empezarla: " + r);
-        String dicho = Voluntad.dicho(a.v, "OBRA", true);
-        exige(dicho != null && dicho.contains("piezas exactas") && dicho.contains("de base unos"), "No separó piezas exactas y material estimado: " + dicho);
         String hash = p.plano().hash();
         // what a model can do with their "sí": call build-house again, and that only shows it again
         Voluntad.construir(a.v, a.pide, "sí", true);
         exige(a.obra(a.v) == null, "Un modelo la aprobó con build-house");
         exige(a.propuesta(a.v) == p && p.plano().hash().equals(hash), "Cambió la propuesta sin que se lo pidieran");
+        exige(Voluntad.respuestaPropuesta(a.v, a.pide, "sí", true) != null && a.obra(a.v) == null && p.pendienteSitio(),
+                "Aceptó una obra sin parcela");
+        BlockPos suelo = O.south(14).down();
+        exige(!Voluntad.elegirParcela(a.world, a.v, a.otro, p, suelo), "Otro jugador eligió la parcela");
+        marcar(a, a.pide, p, suelo);
+        exige(!p.pendienteSitio() && p.vista().centro().down().equals(suelo) && p.vista().id.startsWith(Propuestas.PREFIJO),
+                "No fijó el fantasma en el bloque elegido");
+        String dicho = Voluntad.dicho(a.v, "OBRA", true);
+        exige(dicho != null && dicho.contains("piezas exactas") && dicho.contains("de base unos"), "No separó piezas exactas y material estimado: " + dicho);
+    }
+
+    private static void marcar(Arena a, ServerPlayerEntity player, Propuestas.Propuesta p, BlockPos suelo) {
+        for (int slot = 0; slot < 9; slot++) {
+            ItemStack stack = player.getInventory().getStack(slot);
+            if (!MarcadorParcela.coincide(stack, a.world, player, p.id)) {
+                continue;
+            }
+            player.getInventory().selectedSlot = slot;
+            BlockHitResult hit = new BlockHitResult(Vec3d.ofBottomCenter(suelo.up()), Direction.UP, suelo, false);
+            exige(stack.getItem().useOnBlock(new ItemUsageContext(player, Hand.MAIN_HAND, hit)).isAccepted(), "El marcador no fijó la parcela");
+            exige(stack.isEmpty(), "El marcador sigue en el inventario");
+            return;
+        }
+        throw new IllegalStateException("El jugador no recibió el marcador");
     }
 
     private static void editar(Arena a) {
@@ -255,6 +284,36 @@ final class PruebasPropuestas {
                 CambioCasa.leer("techo alto y dos ventanas a la derecha"));
         exige(h.ok(), "El borrador de prueba no se pudo hacer: " + h.es());
         return h.despues();
+    }
+
+    private static void balcon(Arena a) {
+        CatalogoPlanos.Borrador base = CatalogoPlanos.Borrador.de(ModelosCasa.Modelo.DOS_PISOS, Plano.Madera.ABETO);
+        for (CambioCasa.Lado lado : CambioCasa.Lado.values()) {
+            CatalogoPlanos.Borrador b = CatalogoPlanos.balcon(base, lado);
+            exige(b != null, "No generó el balcón " + lado);
+            for (Direction frente : Direction.Type.HORIZONTAL) {
+                var rev = ModelosCasa.revisar(b.plano(), frente);
+                exige(rev.ok(), "Balcón " + lado + " hacia " + frente + ": " + rev.resumen());
+            }
+        }
+        Voluntad.cancelarObra(a.v2, a.tercero, true);
+        Voluntad.construir(a.v2, a.tercero, "hazme una casa de dos pisos", true);
+        Propuestas.Propuesta p = a.propuesta(a.v2);
+        exige(p != null, "No propuso dos pisos");
+        BlockPos suelo = O.north(18).down();
+        marcar(a, a.tercero, p, suelo);
+        String antes = p.plano().hash();
+        Voluntad.editarCasa(a.v2, a.tercero, "ponle un balcón a la derecha", true);
+        exige(p.borrador().balcon() == CambioCasa.Lado.DERECHA && !antes.equals(p.plano().hash())
+                        && p.vista().centro().down().equals(suelo), "No actualizó el plano sobre la parcela");
+        Voluntad.editarCasa(a.v2, a.tercero, "mueve el balcón a la izquierda", true);
+        exige(p.borrador().balcon() == CambioCasa.Lado.IZQUIERDA && !p.pendienteSitio(), "Mover el balcón movió la parcela");
+        var copia = Propuestas.leer(Propuestas.get(a.world).writeNbt(new NbtCompound())).de(a.v2.getUuid());
+        exige(copia != null && copia.borrador().balcon() == CambioCasa.Lado.IZQUIERDA && copia.plano().hash().equals(p.plano().hash()),
+                "Perdió el balcón al guardar el borrador");
+        Voluntad.respuestaPropuesta(a.v2, a.tercero, "sí", true);
+        Obra o = a.obra(a.v2);
+        exige(o != null && o.plano().hash().equals(p.plano().hash()), "No empezó con el plano del balcón aprobado");
     }
 
     private static void guardado() {

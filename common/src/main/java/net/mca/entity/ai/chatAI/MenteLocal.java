@@ -95,7 +95,10 @@ public final class MenteLocal {
                     + "(mejor|prefiero|que sea|hazla|cambiala a|la quiero) (una |de )?(cabana|casa larga|casa alargada|dos pisos|roble|abeto|pino|abedul|"
                     + "jungla|acacia|roble oscuro|mangle|cerezo)|"
                     + "(steep|steeper|turned|gable) roof|(open|add|close|remove|wall up) (a |one |two |the |another )?windows?|"
-                    + "make it (a cabin|a long house|two[- ]floor|of (oak|spruce|birch|jungle|acacia|dark oak|mangrove|cherry))"),
+                    + "make it (a cabin|a long house|two[- ]floor|of (oak|spruce|birch|jungle|acacia|dark oak|mangrove|cherry))|"
+                    + "(ponle|agrega|agregale|anade|anadele|hazle|hazme|quita|quitale|saca|mueve|cambia|add|remove|move) "
+                    + "(un |el |a |the )?(balcon|balcony)|^(un balcon|sin balcon|a balcony|without a balcony)\\b|"
+                    + "(mueve|muevela|cambia) (el sitio|la casa|la parcela|de sitio)|muevela (aqui|aca|ahi)|move (the house|it here)"),
             order("build-house", "(construye|construyeme|construyenos|construir|construyas|construirme|haz|hazme|haznos|hacer|hacerme|haceme|arma|armame|"
                     + "armar|levanta|levantame|edifica|edificame|crea|creame|build|make)(?![a-z]).{0,30}(?<![a-z])(" + CASA + ")(?![a-z])|"
                     + "(sigue|segui|continua|termina|retoma)( con)? (la|tu|mi|esa|nuestra) (casa|obra|construccion)|"

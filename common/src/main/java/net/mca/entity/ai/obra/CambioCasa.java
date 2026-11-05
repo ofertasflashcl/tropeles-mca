@@ -42,20 +42,23 @@ public final class CambioCasa {
     public record Ventanas(boolean abrir, int cuantas, @Nullable Lado lado) {
     }
 
-    /** What was asked; each part null (or no windows) when it was not. */
+    /** A null side removes the balcony. An absent edit leaves it as it is. */
+    public record Balcon(@Nullable Lado lado) {
+    }
+
     public record Pedido(@Nullable ModelosCasa.Modelo modelo, @Nullable Plano.Madera madera, @Nullable ModelosCasa.Cubierta cubierta,
-                         List<Ventanas> ventanas) {
+                         List<Ventanas> ventanas, @Nullable Balcon balcon) {
         public Pedido {
             ventanas = List.copyOf(ventanas);
         }
 
         public boolean vacio() {
-            return modelo == null && madera == null && cubierta == null && ventanas.isEmpty();
+            return modelo == null && madera == null && cubierta == null && ventanas.isEmpty() && balcon == null;
         }
 
         /** The roof and the windows only: what is done to a draft once its design and wood are chosen. */
         public Pedido arreglos() {
-            return new Pedido(null, null, cubierta, ventanas);
+            return new Pedido(null, null, cubierta, ventanas, balcon);
         }
     }
 
@@ -82,6 +85,8 @@ public final class CambioCasa {
     private static final Pattern DOS_AGUAS = w("dos aguas|techo (normal|bajo|comun|de siempre|como venia|original)|gable roof|normal roof|lower roof|"
             + "regular roof");
     private static final Pattern VENTANA = w("ventanas?|ventanitas?|ventanales?|windows?");
+    private static final Pattern BALCON = w("balcon(?:es)?|balcony|balconies");
+    private static final Pattern SIN_BALCON = w("sin balcon|without (a |the )?balcony");
     private static final Pattern PLURAL = w("ventanas|ventanitas|ventanales|windows|las|los");
     private static final Pattern CERRAR = w("cierra|cierrale|cerrar|cerrarle|tapa|tapale|tapar|taparle|tapa(me)?la|quita|quitale|quitar|quitarle|saca|"
             + "sacale|sacar|elimina|eliminale|borra|sin|menos|close|shut|remove|wall up|brick up|block|fewer|less|no quiero");
@@ -118,6 +123,7 @@ public final class CambioCasa {
         ModelosCasa.Modelo modelo = null;
         Plano.Madera madera = null;
         ModelosCasa.Cubierta cubierta = null;
+        Balcon balcon = null;
         List<Ventanas> ventanas = new ArrayList<>();
         Ventanas antes = null;
         for (String parte : (text == null ? "" : text.toLowerCase(Locale.ROOT)).split("[,;.!?]+")) {
@@ -138,6 +144,13 @@ public final class CambioCasa {
                     cubierta = cu != null ? cu : cubierta;
                 }
                 Lado lado = lado(c);
+                if (BALCON.matcher(c).find()) {
+                    if (SIN_BALCON.matcher(c).find() || !niega && CERRAR.matcher(c).find()) {
+                        balcon = new Balcon(null);
+                    } else if (!niega) {
+                        balcon = new Balcon(lado == null ? Lado.FRENTE : lado);
+                    }
+                }
                 boolean ventana = VENTANA.matcher(c).find();
                 if (!ventana && (antes == null || lado == null || !SIGUE.matcher(c).find())) {
                     continue;
@@ -152,7 +165,7 @@ public final class CambioCasa {
                 ventanas.add(antes);
             }
         }
-        return new Pedido(modelo, madera, cubierta, ventanas);
+        return new Pedido(modelo, madera, cubierta, ventanas, balcon);
     }
 
     @Nullable
@@ -199,6 +212,16 @@ public final class CambioCasa {
             b = r.borrador();
             es.add("con " + p.cubierta().es);
             en.add("with a " + p.cubierta().en);
+        }
+        if (p.balcon() != null && p.balcon().lado() != b.balcon()) {
+            Lado lado = p.balcon().lado();
+            CatalogoPlanos.Resultado r = CatalogoPlanos.balcon(b, lado);
+            if (!r.ok()) {
+                return no(antes, r.porQue(), r.porQueEn());
+            }
+            b = r.borrador();
+            es.add(lado == null ? "sin balcón" : "con balcón " + lado.es);
+            en.add(lado == null ? "without a balcony" : "with a balcony " + lado.en);
         }
         if (!p.ventanas().isEmpty()) {
             List<BlockPos> abrir = new ArrayList<>();

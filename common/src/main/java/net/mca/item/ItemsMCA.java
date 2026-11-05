@@ -65,6 +65,7 @@ public interface ItemsMCA {
     RegistrySupplier<Item> STAFF_OF_LIFE = register("staff_of_life", () -> new StaffOfLifeItem(baseProps().maxDamage(10)));
     RegistrySupplier<Item> WHISTLE = register("whistle", () -> new WhistleItem(baseProps()));
     RegistrySupplier<Item> BLUEPRINT = register("blueprint", () -> new BlueprintItem(baseProps()));
+    RegistrySupplier<Item> MARCADOR_PARCELA = register("marcador_parcela", () -> new MarcadorParcela(new Item.Settings().maxCount(1)));
     RegistrySupplier<Item> FAMILY_TREE = register("family_tree", () -> new FamilyTreeItem(baseProps()));
     RegistrySupplier<Item> VILLAGER_TRACKER = register("villager_tracker", () -> new VillagerTrackerItem(baseProps().maxCount(1)));
 

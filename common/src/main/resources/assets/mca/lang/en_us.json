@@ -1,4 +1,7 @@
 {
+  "item.mca.marcador_parcela": "Plot marker",
+  "item.mca.marcador_parcela.inactivo": "This marker needs an active proposal from your villager in this dimension.",
+  "item.mca.marcador_parcela.aldeano": "Get closer to the villager who gave you the marker.",
   "itemGroup.mca.mca_tab": "Minecraft Comes Alive",
 
   "entity.minecraft.villager.mca.none": "Jobless",

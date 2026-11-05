@@ -57,9 +57,9 @@ public final class Proyeccion {
                 for (Iterator<Map.Entry<String, long[]>> it = sent.entrySet().iterator(); it.hasNext(); ) {
                     Map.Entry<String, long[]> e = it.next();
                     boolean gone;
-                    if (e.getKey().startsWith(Propuestas.PREFIJO)) {
-                        Propuestas.Propuesta q = propuestas.porId(e.getKey().substring(Propuestas.PREFIJO.length()));
-                        gone = q == null || !q.para.equals(p.getUuid()) || !q.vista().centro().isWithinDistance(p.getPos(), RADIO + 16);
+                    if (e.getKey().startsWith(Propuestas.PREFIJO) || e.getKey().startsWith(Propuestas.PARCELA)) {
+                        Propuestas.Propuesta q = propuestas.porId(e.getKey().substring(e.getKey().indexOf(':') + 1));
+                        gone = q == null || !e.getKey().equals(q.llaveVista()) || !visible(p, q, RADIO + 16);
                     } else {
                         Obra o = obras.porId(e.getKey());
                         gone = o == null || !o.centro().isWithinDistance(p.getPos(), RADIO + 16);
@@ -80,10 +80,10 @@ public final class Proyeccion {
                     }
                 }
                 for (Propuestas.Propuesta q : propuestas.todas()) {
-                    if (!q.para.equals(p.getUuid()) || !q.vista().centro().isWithinDistance(p.getPos(), RADIO)) {
+                    if (!visible(p, q, RADIO)) {
                         continue;
                     }
-                    String key = Propuestas.PREFIJO + q.id;
+                    String key = q.llaveVista();
                     long[] s = sent.get(key);
                     if (s == null || s[0] != q.version() || now - s[1] > REENVIO) {
                         NetworkHandler.sendToPlayer(mensaje(world, q.vista()), p);
@@ -94,15 +94,24 @@ public final class Proyeccion {
         }
     }
 
+    private static boolean visible(ServerPlayerEntity p, Propuestas.Propuesta q, double radio) {
+        return q.para.equals(p.getUuid()) && (q.pendienteSitio() || q.vista().centro().isWithinDistance(p.getPos(), radio));
+    }
+
     /** A proposal, right away to the one it is for (new, changed or moved): nobody else sees it. */
     public static void enviarPropuesta(ServerWorld world, Propuestas.Propuesta q) {
         try {
             ServerPlayerEntity p = world.getServer().getPlayerManager().getPlayer(q.para);
-            if (p == null || p.getWorld() != world || !q.vista().centro().isWithinDistance(p.getPos(), RADIO)) {
+            if (p == null || p.getWorld() != world || !visible(p, q, RADIO)) {
                 return;
             }
+            Map<String, long[]> sent = ENVIADO.computeIfAbsent(p.getUuid(), k -> new HashMap<>());
+            String anterior = (q.pendienteSitio() ? Propuestas.PREFIJO : Propuestas.PARCELA) + q.id;
+            if (sent.remove(anterior) != null) {
+                NetworkHandler.sendToPlayer(FantasmaMessage.borrar(anterior, dim(world)), p);
+            }
             NetworkHandler.sendToPlayer(mensaje(world, q.vista()), p);
-            ENVIADO.computeIfAbsent(p.getUuid(), k -> new HashMap<>()).put(Propuestas.PREFIJO + q.id, new long[]{q.version(), world.getTime()});
+            sent.put(q.llaveVista(), new long[]{q.version(), world.getTime()});
             MUNDO.put(p.getUuid(), dim(world));
         } catch (RuntimeException e) {
             net.mca.MCA.LOGGER.warn("[Tropeles] no se pudo enviar la propuesta {}: {}", q.id, e.toString());
@@ -112,12 +121,13 @@ public final class Proyeccion {
     /** A proposal's ghost goes (approved, refused, dropped or left a day). */
     public static void borrarPropuesta(ServerWorld world, Propuestas.Propuesta q) {
         try {
-            String key = Propuestas.PREFIJO + q.id;
             String dim = dim(world);
             for (ServerPlayerEntity p : world.getServer().getPlayerManager().getPlayerList()) {
                 Map<String, long[]> sent = ENVIADO.get(p.getUuid());
-                if (sent != null && sent.remove(key) != null || p.getUuid().equals(q.para)) {
-                    NetworkHandler.sendToPlayer(FantasmaMessage.borrar(key, dim), p);
+                for (String key : List.of(Propuestas.PREFIJO + q.id, Propuestas.PARCELA + q.id)) {
+                    if (sent != null && sent.remove(key) != null || p.getUuid().equals(q.para)) {
+                        NetworkHandler.sendToPlayer(FantasmaMessage.borrar(key, dim), p);
+                    }
                 }
             }
         } catch (RuntimeException e) {
