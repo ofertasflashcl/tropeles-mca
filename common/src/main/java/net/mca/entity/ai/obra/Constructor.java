@@ -1835,8 +1835,8 @@ public final class Constructor {
             progreso.olvidarPedidos(world, villager);
             sinArbolesHasta = now + 6000;
             accion = Accion.PENSAR;
-            Voluntad.contar(villager, "No encuentro más árboles por aquí. Si me traes troncos o tablas, sigo con la casa; si no, vuelvo a buscar en un rato.",
-                    "I can't find any more trees around here. If you bring me logs or planks I'll go on with the house; otherwise I'll look again in a while.");
+            Voluntad.contar(villager, "No encuentro más árboles de " + maderaObjetivo().es + " por aquí. Si me traes troncos o tablas de " + maderaObjetivo().es + ", sigo con la casa; si no, vuelvo a buscar en un rato.",
+                    "I can't find any more " + maderaObjetivo().en + " trees around here. If you bring me " + maderaObjetivo().en + " logs or planks I'll go on with the house; otherwise I'll look again in a while.");
             return;
         }
         if (busy) {

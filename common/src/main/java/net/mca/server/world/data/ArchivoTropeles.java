@@ -35,6 +35,11 @@ public final class ArchivoTropeles {
         return server.getSavePath(WorldSavePath.ROOT).resolve("tropeles").resolve(kind.replaceAll("[^a-zA-Z0-9_\\-/]", "_"));
     }
 
+    /** Distinguishes a missing record from a present file that leer could not decode. */
+    public static boolean existe(@Nullable MinecraftServer server, String kind, UUID id) {
+        return server != null && Files.exists(carpeta(server, kind).resolve(id + ".nbt"));
+    }
+
     /** Writes {@code nbt} as the archived {@code kind} of {@code id}. False (and logged) when it could not be written. */
     public static synchronized boolean guardar(@Nullable MinecraftServer server, String kind, UUID id, NbtCompound nbt) {
         if (server == null) {

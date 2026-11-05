@@ -349,6 +349,8 @@ public class ProspectingTask extends AbstractChoreTask {
      */
     @Nullable
     private Motor.WalkSearch pieSinPaso;
+    /** A completed RETURN answer survives the rest of this tick and a short retry window, until the feet change. */
+    private long pieSinPasoHasta;
     private int walkBudget = 512;
     private boolean viaPendiente;
     private long viaRetryAt;
@@ -2612,10 +2614,11 @@ public class ProspectingTask extends AbstractChoreTask {
         Recuerdos r = Recuerdos.of(world, villager);
         VisualMemory vista = Retina.memory(villager);
         Predicate<BlockPos> conocida = c -> conoce(r, vista, c) && !r.cerrado(c, world.getTime());
-        boolean returning = phase == Phase.HOME_UP && !fallback;
+        boolean returning = phase == Phase.HOME_UP && !fallback || phase == Phase.RETURN;
         Motor.WalkSearch search;
         if (returning) {
-            if (pieSinPaso != null && pieSinPaso.matches(feet, goal, within)) {
+            if (pieSinPaso != null && pieSinPaso.matches(feet, goal, within)
+                    && (phase != Phase.RETURN || now < pieSinPasoHasta)) {
                 return null; // asked from these same feet a moment ago: no way on foot, while the next question is pending
             }
             if (pieBusqueda == null || !pieBusqueda.matches(feet, goal, within)) {
@@ -2638,6 +2641,7 @@ public class ProspectingTask extends AbstractChoreTask {
             return null;
         }
         pieBusqueda = null;
+        viaPendiente = false;
         if (returning && result.status() == Motor.WalkStatus.SEARCH_LIMIT) {
             viaPendiente = true;
             viaRetryAt = now + 200;
@@ -2646,6 +2650,9 @@ public class ProspectingTask extends AbstractChoreTask {
         }
         if (returning && result.status() == Motor.WalkStatus.NO_PATH) {
             pieSinPaso = search;
+            // returnToMine continues a pending query before its normal trail logic. That logic asks for the same
+            // destination again: keep the terminal answer, or it restarts the search and waits forever in place.
+            pieSinPasoHasta = now + 40;
         }
         MCA.LOGGER.info("[Tropeles] {} búsqueda a pie de {} a {}: {} ({} celdas)", name(), feet.toShortString(), goal.toShortString(),
                 result.status(), result.expanded());
@@ -3881,6 +3888,22 @@ public class ProspectingTask extends AbstractChoreTask {
             returnByMemory(world, villager, feet, memory, now);
             return;
         }
+        if (now < viaRetryAt) {
+            villager.getNavigation().stop();
+            memory.doing("esperando para comprobar el camino de vuelta a la mina", now);
+            resetWatch();
+            return;
+        }
+        if (viaPendiente && pieBusqueda != null) {
+            BlockPos destination = pieBusqueda.goal();
+            double within = pieBusqueda.within();
+            villager.getNavigation().stop();
+            if (pieA(world, villager, feet, destination, within, destination, "su camino a la mina, a pie") || viaPendiente) {
+                memory.doing("comprobando el camino conocido a su mina sin cavar", now);
+                resetWatch();
+                return;
+            }
+        }
         if (++returnTicks > 9600 || !mina.known()) {
             if (returnTicks <= 9600 && faceByMemory(world, villager, feet)) {
                 return;
@@ -3915,6 +3938,11 @@ public class ProspectingTask extends AbstractChoreTask {
                 villager.getNavigation().stop();
                 return;
             }
+            if (viaPendiente) {
+                villager.getNavigation().stop();
+                memory.doing("comprobando por donde bajar a su mina", now);
+                return;
+            }
             if ((returnTicks % 40) == 1 || villager.getNavigation().isIdle()) {
                 if (!villager.getNavigation().startMovingTo(door.getX() + 0.5, door.getY(), door.getZ() + 0.5, 0.7) || villager.getNavigation().isIdle()) {
                     // too far for one walk: a way it remembers (it walked from there to here), else a leg of the way
@@ -3945,6 +3973,11 @@ public class ProspectingTask extends AbstractChoreTask {
         if (!motor.midStep(villager) && pieA(world, villager, feet, face, 0.5, face, "su escalera hacia abajo, a pie")) {
             // the way down it knows, worked out over what is there now and walked one cell at a time: its own
             // staircase and tunnel, never a new one beside them
+            return;
+        }
+        if (viaPendiente) {
+            villager.getNavigation().stop();
+            memory.doing("comprobando por donde bajar a su mina", now);
             return;
         }
         BlockPos goal = mina.crumb(i + 1);
@@ -4605,7 +4638,7 @@ public class ProspectingTask extends AbstractChoreTask {
         lastBreak = breaking;
         breakingNow = digging;
         boolean byChoice = phase == Phase.REST || troubled() || progreso.cooking() || villager.isSleeping() || digging
-                || phase == Phase.HOME_UP && (viaPendiente || now < viaRetryAt);
+                || (phase == Phase.HOME_UP || phase == Phase.RETURN) && (viaPendiente || now < viaRetryAt);
         Atasco.Remedio remedy = atasco.tick(world, villager, byChoice, memory.doing() + " (" + phase + ")");
         if (remedy == Atasco.Remedio.NINGUNO) {
             return false;

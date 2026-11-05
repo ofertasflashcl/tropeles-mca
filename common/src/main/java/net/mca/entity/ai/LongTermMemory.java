@@ -39,7 +39,7 @@ public class LongTermMemory {
 
     //remember forever
     public void remember(String id) {
-        remember(id, Integer.MAX_VALUE);
+        memories.put(id, Long.MAX_VALUE);
     }
 
     public void remember(String id, long time) {
@@ -47,15 +47,21 @@ public class LongTermMemory {
         if (memories.containsKey(id)) {
             currentTime = Math.max(currentTime, memories.get(id));
         }
-        memories.put(id, currentTime + time);
+        if (currentTime == Long.MAX_VALUE) { memories.put(id, Long.MAX_VALUE); return; }
+        long expires;
+        try { expires = Math.addExact(currentTime, time); }
+        catch (ArithmeticException overflow) { expires = time >= 0 ? Long.MAX_VALUE : Long.MIN_VALUE; }
+        memories.put(id, expires);
     }
 
     public long getMemory(String id) {
         if (memories.containsKey(id)) {
-            if (entity.getWorld().getTime() > memories.get(id)) {
+            if (memories.get(id) == Long.MAX_VALUE) return Long.MAX_VALUE;
+            if (entity.getWorld().getTime() >= memories.get(id)) {
                 memories.remove(id);
             } else {
-                return memories.get(id) - entity.getWorld().getTime();
+                try { return Math.subtractExact(memories.get(id), entity.getWorld().getTime()); }
+                catch (ArithmeticException overflow) { return Long.MAX_VALUE; }
             }
         }
         return 0;

@@ -7,7 +7,6 @@ import com.google.gson.JsonParser;
 import net.mca.Config;
 import net.mca.MCA;
 import net.minecraft.util.Pair;
-import org.apache.commons.io.IOUtils;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.DataOutputStream;
@@ -499,8 +498,10 @@ public final class Cerebros {
     private static Http post(Mind mind, String body, int connectMs, int readMs, long totalMs) {
         AtomicBoolean cut = new AtomicBoolean();
         ScheduledFuture<?> watchdog = null;
+        HttpURLConnection connection = null;
         try {
             HttpURLConnection con = (HttpURLConnection) new URL(mind.url()).openConnection();
+            connection = con;
             watchdog = CLOCK.schedule(() -> {
                 cut.set(true);
                 con.disconnect();
@@ -532,12 +533,18 @@ public final class Cerebros {
             if (watchdog != null) {
                 watchdog.cancel(false);
             }
+            if (connection != null) connection.disconnect();
         }
     }
 
     private static Http get(String url, Map<String, String> headers, int connect, int read) {
+        AtomicBoolean cut = new AtomicBoolean();
+        ScheduledFuture<?> watchdog = null;
+        HttpURLConnection connection = null;
         try {
             HttpURLConnection con = (HttpURLConnection) new URL(url).openConnection();
+            connection = con;
+            watchdog = CLOCK.schedule(() -> { cut.set(true); con.disconnect(); }, Math.max(1000L, (long) connect + read), TimeUnit.MILLISECONDS);
             con.setConnectTimeout(connect);
             con.setReadTimeout(read);
             con.setRequestProperty("User-Agent", USER_AGENT);
@@ -546,14 +553,18 @@ public final class Cerebros {
             }
             return read(con);
         } catch (Exception e) {
-            return new Http(-1, e.getClass().getSimpleName() + ": " + e.getMessage(), e instanceof java.net.SocketTimeoutException);
+            return new Http(-1, e.getClass().getSimpleName() + ": " + e.getMessage(), cut.get() || e instanceof java.net.SocketTimeoutException);
+        } finally {
+            if (watchdog != null) watchdog.cancel(false);
+            if (connection != null) connection.disconnect();
         }
     }
 
     private static Http read(HttpURLConnection con) throws java.io.IOException {
         int code = con.getResponseCode();
+        if (con.getContentLengthLong() > RespuestaAcotada.MAX_BYTES) throw new java.io.IOException("Respuesta HTTP demasiado grande");
         InputStream stream = code >= 400 ? con.getErrorStream() : con.getInputStream();
-        String text = stream == null ? "" : IOUtils.toString(stream, StandardCharsets.UTF_8);
+        String text = RespuestaAcotada.leer(stream);
         return new Http(code, text, false);
     }
 

@@ -163,7 +163,17 @@ public final class Mining {
         if (state.isIn(net.minecraft.registry.tag.BlockTags.CLIMBABLE) || state.getCollisionShape(world, pos).isEmpty()) {
             return pos;
         }
-        return state.getCollisionShape(world, pos).getMax(Direction.Axis.Y) <= entity.getY() - pos.getY() + 1.0E-3 ? pos.up() : pos;
+        var shape = state.getCollisionShape(world, pos);
+        double height = entity.getY() - pos.getY();
+        if (shape.getMax(Direction.Axis.Y) <= height + 1.0E-3) return pos.up();
+        // On the lower tread a stair's global maximum is one block, but the surface under these feet is half a block.
+        double x = entity.getX() - pos.getX(), z = entity.getZ() - pos.getZ();
+        for (var box : shape.getBoundingBoxes()) {
+            if (Math.abs(box.maxY - height) < 1.0E-3 && x >= box.minX && x <= box.maxX && z >= box.minZ && z <= box.maxZ) {
+                return pos.up();
+            }
+        }
+        return pos;
     }
 
     /** A body fits here: nothing solid, no lava. Water is fine. */
