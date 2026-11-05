@@ -650,6 +650,11 @@ public final class Companero {
         if (offer != null) {
             return offer;
         }
+        // "sí" (or "no") to the house it just proposed them: only their own words start it, never a model's
+        String casa = Voluntad.respuestaPropuesta(villager, player, low, es);
+        if (casa != null) {
+            return casa;
+        }
         Hambre h = HAMBRE.get(villager.getUuid());
         if (h != null && h.asked && NO_TENGO.matcher(low).find()) {
             h.leave = true;

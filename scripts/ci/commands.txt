@@ -65,6 +65,7 @@ mca-prueba planos
 mca-prueba catalogo
 mca-prueba construccion
 mca-prueba autonomia
+mca-prueba propuestas
 await-checks 320
 mca-prueba resumen
 sleep 2

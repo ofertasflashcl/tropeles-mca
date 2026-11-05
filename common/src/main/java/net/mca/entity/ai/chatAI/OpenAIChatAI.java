@@ -67,7 +67,9 @@ public class OpenAIChatAI implements ChatAIStrategy {
             Map.entry("build-a-house", "build-house"), Map.entry("build-home", "build-house"), Map.entry("make-house", "build-house"),
             Map.entry("construir", "build-house"), Map.entry("construir-casa", "build-house"), Map.entry("continue-house", "build-house"),
             Map.entry("resume-house", "build-house"), Map.entry("cancel-build", "cancel-house"), Map.entry("stop-building", "cancel-house"),
-            Map.entry("cancel-construction", "cancel-house"), Map.entry("abandon-house", "cancel-house")
+            Map.entry("cancel-construction", "cancel-house"), Map.entry("abandon-house", "cancel-house"),
+            Map.entry("change-house", "edit-house"), Map.entry("modify-house", "edit-house"), Map.entry("edit-proposal", "edit-house"),
+            Map.entry("edit-plan", "edit-house"), Map.entry("change-roof", "edit-house"), Map.entry("add-window", "edit-house")
     );
 
     public static String translate(String phrase) {

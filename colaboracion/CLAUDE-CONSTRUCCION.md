@@ -122,3 +122,41 @@ Esto es lo que hoy impide que un aldeano construya otra casa:
   - el servidor dio 77/78 por `ia-red`: el modelo gratis eligió `start-escort`, la misma falla de las 02:15 UTC, ajena a este PR;
   - la re-corrí una vez y lo comenté en el PR.
 - **Para ti:** registra las tres líneas cuando te sirva. Después borro la rama temporal.
+
+## 2026-11-04 21:00 UTC · Claude — tomo C03b
+
+- **Tu #9:** lo revisé ([comentario](https://github.com/ofertasflashcl/tropeles-mca/pull/9#issuecomment-6641840377)). Son dos detalles y ninguno bloquea. Mis seis `catalogo-*` pasan registradas en 41907919694. La rama temporal `tropeles/claude-catalogo-ci` ya sobra; el modo automático no me dejó borrarla, así que queda para Benja.
+- **Rama:** `tropeles/claude-propuestas`, sobre tu `sol/construccion-fiel` (`2521591ce`). El PR va apilado sobre #9.
+- **Qué hago:**
+  1. Una casa nueva es primero una **propuesta**: diseño, madera, sitio y plano fijo (id, revisión, hash), con su fantasma en otro color. No crea la `Obra`.
+  2. **Edición por chat** sobre el borrador: el techo, hasta dos ventanas por cambio en una pared (frente, atrás, izquierda, derecha), otro diseño u otra madera. Cada cambio da una revisión nueva, la diferencia exacta en piezas y, aparte, el coste estimado.
+  3. **Aprobación:** solo el «sí» del mismo jugador que la pidió, leído de su propio mensaje en el servidor antes del modelo. El modelo no tiene comando para aprobar. Un «no» la descarta. La `Obra` nace con exactamente esa revisión.
+  4. La propuesta se guarda con el mundo, en un estado propio (`mca_tropeles_propuestas`), con el plano por `PlanoCodec.guardar/leer` sin tocar tu codec. Caduca en un día de juego.
+  5. Una obra activa conserva su geometría: no se edita.
+- **Archivos:**
+  - nuevos `obra/Propuestas.java` y `server/command/PruebasPropuestas.java`;
+  - la entrada de casa de `mente/Voluntad.java` (`construir`, `cancelarObra` y dos entradas nuevas);
+  - un gancho en `chatAI/ChatAI.onPlayerChat`, junto a `Interrupcion.oir` y `Companero.oir`;
+  - `chatAI/MenteLocal.java` y `TriggerCommandInfos.java`, para la orden `edit-house`;
+  - `obra/Proyeccion.java` y `client/render/Fantasmas.java`, para el fantasma de la propuesta con el mismo `FantasmaMessage`, sin paquetes nuevos.
+- No toco `Constructor`, `Plano`, `Taller`, `Progreso`, los codecs ni el registro de pruebas. Te paso los nombres de las pruebas al terminar.
+
+
+## 2026-11-04 23:05 UTC · Claude — entrego C03b
+
+- **PR:** [#10](https://github.com/ofertasflashcl/tropeles-mca/pull/10), borrador sobre #9. Código `c6972bde5` en `tropeles/claude-propuestas`.
+- **Hecho:** los cinco puntos de arriba. Al aprobar se vuelve a revisar el sitio exacto; si el suelo cambió, se muestra la casa donde quedaría y se pregunta otra vez. Un «sí» de otro jugador, un «sí» con cambios o una pregunta no aprueban.
+- **Distinto de lo anunciado:**
+  - El «sí» y el «no» se leen en `Companero.bondQuestion`, junto a la respuesta a las ofertas, y no en `ChatAI.onPlayerChat`.
+  - El lector de cambios vive aparte, en `obra/CambioCasa.java`.
+  - `chatAI/OpenAIChatAI.java` solo suma alias de `edit-house`.
+- **Pruebas para tu registro.** Están en `PruebasPropuestas` y no las registré. Corren en la rama temporal `tropeles/claude-propuestas-ci`, que no es para fusionar:
+  - `Pruebas.java`: `case "propuestas", "propuestas-reinicio" -> PruebasPropuestas.run(world, which);`
+  - `commands.txt`: `mca-prueba propuestas`, después de `mca-prueba construccion`.
+  - `expected-checks.tsv`: `propuestas` con `propuestas-palabras`, `propuestas-crear`, `propuestas-editar`, `propuestas-aprobar`, `propuestas-cancelar`, `propuestas-guardado` y `propuestas-preparar`.
+  - `restart-commands.txt`: `mca-prueba propuestas-reinicio`, antes de `mca-prueba resumen`.
+  - `restart-checks.tsv`: `propuestas-reinicio`, con `propuestas-reinicio`.
+- **Límites:**
+  - Sin paquetes nuevos ni cambios de formato en tus codecs.
+  - Hay un archivo de guardado nuevo, `mca_tropeles_propuestas`.
+  - No se prueba la charla con modelo, ni el fantasma dorado en un cliente real, ni la construcción de la casa aprobada en juego. Esa prueba en cliente es de Benja.

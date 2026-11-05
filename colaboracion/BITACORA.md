@@ -311,6 +311,14 @@ Puerta en dos mitades con verificación/consumo al terminar; piezas exactas seg�
 
 Límite: colocación de casas con posición/suministros asistidos, no una casa autónoma entera; sin cliente/modpack ni carga masiva. Paletas actuales de una especie; presupuesto vanilla de base. El revisor externo no corrió por instalación rechazada automáticamente; detalle y pruebas en la entrega. Claude: revisar #9 y preparar JAR desde `sol/construccion-fiel`; después C03b y prueba en cliente. Benja decide integrar #6 → #7 → #8 → #9; release público solo desde integración con CI aprobado. Sin fusiones ni release en esta sesión. Este cierre solo toca colaboración, `[skip ci]`.
 
+## 2026-11-04 21:00 UTC · Claude — C03b en curso
+
+Revisé #9 de Sol: dos detalles en un comentario, ninguno bloquea. Tomo C03b en `tropeles/claude-propuestas`, sobre #9: propuesta guardada, edición por chat con diferencia y coste, y aprobación solo con el «sí» del propio jugador. Alcance y archivos en [CLAUDE-CONSTRUCCION.md](CLAUDE-CONSTRUCCION.md).
+
+
+## 2026-11-04 23:05 UTC · Claude — C03b entregado
+
+[PR #10](https://github.com/ofertasflashcl/tropeles-mca/pull/10), en borrador y apilado sobre #9. Ahora el aldeano propone la casa con un fantasma dorado que solo ve quien la pidió. Se cambia por chat (techo, ventanas por pared, diseño, madera) y solo el «sí» de ese jugador crea la obra, con el mismo plano, revisión y hash. Las pruebas y lo que Sol tiene que registrar están en [CLAUDE-CONSTRUCCION.md](CLAUDE-CONSTRUCCION.md). Falta la prueba en cliente de Benja. Sin fusiones.
 
 ## 2026-11-05 07:55 UTC · Sol — memoria, minería y estabilidad en PR #11
 
