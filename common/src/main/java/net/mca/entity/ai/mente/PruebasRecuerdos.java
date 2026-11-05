@@ -1,6 +1,7 @@
 package net.mca.entity.ai.mente;
 
 import net.minecraft.server.world.ServerWorld;
+import net.minecraft.nbt.NbtCompound;
 import net.minecraft.util.math.BlockPos;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
@@ -9,6 +10,27 @@ import java.util.UUID;
 public final class PruebasRecuerdos {
     private static final UUID DIARIO = UUID.nameUUIDFromBytes("tropeles-diario-paginado-ci".getBytes(StandardCharsets.UTF_8));
     private PruebasRecuerdos() { }
+
+    public static String identidadDiario() {
+        Recuerdos memory = Recuerdos.fromNbt(new NbtCompound());
+        BlockPos a = new BlockPos(1, 70, 1), b = a.east();
+        memory.anotar(100, "hallazgo", "hierro", a);
+        memory.anotar(101, "hallazgo", "hierro", a); // one repeated observation
+        memory.anotar(102, "hallazgo", "hierro", b); // same words, different deposit
+        memory.anotar(90, "hallazgo", "hierro", b); // a clock rollback is not a recent duplicate
+        String longText = "x".repeat(300);
+        memory.anotar(300, "charla", longText, b);
+        memory.anotar(301, "charla", longText + "otro final", b); // distinct events with the same truncated prefix
+        var all = memory.hechos(10);
+        if (all.size() != 5 || !a.equals(all.get(0).donde()) || !b.equals(all.get(1).donde())
+                || all.get(2).t() != 90 || all.get(3).texto().length() != 241 || memory.siguienteHecho() != 5) {
+            throw new IllegalStateException("Agrupa lugares/relojes distintos o pierde un evento de texto largo");
+        }
+        Recuerdos restored = Recuerdos.fromNbt(memory.toNbt());
+        if (!restored.hechos(10).equals(all)) throw new IllegalStateException("Cambia identidad del diario al guardar");
+        return "repeticion real agrupada; lugares y retroceso del reloj separados; texto largo y NBT estables";
+    }
+
     public static int run(ServerWorld world, boolean prepare) {
         var store = Recuerdos.Registro.get(world);
         var lessons = Conciencia.Registro.get(world.getServer());

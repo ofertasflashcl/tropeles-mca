@@ -35,6 +35,7 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
@@ -796,7 +797,8 @@ public final class Recuerdos {
 
     public void anotar(long t, String tipo, String texto, @Nullable BlockPos donde) {
         Hecho last = hechos.peekLast();
-        if (last != null && last.tipo().equals(tipo) && last.texto().equals(texto) && t - last.t() < 200) {
+        if (last != null && last.tipo().equals(tipo) && last.texto().equals(texto)
+                && Objects.equals(last.donde(), donde) && t - last.t() >= 0 && t - last.t() < 200) {
             return; // the same thing said again a moment later is one memory
         }
         archivar(t, false);

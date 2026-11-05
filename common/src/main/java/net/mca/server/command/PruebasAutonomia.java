@@ -40,6 +40,7 @@ final class PruebasAutonomia {
             return;
         }
         check("memoria-cronica", () -> PruebasRecuerdos.cronica(world, true));
+        check("memoria-diario-identidad", PruebasRecuerdos::identidadDiario);
         check("memoria-transaccion", () -> PruebasCronica.run(world));
         check("memoria-incidentes", PruebasIncidentes::run);
         check("memoria-permanente", () -> permanente(world));
