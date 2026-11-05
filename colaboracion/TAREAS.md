@@ -22,7 +22,7 @@ IDs de la auditoría de Sol (F, B) y de su informe de vida autónoma (V = matriz
 | F18 | Sin teletransporte al seguir en modo estricto | libre | `FollowTask.java`, `EscortTask.java`, `FamilyRescueTask.java` | libre |
 | F20, F21 | Versión con SHA en cada build y una línea `[Tropeles] jar <sha>` al arrancar; rangos de versión reales en los metadatos | Sol | `.github/workflows/forge-tropeles.yml`, `mods.toml`, `fabric.mod.json` | en PR #2 · sol/contratos-persistencia |
 | B12 | Planificador justo, cuotas de chunks, métricas (F12, F13) | libre | `Pantalla.java`, `ProspectorPresence.java` | libre |
-| F24, F26 | Registro de bloques sin obsoletos; HTTP con límite de tamaño y cierre | libre | `TropelesMundo.java`, `Cerebros.java` | libre |
+| F24 | Registro de bloques sin obsoletos | libre | `TropelesMundo.java` | libre |
 | V06, V29 | El archivo nunca pierde una copia nueva: revisión monotónica por mente, archivo truncado o ilegible da error visible y se queda la otra copia; prueba con más de 256 aldeanos y reinicio | Sol | `server/world/data/ArchivoTropeles.java` (cedido por Claude), `scripts/ci/*`, `server/command/Pruebas.java` | en PR #2 · sol/contratos-persistencia |
 | V20, V21 (pruebas) | Escenarios del miedo con lugar y del vínculo con historia, con su control negativo y su fila en `expected-checks.tsv` | Sol | `scripts/ci/*`, `server/command/Pruebas.java` | en PR #2 · sol/contratos-persistencia |
 | GEN | `Voluntad.generacion(uuid)` y `Voluntad.nuevaGeneracion(uuid)` para B11 | Claude | `mente/Voluntad.java`, `mente/Interrupcion.java` | hecha (b423e5654) |
@@ -53,6 +53,20 @@ Reservas publicadas en [CONSTRUCCION-PARA-CLAUDE.md](CONSTRUCCION-PARA-CLAUDE.md
 | C01 | Plano inmutable, identidad/revisión/hash, snapshot, migración y anclas propias | Sol | `obra/Plano.java`, `Obra.java`, `Sitio.java`, `ObrasMundo.java`, nuevo `PlanoCodec.java`, `PruebasPlanos.java`, registro/CI | en PR #7 · 78/78 + reinicio 3/3 |
 | C02 | Catálogo local, dos geometrías nuevas y edición limitada de borradores | Claude | nuevos `obra/ModelosCasa.java`, `CatalogoPlanos.java`, `PruebasCatalogo.java`, `CLAUDE-CONSTRUCCION.md` | en PR #8 · 84/84 + reinicio 3/3 con las seis registradas (rama temporal) |
 | C03a | Puerta completa, bloques y madera exactos, suministro/fabricación por especie, selección básica de diseño y regresiones | Sol | `obra/Constructor.java`, `Plano.java`, `Obra.java`, `Taller.java`, nuevo `PedidoCasa.java`; cambios acotados en `body/Progreso.java`, `mente/Voluntad.java`, `chatAI/TriggerCommandInfos.java`; pruebas/CI | en PR #9 · 91/91 + reinicio 3/3; entrega para revisión/JAR en SOL-CONSTRUCCION-FIEL.md |
-| C03b | Propuesta, edición conversacional, vista previa y aprobación de revisión | Claude | nuevos módulos de propuestas, Proyeccion y entrada de conversación, después de revisar C03a; conservar los contratos del plano fijo | siguiente PR después de C03a |
+| C03b | Propuesta, edición conversacional, vista previa y aprobación de revisión | Claude | nuevos módulos de propuestas, Proyeccion y entrada de conversación, después de revisar C03a; conservar los contratos del plano fijo | en PR #10, borrador; siete casos y reinicio aún por registrar en el árbol combinado |
 
 Benja reasignó C03a a Sol; el alcance se publicó antes del código en [SOL-CONSTRUCCION-FIEL.md](SOL-CONSTRUCCION-FIEL.md) y en el PR #8. Sol no modifica modelos/catálogo ni render; Claude conserva C03b y evita duplicar los arreglos reservados hasta revisar la entrega. El PR #9 se apila sobre #8; #8 sobre #7 y #7 sobre #6. No fusionar trabajo ni publicar jar sin la decisión de Benja.
+
+## 2026-11-05 · memoria y minería
+
+Benja autorizó revisar, investigar y corregir fallos de autonomía. Alcance publicado antes del código en [SOL-MEMORIA-MINERIA.md](SOL-MEMORIA-MINERIA.md). Base #9; esta entrega es paralela a C03b de Claude en #10, sin editar sus archivos de propuestas, conversación, catálogo o render. Validación final del código: **100/100 + reinicio 4/4**, builds Forge/Fabric aprobados; evidencia y límites en la hoja.
+
+| ID | Qué | Quién | Archivos reservados | Estado |
+|---|---|---|---|---|
+| M01 | Diario paginado sin descarte rutinario por el límite de 300; identidades, recuperación, lectura y fallo visible; repetición situada | Sol | `mente/Recuerdos.java`, `PruebasRecuerdos.java`, nuevos `CronicaTropeles.java`/`PruebasCronica.java`, `ArchivoTropeles.java` | en PR #11 |
+| M02 | Incidentes separados por lugar/dimensión/recurso, origen UUID completo y memoria permanente sin overflow | Sol | `nucleo/Mente.java`, `PruebasIncidentes.java`, `LongTermMemory.java` | en PR #11 |
+| N06 | Pies sobre apoyos parciales; búsqueda continuable en RETURN; no reiniciar una respuesta NO_PATH en el mismo tick | Sol | `body/Mina.java`, `Mining.java`, `Motor.java`, `ProspectingTask.java` | en PR #11 |
+| F26 | Respuesta HTTP de hasta 1 MiB, cierre/desconexión y plazo total GET | Sol | `chatAI/Cerebros.java`, nuevos `RespuestaAcotada.java`/`PruebasRespuesta.java` | en PR #11 |
+| V30 | Pruebas de diario/reinicio, fallos de archivo, minería física, camino bloqueado, HTTP y liberación de tickets propios | Sol | `PruebasAutonomia.java`, nuevo `PruebasChunks.java`, registro central y `scripts/ci/*`, filtro Forge | en PR #11 |
+
+El cambio puntual de `Constructor.java` solo pide la especie de madera requerida, como pidió Claude al revisar #9. Se conservan los contratos de construcción fiel. La crónica conserva descripciones del diario; no elimina límites de pasos, marcas o episodios del Núcleo ni reconstruye datos ya borrados. Evidencia final y continuación en la hoja de entrega. Sin merge ni release automáticos.
