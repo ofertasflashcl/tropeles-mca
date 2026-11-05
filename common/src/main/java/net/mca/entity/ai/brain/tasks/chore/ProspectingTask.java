@@ -2638,13 +2638,14 @@ public class ProspectingTask extends AbstractChoreTask {
             return null;
         }
         pieBusqueda = null;
+        viaPendiente = false;
         if (returning && result.status() == Motor.WalkStatus.SEARCH_LIMIT) {
             viaPendiente = true;
             viaRetryAt = now + 200;
             MCA.LOGGER.warn("[Tropeles] {} aplaza la búsqueda de salida: límite de recursos tras {} celdas; no afirma que esté tapada", name(), result.expanded());
             return null;
         }
-        if (returning && result.status() == Motor.WalkStatus.NO_PATH) {
+        if (phase == Phase.HOME_UP && !fallback && result.status() == Motor.WalkStatus.NO_PATH) {
             pieSinPaso = search;
         }
         MCA.LOGGER.info("[Tropeles] {} búsqueda a pie de {} a {}: {} ({} celdas)", name(), feet.toShortString(), goal.toShortString(),

@@ -44,6 +44,7 @@ final class PruebasAutonomia {
         check("memoria-permanente", () -> permanente(world));
         check("mina-pies", () -> pies(world));
         Pruebas.start(new Vuelta(world));
+        Pruebas.start(new Vuelta(world, true));
     }
 
     private static void require(boolean ok, String why) { if (!ok) throw new IllegalStateException(why); }
@@ -94,13 +95,21 @@ final class PruebasAutonomia {
 
     private static final class Vuelta extends Pruebas.Scenario {
         final VillagerEntityMCA v;
-        final BlockPos door = new BlockPos(36400, 100, 0);
-        final BlockPos face = door.add(140, -6, 0);
+        final BlockPos door;
+        final BlockPos face;
+        final boolean blocked;
         final Map<BlockPos, BlockState> guards = new LinkedHashMap<>();
         int waiting;
 
         Vuelta(ServerWorld world) {
-            super("mina-retorno-cuota", world, 2600);
+            this(world, false);
+        }
+
+        Vuelta(ServerWorld world, boolean blocked) {
+            super(blocked ? "mina-ruta-cerrada" : "mina-retorno-cuota", world, blocked ? 1200 : 2600);
+            this.blocked = blocked;
+            door = new BlockPos(blocked ? 37000 : 36400, 100, 0);
+            face = door.add(140, -6, 0);
             Pruebas.load(world, door.east(70), 88);
             Pruebas.fill(world, door.add(-5, -12, -3), door.add(145, -2, 3), Blocks.STONE.getDefaultState());
             Pruebas.fill(world, door.add(-5, -1, -3), door.add(145, -1, 3), Blocks.GRASS_BLOCK.getDefaultState());
@@ -112,6 +121,7 @@ final class PruebasAutonomia {
                 if (x > 6 && x % 4 == 3) world.setBlockState(c.up(2), Blocks.GLOWSTONE.getDefaultState(), 3);
                 trail.add(c);
             }
+            if (blocked) Pruebas.fill(world, door.add(20, -6, 0), door.add(20, -4, 0), Blocks.STONE.getDefaultState());
             for (BlockPos c : trail) {
                 for (BlockPos p : new BlockPos[]{c.down(), c, c.up(), c.up(2), c.north(), c.south()}) guards.put(p, world.getBlockState(p));
             }
@@ -130,7 +140,13 @@ final class PruebasAutonomia {
 
         @Override Boolean step() {
             ProspectingTask task = ProspectingTask.of(v); task.setWalkBudget(1);
-            if (task.debug().contains("búsqueda pendiente")) waiting++;
+            boolean pending = task.debug().contains("búsqueda pendiente");
+            if (pending) waiting++;
+            if (blocked && waiting > 0 && !pending && task.fase().equals("RETURN") && !task.porMemoria()) {
+                require(door.equals(task.minaEntrada()), "Olvido la entrada mientras buscaba");
+                Pruebas.check(name, true, "una ruta realmente cerrada termina la espera pendiente; cuota 1, espera=" + waiting);
+                return true;
+            }
             if (ticks % 10 == 0 || v.getPos().distanceTo(Vec3d.ofBottomCenter(face)) < 2.5) {
                 for (var e : guards.entrySet()) require(world.getBlockState(e.getKey()).equals(e.getValue()), "Rompio/coloco en el corredor durante la vuelta: " + e.getKey());
             }
