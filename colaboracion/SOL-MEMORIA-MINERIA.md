@@ -8,6 +8,7 @@ Benja autorizó analizar, investigar y mejorar minería, memoria y control de lo
 - `body/Mina.java`, `body/Mining.java`, `body/Motor.java`, `brain/tasks/chore/ProspectingTask.java`: unificar los pies sobre losas/escaleras y continuar las búsquedas hacia el frente de trabajo, sin confundir cuota agotada con ruta imposible.
 - `nucleo/Mente.java`: separar incidentes de dimensiones distintas y evitar identificadores abreviados que puedan colisionar entre aldeanos. `LongTermMemory.java`: corregir el recuerdo «para siempre» de MCA y la suma de vencimientos.
 - Cambio puntual en `obra/Constructor.java`: nombrar la especie al pedir material, como señaló Claude en #9. No cambiar geometrías ni su interfaz C03b.
+- F26 en `chatAI/Cerebros.java` y lector/pruebas separados: respuestas HTTP limitadas a 1 MiB, cierre en éxito/fallo y plazo total también para GET. Reserva ampliada públicamente en el PR #11 antes del código.
 - Pruebas físicas, archivo/reinicio y registro central `Pruebas.java`/`scripts/ci/*`; permitir CI Forge para PRs hacia `sol/**` y evitar ramas temporales de pruebas.
 
 Claude conserva C03b en #10: propuestas, conversación, aprobación, catálogo y render. No se modifican esos archivos en esta entrega. La investigación contrastará el código con fuentes primarias sobre memoria jerárquica, información qué/dónde/cuándo, búsqueda continuable y recuperación de archivos; se entregarán hallazgos, cambios medidos y límites. El revisor externo de la sesión anterior sigue sin instalar; no se reintenta el instalador rechazado ni se atribuyen resultados a él.

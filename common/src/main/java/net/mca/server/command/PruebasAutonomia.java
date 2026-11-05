@@ -5,6 +5,7 @@ import net.mca.entity.ai.LongTermMemory;
 import net.mca.entity.ai.MemoryModuleTypeMCA;
 import net.mca.entity.ai.body.Mina;
 import net.mca.entity.ai.body.Mining;
+import net.mca.entity.ai.chatAI.PruebasRespuesta;
 import net.mca.entity.ai.brain.tasks.chore.ProspectingTask;
 import net.mca.entity.ai.mente.PruebasRecuerdos;
 import net.mca.entity.ai.nucleo.PruebasIncidentes;
@@ -42,6 +43,7 @@ final class PruebasAutonomia {
         check("memoria-transaccion", () -> PruebasCronica.run(world));
         check("memoria-incidentes", PruebasIncidentes::run);
         check("memoria-permanente", () -> permanente(world));
+        check("red-respuesta-acotada", PruebasRespuesta::run);
         check("mina-pies", () -> pies(world));
         Pruebas.start(new Vuelta(world));
         Pruebas.start(new Vuelta(world, true));
@@ -122,6 +124,14 @@ final class PruebasAutonomia {
                 trail.add(c);
             }
             if (blocked) Pruebas.fill(world, door.add(20, -6, 0), door.add(20, -4, 0), Blocks.STONE.getDefaultState());
+            if (blocked) {
+                // Bound this negative fixture's reachable surface: exhausting a large open plain at one node/tick
+                // would test only its timeout, not termination of a genuinely completed NO_PATH answer.
+                Pruebas.fill(world, door.add(-1, 0, -1), door.add(-1, 2, 1), Blocks.STONE.getDefaultState());
+                Pruebas.fill(world, door.add(0, -6, -1), door.add(7, 2, -1), Blocks.STONE.getDefaultState());
+                Pruebas.fill(world, door.add(0, -6, 1), door.add(7, 2, 1), Blocks.STONE.getDefaultState());
+                Pruebas.fill(world, door.add(7, 0, -1), door.add(7, 2, 1), Blocks.STONE.getDefaultState());
+            }
             for (BlockPos c : trail) {
                 for (BlockPos p : new BlockPos[]{c.down(), c, c.up(), c.up(2), c.north(), c.south()}) guards.put(p, world.getBlockState(p));
             }

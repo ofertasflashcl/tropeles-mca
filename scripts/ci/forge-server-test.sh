@@ -36,6 +36,7 @@ run_phase() {
     done
     [ "$ready" = true ] || exit 1
     sleep 5
+    echo "CI feeding phase $phase from $commands"
     while IFS= read -r line; do
       case "$line" in
         await-checks*)
@@ -50,7 +51,10 @@ run_phase() {
           ;;
         sleep*) sleep "${line#sleep }";;
         ''|'#'*) ;;
-        *) echo "$line" >&3;;
+        *)
+          if [ "$phase" = restart ]; then echo "CI restart command: $line"; fi
+          echo "$line" >&3
+          ;;
       esac
     done < "$commands"
     echo stop >&3

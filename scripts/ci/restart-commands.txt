@@ -2,5 +2,6 @@ mca-prueba archivo-reinicio
 mca-prueba mina-rastro-reinicio
 mca-prueba planos-reinicio
 mca-prueba autonomia-reinicio
+await-checks 120
 mca-prueba resumen
 sleep 2
