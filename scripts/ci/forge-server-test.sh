@@ -35,6 +35,20 @@ run_phase() {
   exec 3<>in.fifo
   timeout 1200 bash run.sh nogui < in.fifo > "console-$phase.log" 2>&1 &
   local server_pid=$!
+  local probe=0
+  if [ "$phase" = restart ]; then
+    (
+      sleep 10
+      for sample in 1 2 3; do
+        java_pid=$(jcmd -l | awk '/BootstrapLauncher|forgeserver/ {print $1; exit}')
+        [ -n "$java_pid" ] || exit 0
+        timeout 12 jcmd "$java_pid" GC.class_histogram > "logs/heap-restart-$sample.log" 2>&1 || true
+        timeout 12 jcmd "$java_pid" Thread.print > "logs/threads-restart-$sample.log" 2>&1 || true
+        sleep 3
+      done
+    ) &
+    probe=$!
+  fi
   (
     local ready=false
     for i in $(seq 1 600); do
@@ -69,6 +83,7 @@ run_phase() {
   ) &
   local feeder=$! status=0
   wait "$server_pid" || status=$?
+  if [ "$probe" -ne 0 ]; then kill "$probe" 2>/dev/null || true; wait "$probe" 2>/dev/null || true; fi
   kill "$feeder" 2>/dev/null || true
   wait "$feeder" 2>/dev/null || true
   exec 3>&-
@@ -89,5 +104,12 @@ run_phase() {
   echo "Server phase $phase booted and stopped cleanly with MCA loaded"
 }
 run_phase first "$CI_DIR/commands.txt" "$CI_DIR/expected-checks.tsv"
+python3 - <<'PY' > logs/world-sizes.log
+from pathlib import Path
+files = [(p.stat().st_size, str(p)) for p in Path('world').rglob('*') if p.is_file()]
+print('World bytes:', sum(n for n, _ in files), 'files:', len(files))
+for n, p in sorted(files, reverse=True)[:20]: print(n, p)
+PY
+cat logs/world-sizes.log
 # Same saved world, new Java process: only reading, never reseeding the fixtures.
 run_phase restart "$CI_DIR/restart-commands.txt" "$CI_DIR/restart-checks.tsv"
