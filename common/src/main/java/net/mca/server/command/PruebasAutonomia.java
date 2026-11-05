@@ -19,11 +19,13 @@ import net.minecraft.nbt.NbtCompound;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.state.property.Properties;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /** Real disk, actual memory objects, actual mine recorder and actual returning job. */
@@ -102,6 +104,7 @@ final class PruebasAutonomia {
         final BlockPos face;
         final boolean blocked;
         final Map<BlockPos, BlockState> guards = new LinkedHashMap<>();
+        final List<ChunkPos> ownChunks = new ArrayList<>();
         int waiting;
 
         Vuelta(ServerWorld world) {
@@ -113,7 +116,14 @@ final class PruebasAutonomia {
             this.blocked = blocked;
             door = new BlockPos(blocked ? 37000 : 36400, 100, 0);
             face = door.add(140, -6, 0);
-            Pruebas.load(world, door.east(70), 88);
+            // A long narrow corridor needs a rectangle, not a square of hundreds of forced chunks.
+            // Release only tickets added by this scenario, so the restart does not reload its whole arena.
+            for (int cx = (door.getX() - 5) >> 4; cx <= (door.getX() + 145) >> 4; cx++) {
+                for (int cz = (door.getZ() - 3) >> 4; cz <= (door.getZ() + 3) >> 4; cz++) {
+                    if (world.setChunkForced(cx, cz, true)) ownChunks.add(new ChunkPos(cx, cz));
+                    world.getChunk(cx, cz);
+                }
+            }
             Pruebas.fill(world, door.add(-5, -12, -3), door.add(145, -2, 3), Blocks.STONE.getDefaultState());
             Pruebas.fill(world, door.add(-5, -1, -3), door.add(145, -1, 3), Blocks.GRASS_BLOCK.getDefaultState());
             Pruebas.fill(world, door.add(-5, 0, -3), door.add(145, 5, 3), Blocks.AIR.getDefaultState());
@@ -168,6 +178,9 @@ final class PruebasAutonomia {
             return true;
         }
         @Override String state() { return ProspectingTask.of(v).debug() + ", espera=" + waiting + ", x=" + v.getX(); }
-        @Override void cleanup() { v.getVillagerBrain().abandonJob(); v.discard(); }
+        @Override void cleanup() {
+            v.getVillagerBrain().abandonJob(); v.discard();
+            for (ChunkPos chunk : ownChunks) world.setChunkForced(chunk.x, chunk.z, false);
+        }
     }
 }

@@ -10,6 +10,14 @@ ARCH=9.2.14
 mkdir -p server/mods && cd server
 curl -fsSL -o installer.jar "https://maven.minecraftforge.net/net/minecraftforge/forge/$FORGE/forge-$FORGE-installer.jar"
 java -jar installer.jar --installServer > install.log 2>&1 || { tail -50 install.log; exit 1; }
+# Forge's default launch file has no explicit heap. Keep the two-process suite within a known CI budget,
+# and fail immediately on OOM instead of leaving an apparently running process with no test commands.
+cat > user_jvm_args.txt <<'J'
+-Xms512M
+-Xmx2G
+-XX:+ExitOnOutOfMemoryError
+J
+java @user_jvm_args.txt -XX:+PrintFlagsFinal -version 2>&1 | awk '/InitialHeapSize|MaxHeapSize/ {print}'
 curl -fsSL -o mods/architectury-forge.jar "https://maven.architectury.dev/dev/architectury/architectury-forge/$ARCH/architectury-forge-$ARCH.jar"
 cp "$JAR" mods/
 echo "eula=true" > eula.txt
@@ -65,6 +73,8 @@ run_phase() {
   wait "$feeder" 2>/dev/null || true
   exec 3>&-
   rm -f in.fifo
+  mkdir -p logs
+  cp "console-$phase.log" "logs/console-$phase.log"
   [ -f logs/latest.log ] || { tail -100 "console-$phase.log"; return 1; }
   cp logs/latest.log "logs/phase-$phase.log"
   [ "$status" -eq 0 ] || { tail -100 "console-$phase.log"; return 1; }
