@@ -156,10 +156,13 @@ public final class Pruebas {
     private static void resumen() {
         for (Scenario scenario : RUNNING) {
             fail(scenario.name, "no terminó a tiempo (" + scenario.ticks + " ticks) " + scenario.state());
+            try { scenario.cleanup(); }
+            catch (RuntimeException e) { MCA.LOGGER.warn("No se pudo limpiar el escenario {}", scenario.name, e); }
         }
         RUNNING.clear();
         long passed = RESULTS.values().stream().filter("OK"::equals).count();
         MCA.LOGGER.info("PRUEBA RESUMEN " + passed + "/" + RESULTS.size() + " " + RESULTS);
+        PruebasChunks.release();
     }
 
     /** Called at the end of every server tick. */
@@ -191,8 +194,7 @@ public final class Pruebas {
     static void load(ServerWorld world, BlockPos origin, int radius) {
         for (int cx = (origin.getX() - radius) >> 4; cx <= (origin.getX() + radius) >> 4; cx++) {
             for (int cz = (origin.getZ() - radius) >> 4; cz <= (origin.getZ() + radius) >> 4; cz++) {
-                world.setChunkForced(cx, cz, true);
-                world.getChunk(cx, cz);
+                PruebasChunks.load(world, cx, cz);
             }
         }
     }
