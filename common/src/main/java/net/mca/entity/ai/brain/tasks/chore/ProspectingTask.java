@@ -349,6 +349,8 @@ public class ProspectingTask extends AbstractChoreTask {
      */
     @Nullable
     private Motor.WalkSearch pieSinPaso;
+    /** A completed RETURN answer survives the rest of this tick and a short retry window, until the feet change. */
+    private long pieSinPasoHasta;
     private int walkBudget = 512;
     private boolean viaPendiente;
     private long viaRetryAt;
@@ -2615,7 +2617,8 @@ public class ProspectingTask extends AbstractChoreTask {
         boolean returning = phase == Phase.HOME_UP && !fallback || phase == Phase.RETURN;
         Motor.WalkSearch search;
         if (returning) {
-            if (pieSinPaso != null && pieSinPaso.matches(feet, goal, within)) {
+            if (pieSinPaso != null && pieSinPaso.matches(feet, goal, within)
+                    && (phase != Phase.RETURN || now < pieSinPasoHasta)) {
                 return null; // asked from these same feet a moment ago: no way on foot, while the next question is pending
             }
             if (pieBusqueda == null || !pieBusqueda.matches(feet, goal, within)) {
@@ -2645,8 +2648,11 @@ public class ProspectingTask extends AbstractChoreTask {
             MCA.LOGGER.warn("[Tropeles] {} aplaza la búsqueda de salida: límite de recursos tras {} celdas; no afirma que esté tapada", name(), result.expanded());
             return null;
         }
-        if (phase == Phase.HOME_UP && !fallback && result.status() == Motor.WalkStatus.NO_PATH) {
+        if (returning && result.status() == Motor.WalkStatus.NO_PATH) {
             pieSinPaso = search;
+            // returnToMine continues a pending query before its normal trail logic. That logic asks for the same
+            // destination again: keep the terminal answer, or it restarts the search and waits forever in place.
+            pieSinPasoHasta = now + 40;
         }
         MCA.LOGGER.info("[Tropeles] {} búsqueda a pie de {} a {}: {} ({} celdas)", name(), feet.toShortString(), goal.toShortString(),
                 result.status(), result.expanded());
