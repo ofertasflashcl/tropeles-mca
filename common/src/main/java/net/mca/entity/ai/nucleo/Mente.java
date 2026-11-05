@@ -187,7 +187,7 @@ public final class Mente {
 
     Episodio nuevo(Tipo tipo, long now, UUID yo) {
         int id = siguiente++;
-        return new Episodio(id, tipo, now, yo.toString().substring(0, 8) + ":" + id);
+        return new Episodio(id, tipo, now, yo + ":" + id);
     }
 
     /**
@@ -245,6 +245,8 @@ public final class Mente {
         for (int i = episodios.size() - 1, seen = 0; i >= 0 && seen < 24; i--, seen++) {
             Episodio o = episodios.get(i);
             if (o.tipo == e.tipo && o.estado == Estado.ABIERTO && o.modo == e.modo && now - o.t1 <= e.tipo.ventana
+                    && now >= o.t1 && o.lugar().equals(e.lugar())
+                    && (e.tipo != Tipo.HALLAZGO && e.tipo != Tipo.DI || o.cosa.equals(e.cosa))
                     && mismo(o.quien, e.quien) && mismo(o.aQuien, e.aQuien)) {
                 return o;
             }

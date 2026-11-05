@@ -590,6 +590,9 @@ public final class Motor {
             return begin.equals(start) && goal.equals(target) && Double.compare(reach, within * within) == 0;
         }
 
+        public BlockPos goal() { return goal; }
+        public double within() { return Math.sqrt(reach); }
+
         // Lower bound even for a three-block drop (Euclidean distance can overestimate that move's cost).
         private double heuristic(BlockPos cell) {
             return Math.max(Math.abs(cell.getX() - goal.getX()) + Math.abs(cell.getZ() - goal.getZ()),

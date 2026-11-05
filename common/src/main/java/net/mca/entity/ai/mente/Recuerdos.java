@@ -9,6 +9,7 @@ import net.mca.entity.ai.body.Puertas;
 import net.mca.entity.ai.sense.Entorno;
 import net.mca.entity.ai.sense.Lugar;
 import net.mca.entity.ai.sense.VisualMemory;
+import net.mca.server.world.data.CronicaTropeles;
 import net.mca.util.WorldUtils;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
@@ -35,6 +36,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.UUID;
 import java.util.WeakHashMap;
 import java.util.function.Predicate;
@@ -44,7 +46,7 @@ import java.util.function.Predicate;
  * on solidly (up to {@value #MAX_PASOS}, the least recently visited forgotten first), with when it was there last and
  * what kind of place it was ({@link Lugar}, and how far below the land); and a diary of what happened to it (who said
  * what to it and what it answered, what it found, fights, trips home, chests, crafts, getting stuck), the last
- * {@value #MAX_HECHOS} of them. Plus the places that matter to it by name: its chest, its home, the mouth of its mine,
+ * {@value #MAX_HECHOS} of them in the recent cache; older diary entries go to paged disk storage. Plus the places that matter to it by name: its chest, its home, the mouth of its mine,
  * its work face.
  * <p>
  * The walked cells are a graph it can find its way through: {@link #camino} looks for a way over cells it really
@@ -58,8 +60,10 @@ import java.util.function.Predicate;
 public final class Recuerdos {
     /** Walked cells kept at most; past that the one visited longest ago goes. */
     public static final int MAX_PASOS = 30000;
-    /** Diary entries kept at most; past that the oldest goes. */
+    /** Recent diary target; older entries move to the paged archive in batches, rather than being deleted. */
     public static final int MAX_HECHOS = 300;
+    private static final int DIARY_BATCH = 64;
+    private static final int DIARY_BUFFER = MAX_HECHOS + CronicaTropeles.PAGE_SIZE;
     /** A cell walked at most this many blocks under the land, not down in the rock, counts as out at the land's level. */
     public static final int LAND_DEPTH = 2;
     /** Cells looked at in one search for a way, at most (a long mine and a walk home fit). */
@@ -100,7 +104,10 @@ public final class Recuerdos {
     }
 
     /** Something that happened: when, what kind ({@code charla, dijo, hallazgo, pelea, viaje, cofre, oficio, camino, atasco}), in its words, where. */
-    public record Hecho(long t, String tipo, String texto, @Nullable BlockPos donde) {
+    public record Hecho(long t, String tipo, String texto, @Nullable BlockPos donde, long orden) {
+        public Hecho(long t, String tipo, String texto, @Nullable BlockPos donde) {
+            this(t, tipo, texto, donde, -1);
+        }
     }
 
     private final LinkedHashMap<Long, Paso> pasos = new LinkedHashMap<>(1024, 0.75F, false) {
@@ -125,6 +132,11 @@ public final class Recuerdos {
     private long ultimoPie = Long.MIN_VALUE;
     private long tocado;
     private long revision = 1;
+    private long siguienteHecho;
+    private long sinGuardar;
+    private long proximoArchivo;
+    @Nullable private UUID identidad;
+    @Nullable private CronicaTropeles cronica;
     @Nullable
     private Registro registro;
 
@@ -787,29 +799,99 @@ public final class Recuerdos {
         if (last != null && last.tipo().equals(tipo) && last.texto().equals(texto) && t - last.t() < 200) {
             return; // the same thing said again a moment later is one memory
         }
-        hechos.addLast(new Hecho(t, tipo, texto.length() > 240 ? texto.substring(0, 240) + "…" : texto, donde == null ? null : donde.toImmutable()));
-        while (hechos.size() > MAX_HECHOS) {
-            hechos.removeFirst();
+        archivar(t, false);
+        if (hechos.size() >= DIARY_BUFFER) {
+            // Finite hardware: expose a recording gap instead of growing RAM until the server crashes.
+            sinGuardar++;
+            if (sinGuardar == 1 || sinGuardar % 100 == 0) MCA.LOGGER.error("[Tropeles] diario de {} sin almacenamiento: {} recuerdos nuevos no guardados; se conservan los anteriores", identidad, sinGuardar);
+            dirty(t);
+            return;
         }
+        long order = siguienteHecho;
+        siguienteHecho = Math.incrementExact(siguienteHecho);
+        hechos.addLast(new Hecho(t, tipo, texto.length() > 240 ? texto.substring(0, 240) + "…" : texto, donde == null ? null : donde.toImmutable(), order));
+        archivar(t, false);
         dirty(t);
+    }
+
+    private void abrirCronica(long now) {
+        if (cronica != null || identidad == null || registro == null || registro.world == null || now < proximoArchivo) return;
+        try {
+            cronica = new CronicaTropeles(registro.world.getServer(), registro.world.getRegistryKey().getValue().toString(), identidad);
+            long next = Math.max(siguienteHecho, cronica.siguiente());
+            if (next != siguienteHecho) { siguienteHecho = next; dirty(now); }
+        } catch (RuntimeException e) {
+            proximoArchivo = now + 200;
+            MCA.LOGGER.error("[Tropeles] diario de {} no disponible: {}; no se borran recuerdos recientes", identidad, e.toString());
+        }
+    }
+
+    private void archivar(long now, boolean force) {
+        if (hechos.size() <= MAX_HECHOS || !force && hechos.size() < MAX_HECHOS + DIARY_BATCH || now < proximoArchivo) return;
+        abrirCronica(now);
+        if (cronica == null) return;
+        List<CronicaTropeles.Entrada> batch = new ArrayList<>();
+        int excess = Math.min(CronicaTropeles.PAGE_SIZE, hechos.size() - MAX_HECHOS);
+        for (Hecho h : hechos) {
+            if (!batch.isEmpty() && h.orden() != batch.get(batch.size() - 1).orden() + 1) break;
+            batch.add(new CronicaTropeles.Entrada(h.orden(), escribirHecho(h)));
+            if (batch.size() == excess) break;
+        }
+        if (cronica.guardar(batch)) {
+            for (int i = 0; i < batch.size(); i++) hechos.removeFirst();
+            dirty(now);
+        } else {
+            proximoArchivo = now + 200;
+        }
+    }
+
+    /** Exposes storage failure; no policy should pretend that a full disk provides unlimited memory. */
+    public long hechosSinGuardar() { return sinGuardar; }
+    public int hechosEnRam() { return hechos.size(); }
+    public long siguienteHecho() { return siguienteHecho; }
+
+    /** A bounded page, oldest first, before an exclusive stable cursor; order is independent of game-time changes. */
+    public List<Hecho> historial(long before, int limit) {
+        if (before <= 0 || limit <= 0) return List.of();
+        int take = Math.min(MAX_HECHOS, limit);
+        TreeMap<Long, Hecho> found = new TreeMap<>();
+        for (Hecho h : hechos) if (h.orden() < before) found.put(h.orden(), h);
+        abrirCronica(registro == null || registro.world == null ? 0 : registro.world.getTime());
+        long oldestSelected = found.size() < take ? -1 : new ArrayList<>(found.descendingKeySet()).get(take - 1);
+        if (found.size() < take || cronica != null && cronica.siguiente() > oldestSelected) {
+            if (cronica != null) {
+                try {
+                    for (CronicaTropeles.Entrada e : cronica.pagina(before, Math.min(take, CronicaTropeles.PAGE_SIZE))) {
+                        found.putIfAbsent(e.orden(), leerHecho(e.dato(), e.orden()));
+                    }
+                } catch (RuntimeException e) {
+                    MCA.LOGGER.error("[Tropeles] lectura del diario de {} fallida: {}", identidad, e.toString());
+                }
+            }
+        }
+        List<Hecho> all = new ArrayList<>(found.values());
+        return List.copyOf(all.subList(Math.max(0, all.size() - take), all.size()));
     }
 
     /** The last {@code n} things that happened, oldest first. */
     public List<Hecho> hechos(int n) {
-        List<Hecho> all = new ArrayList<>(hechos);
-        return all.subList(Math.max(0, all.size() - n), all.size());
+        return historial(Long.MAX_VALUE, n);
     }
 
     /** The last {@code n} of one kind (or kinds, "a|b"), oldest first. */
     public List<Hecho> hechos(String tipos, int n) {
+        if (n <= 0) return List.of();
         Set<String> want = Set.of(tipos.split("\\|"));
         List<Hecho> out = new ArrayList<>();
-        Iterator<Hecho> it = hechos.descendingIterator();
-        while (it.hasNext() && out.size() < n) {
-            Hecho h = it.next();
-            if (want.contains(h.tipo())) {
-                out.add(h);
+        long cursor = Long.MAX_VALUE;
+        // Read recent and cold entries together; an archive committed after an older world snapshot still wins.
+        for (int pages = 0; pages < 4 && out.size() < Math.min(n, MAX_HECHOS) && cursor > 0; pages++) {
+            List<Hecho> page = historial(cursor, CronicaTropeles.PAGE_SIZE);
+            if (page.isEmpty()) break;
+            for (int i = page.size() - 1; i >= 0 && out.size() < Math.min(n, MAX_HECHOS); i--) {
+                if (want.contains(page.get(i).tipo())) out.add(page.get(i));
             }
+            cursor = page.get(0).orden();
         }
         Collections.reverse(out);
         return out;
@@ -968,7 +1050,22 @@ public final class Recuerdos {
         }
     }
 
+    private static NbtCompound escribirHecho(Hecho h) {
+        NbtCompound e = new NbtCompound();
+        e.putLong("t", h.t());
+        e.putString("k", h.tipo());
+        e.putString("s", h.texto());
+        if (h.donde() != null) e.putLong("p", h.donde().asLong());
+        return e;
+    }
+
+    private static Hecho leerHecho(NbtCompound e, long order) {
+        return new Hecho(e.getLong("t"), e.getString("k"), e.getString("s"),
+                e.contains("p") ? BlockPos.fromLong(e.getLong("p")) : null, order);
+    }
+
     NbtCompound toNbt() {
+        archivar(registro == null || registro.world == null ? tocado : registro.world.getTime(), true);
         NbtCompound nbt = new NbtCompound();
         int n = pasos.size();
         long[] cells = new long[n];
@@ -985,16 +1082,13 @@ public final class Recuerdos {
         nbt.putLongArray("m", meta);
         NbtList diary = new NbtList();
         for (Hecho h : hechos) {
-            NbtCompound e = new NbtCompound();
-            e.putLong("t", h.t());
-            e.putString("k", h.tipo());
-            e.putString("s", h.texto());
-            if (h.donde() != null) {
-                e.putLong("p", h.donde().asLong());
-            }
+            NbtCompound e = escribirHecho(h);
+            e.putLong("o", h.orden());
             diary.add(e);
         }
         nbt.put("h", diary);
+        nbt.putLong("diarioSiguiente", siguienteHecho);
+        nbt.putLong("diarioSinGuardar", sinGuardar);
         NbtCompound places = new NbtCompound();
         sitios.forEach((name, pos) -> places.putLong(name, pos.asLong()));
         nbt.put("s", places);
@@ -1030,8 +1124,13 @@ public final class Recuerdos {
         NbtList diary = nbt.getList("h", NbtElement.COMPOUND_TYPE);
         for (int i = 0; i < diary.size(); i++) {
             NbtCompound e = diary.getCompound(i);
-            r.hechos.addLast(new Hecho(e.getLong("t"), e.getString("k"), e.getString("s"), e.contains("p") ? BlockPos.fromLong(e.getLong("p")) : null));
+            long order = e.contains("o") ? e.getLong("o") : r.siguienteHecho;
+            if (order < 0) throw new IllegalArgumentException("Identidad de diario negativa");
+            r.hechos.addLast(leerHecho(e, order));
+            r.siguienteHecho = Math.max(r.siguienteHecho, Math.incrementExact(order));
         }
+        r.siguienteHecho = Math.max(r.siguienteHecho, nbt.getLong("diarioSiguiente"));
+        r.sinGuardar = Math.max(0, nbt.getLong("diarioSinGuardar"));
         NbtCompound places = nbt.getCompound("s");
         for (String name : places.getKeys()) {
             r.sitios.put(name, BlockPos.fromLong(places.getLong(name)));
@@ -1087,6 +1186,8 @@ public final class Recuerdos {
                     r = new Recuerdos();
                 }
                 r.registro = this;
+                r.identidad = id;
+                r.abrirCronica(world == null ? 0 : world.getTime());
                 r.tocado = Math.max(r.tocado, world == null ? 0 : world.getTime());
                 vivos.put(id, r);
                 trim(id);

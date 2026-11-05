@@ -5,7 +5,7 @@ Benja autorizó analizar, investigar y mejorar minería, memoria y control de lo
 ## Reserva de Sol antes del código
 
 - `mente/Recuerdos.java`, nuevo archivo de crónica paginada y cambios acotados en `server/world/data/ArchivoTropeles.java`: conservar el diario que hoy se elimina al superar 300 entradas, con RAM acotada, identidad/orden estable, recuperación de transacciones y consulta paginada. El almacenamiento físico sigue siendo finito; no se promete memoria matemática infinita ni recuperar recuerdos ya borrados.
-- `body/Mina.java`, `body/Motor.java`, `brain/tasks/chore/ProspectingTask.java`: unificar los pies sobre losas/escaleras y continuar las búsquedas hacia el frente de trabajo, sin confundir cuota agotada con ruta imposible.
+- `body/Mina.java`, `body/Mining.java`, `body/Motor.java`, `brain/tasks/chore/ProspectingTask.java`: unificar los pies sobre losas/escaleras y continuar las búsquedas hacia el frente de trabajo, sin confundir cuota agotada con ruta imposible.
 - `nucleo/Mente.java`: separar incidentes de dimensiones distintas y evitar identificadores abreviados que puedan colisionar entre aldeanos. `LongTermMemory.java`: corregir el recuerdo «para siempre» de MCA y la suma de vencimientos.
 - Cambio puntual en `obra/Constructor.java`: nombrar la especie al pedir material, como señaló Claude en #9. No cambiar geometrías ni su interfaz C03b.
 - Pruebas físicas, archivo/reinicio y registro central `Pruebas.java`/`scripts/ci/*`; permitir CI Forge para PRs hacia `sol/**` y evitar ramas temporales de pruebas.

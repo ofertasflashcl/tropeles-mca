@@ -6,7 +6,7 @@ on:
   push:
     branches: [ '1.20.1', 'tropeles/**' ]
   pull_request:
-    branches: [ 'tropeles/**' ]
+    branches: [ 'tropeles/**', 'sol/**' ]
   workflow_dispatch:
 
 jobs:

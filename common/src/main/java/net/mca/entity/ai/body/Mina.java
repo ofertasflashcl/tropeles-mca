@@ -127,7 +127,7 @@ public final class Mina {
      * (a solid open-sky cell other than the door it already had).
      */
     public boolean outside(World world, LivingEntity miner) {
-        BlockPos feet = miner.getBlockPos();
+        BlockPos feet = Mining.pies(miner);
         if (!solid(world, miner, feet)) {
             return false;
         }
@@ -148,7 +148,7 @@ public final class Mina {
      * already passed cuts the loop it walked since. True when the trail grew by a new cell.
      */
     public boolean walked(World world, LivingEntity miner) {
-        BlockPos feet = miner.getBlockPos();
+        BlockPos feet = Mining.pies(miner);
         if (!solid(world, miner, feet)) {
             return false;
         }
