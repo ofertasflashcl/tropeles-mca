@@ -11,6 +11,7 @@ import net.mca.entity.ai.body.Agua;
 import net.mca.entity.ai.body.Archery;
 import net.mca.entity.ai.body.Cofres;
 import net.mca.entity.ai.body.CombatMind;
+import net.mca.entity.ai.body.Cueva;
 import net.mca.entity.ai.body.Explorar;
 import net.mca.entity.ai.body.Hands;
 import net.mca.entity.ai.body.Mina;
@@ -30,9 +31,11 @@ import net.mca.entity.ai.sense.Retina;
 import net.mca.entity.ai.sense.VisualMemory;
 import net.mca.server.world.data.VillageManager;
 import net.mca.util.InventoryUtils;
+import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
 import net.minecraft.block.ChestBlock;
+import net.minecraft.block.CropBlock;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.ai.FuzzyTargeting;
 import net.minecraft.entity.ai.brain.MemoryModuleState;
@@ -54,6 +57,7 @@ import net.minecraft.item.Items;
 import net.minecraft.registry.Registries;
 import net.minecraft.registry.RegistryKeys;
 import net.minecraft.registry.tag.BlockTags;
+import net.minecraft.registry.tag.ItemTags;
 import net.minecraft.registry.tag.TagKey;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
@@ -64,6 +68,7 @@ import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.Heightmap;
+import net.minecraft.world.GameRules;
 import net.minecraft.world.World;
 import net.minecraft.world.biome.Biome;
 import org.jetbrains.annotations.Nullable;
@@ -361,6 +366,7 @@ public class ProspectingTask extends AbstractChoreTask {
     @Nullable
     private BlockPos crop;
     private int cropTicks;
+    private final Map<Long, Long> inaccessibleCrops = new HashMap<>();
     /** What it looked for (and why each failed) before it cut a staircase of its own this trip: said in the log when it digs. */
     private final List<String> intentos = new ArrayList<>();
 
@@ -399,8 +405,14 @@ public class ProspectingTask extends AbstractChoreTask {
     @Nullable
     private BlockPos lootAt;
     private int lootTicks;
+    @Nullable
+    private BlockPos ovenStone;
     /** Looking around for food, or for a spot to start a mine: where it looked already and which way it went. */
     private final Explorar explorar = new Explorar();
+    private final Cueva cueva = new Cueva();
+    @Nullable
+    private BlockPos ultimaMiraCueva;
+    private long mirarCuevaDesde;
     /** The forage it is on is for provisions before going down, not because it is hungry. */
     private boolean provisioning;
     private long lastHuntSay = -1200;
@@ -886,6 +898,9 @@ public class ProspectingTask extends AbstractChoreTask {
         boolean midStep = motor.midStep(villager);
         if (!midStep) {
             orders(world, villager);
+            if (phase != Phase.SEEK && cueva.activa()) {
+                cueva.cerrar(now);
+            }
         }
         recordTrail(world, villager);
         if (now >= nextSave) {
@@ -906,7 +921,7 @@ public class ProspectingTask extends AbstractChoreTask {
             return;
         }
         if (phase == Phase.SEEK && !midStep) {
-            if (gearUp(world, villager)) {
+            if (!cueva.caminando() && gearUp(world, villager)) {
                 return;
             }
             if (!equipPick(villager)) {
@@ -946,6 +961,7 @@ public class ProspectingTask extends AbstractChoreTask {
      * called off. Everything else (the phase, the ore, the trail, the trip home) stays as it is for later.
      */
     public void soltar(ServerWorld world, VillagerEntityMCA villager) {
+        cueva.cerrar(world.getTime());
         Voluntad.of(villager).atasco().reset();
         motor.reset(world, villager);
         plan.clear();
@@ -1854,7 +1870,9 @@ public class ProspectingTask extends AbstractChoreTask {
             return;
         }
         if (mina.walked(world, villager)) {
-            levelCells++;
+            if (!cueva.activa()) {
+                levelCells++;
+            }
             markTrail(world, villager);
         }
     }
@@ -4238,6 +4256,7 @@ public class ProspectingTask extends AbstractChoreTask {
         preyTicks = 0;
         lootTicks = 0;
         lootAt = null;
+        ovenStone = null;
         explorar.reset();
         provisioning = false;
         foraged = true;
@@ -4253,16 +4272,10 @@ public class ProspectingTask extends AbstractChoreTask {
         VisualMemory memory = Retina.memory(villager);
         long now = world.getTime();
         SimpleInventory inv = villager.getInventory();
-        if (gearUp(world, villager)) {
-            return; // the meat in the furnace, a table, a furnace of its own
-        }
         int carried = foodPoints(inv);
         if (carried >= 12 || food >= FOOD_MAX - 2 && carried >= 6 || ++forageTicks > FORAGE_TICKS) {
             finishForage(world, villager);
             return;
-        }
-        if (rawCount(inv) >= 2) {
-            progreso.wantCook();
         }
         if (lootTicks > 0) {
             lootTicks--;
@@ -4299,7 +4312,22 @@ public class ProspectingTask extends AbstractChoreTask {
             CombatMind.fight(world, villager, null, prey);
             return;
         }
-        if (world.isNight()) {
+        if (gearUp(world, villager, true)) {
+            return;
+        }
+        if (progreso.cooking()) {
+            memory.doing("esperando la comida del horno", now);
+            Motor.standStill(villager);
+            return;
+        }
+        if (piedraParaHorno(world, villager, memory, now)) {
+            return;
+        }
+        if (pickCrops(world, villager, memory, now)) {
+            noFoodTicks = 0;
+            return;
+        }
+        if (night(world)) {
             // nothing hunts well in the dark: home, or back to the mine with what it has
             finishForage(world, villager);
             return;
@@ -4322,10 +4350,6 @@ public class ProspectingTask extends AbstractChoreTask {
                 return;
             }
         }
-        if (pickCrops(world, villager, memory, now)) {
-            noFoodTicks = 0;
-            return;
-        }
         if (pickBerries(world, villager, memory, now)) {
             noFoodTicks = 0;
             return;
@@ -4335,6 +4359,49 @@ public class ProspectingTask extends AbstractChoreTask {
             return;
         }
         lookAround(world, villager, memory, now);
+    }
+
+    /** Up to eight tool stones for the recipe, using exposed, reachable natural rock. */
+    private boolean piedraParaHorno(ServerWorld world, VillagerEntityMCA villager, VisualMemory memory, long now) {
+        if (!progreso.faltaPiedraParaComer(world, villager) || !Progreso.holdBestPick(villager)) {
+            ovenStone = null;
+            return false;
+        }
+        if (ovenStone == null && villager.age % 10 == 0) {
+            double nearest = Double.MAX_VALUE;
+            for (VisualMemory.SeenBlock seen : memory.blocks(s -> piedraDeHorno(s.state))) {
+                double distance = villager.getEyePos().squaredDistanceTo(Vec3d.ofCenter(seen.pos));
+                if (distance < nearest && !seen.pos.equals(Mining.pies(villager).down()) && !isIgnored(seen.pos, now)
+                        && piedraDeHorno(world.getBlockState(seen.pos)) && Obras.mayBreak(world, villager, seen.pos)
+                        && Retina.visibleFace(world, villager, seen.pos, Retina.BLOCK_REACH) != null) {
+                    ovenStone = seen.pos;
+                    nearest = distance;
+                }
+            }
+        }
+        if (ovenStone == null) {
+            return false;
+        }
+        if (!piedraDeHorno(world.getBlockState(ovenStone))) {
+            ovenStone = null;
+            return false;
+        }
+        Motor.standStill(villager);
+        memory.doing("sacando piedra para el horno de la comida", now);
+        int r = motor.breaker().tick(world, villager, ovenStone);
+        if (r == Hands.Breaker.DONE) {
+            Hands.collect(world, villager, ovenStone, 2.0, s -> s.isIn(ItemTags.STONE_TOOL_MATERIALS));
+        } else if (r == Hands.Breaker.FAILED) {
+            ignore(ovenStone, now);
+        }
+        if (r != Hands.Breaker.RUNNING) {
+            ovenStone = null;
+        }
+        return true;
+    }
+
+    private static boolean piedraDeHorno(BlockState state) {
+        return state.isOf(Blocks.STONE) || state.isOf(Blocks.DEEPSLATE) || state.isOf(Blocks.BLACKSTONE);
     }
 
     /**
@@ -4383,7 +4450,12 @@ public class ProspectingTask extends AbstractChoreTask {
      * ({@link Progreso}), potatoes go in the furnace. True while busy with them.
      */
     private boolean pickCrops(ServerWorld world, VillagerEntityMCA villager, VisualMemory memory, long now) {
+        if (!world.getGameRules().getBoolean(GameRules.DO_MOB_GRIEFING)) {
+            crop = null;
+            return false;
+        }
         if (crop == null && (villager.age % 40) == 9) {
+            inaccessibleCrops.values().removeIf(until -> until <= now);
             crop = seenCrop(world, villager, memory);
             cropTicks = 0;
         }
@@ -4391,37 +4463,47 @@ public class ProspectingTask extends AbstractChoreTask {
             return false;
         }
         BlockState state = world.getBlockState(crop);
-        if (!(state.getBlock() instanceof net.minecraft.block.CropBlock plant) || !plant.isMature(state) || ++cropTicks > 400) {
+        if (!(state.getBlock() instanceof CropBlock plant) || !plant.isMature(state) || Obras.playersField(world, crop)) {
             crop = null;
             return false;
         }
+        if (++cropTicks > 160) {
+            return dejarCultivo(villager, now);
+        }
         double reach = villager.getEyePos().distanceTo(Vec3d.ofCenter(crop));
         if (reach > 3.5 || Retina.visibleFace(world, villager, crop, Retina.BLOCK_REACH) == null) {
-            if ((cropTicks % 20) == 1 || villager.getNavigation().isIdle()) {
-                villager.getNavigation().startMovingTo(crop.getX() + 0.5, crop.getY(), crop.getZ() + 0.5, 0.6);
+            if ((cropTicks % 20) == 1 && !irACultivo(world, villager)) {
+                return dejarCultivo(villager, now);
             }
             memory.doing("yendo a cosechar " + state.getBlock().getName().getString(), now);
             return true;
         }
         villager.getNavigation().stop();
         villager.getLookControl().lookAt(Vec3d.ofCenter(crop));
-        villager.swingHand(Hand.MAIN_HAND);
-        ItemStack seed = state.getBlock().getPickStack(world, crop, state);
-        world.breakBlock(crop, true, villager);
-        Hands.collect(world, villager, crop, 2.0);
-        // sown again, the way a farmer leaves a field: the same plant in the same soil
-        SimpleInventory inv = villager.getInventory();
-        if (!seed.isEmpty() && world.getBlockState(crop).isAir() && world.getBlockState(crop.down()).isOf(Blocks.FARMLAND)) {
-            for (int i = 0; i < inv.size(); i++) {
-                ItemStack stack = inv.getStack(i);
-                if (stack.isOf(seed.getItem())) {
-                    stack.decrement(1);
-                    inv.markDirty();
-                    world.setBlockState(crop, plant.getDefaultState(), net.minecraft.block.Block.NOTIFY_ALL);
-                    break;
-                }
+        ItemStack semilla = plant.getPickStack(world, crop, state);
+        List<ItemStack> botin = Block.getDroppedStacks(state, world, crop, world.getBlockEntity(crop), villager, ItemStack.EMPTY);
+        ItemStack reservada = ItemStack.EMPTY;
+        for (ItemStack s : botin) {
+            if (s.isOf(semilla.getItem())) {
+                reservada = s;
+                break;
             }
         }
+        SimpleInventory inv = villager.getInventory();
+        if (reservada.isEmpty() && !semilla.isEmpty()) {
+            int slot = Hands.findSlot(inv, s -> s.isOf(semilla.getItem()) && !net.mca.entity.ai.crafting.Reserva.personal(s));
+            reservada = slot < 0 ? ItemStack.EMPTY : inv.getStack(slot);
+        }
+        // Commit a harvest only when there is a real seed for the next crop.
+        if (reservada.isEmpty() || !world.getBlockState(crop.down()).isOf(Blocks.FARMLAND)
+                || !world.setBlockState(crop, plant.getDefaultState(), Block.NOTIFY_ALL)) {
+            return dejarCultivo(villager, now);
+        }
+        reservada.decrement(1);
+        inv.markDirty();
+        botin.forEach(s -> Block.dropStack(world, crop, s));
+        Hands.collect(world, villager, crop, 2.0);
+        villager.swingHand(Hand.MAIN_HAND);
         cosechas++;
         MCA.LOGGER.info("[Tropeles] {} cosecha {} en {} y vuelve a sembrar (comida {})", name(), state.getBlock().getName().getString(), crop.toShortString(), food);
         memory.doing("cosechando", now);
@@ -4430,9 +4512,29 @@ public class ProspectingTask extends AbstractChoreTask {
         return true;
     }
 
+    private boolean irACultivo(ServerWorld world, VillagerEntityMCA villager) {
+        Set<BlockPos> puestos = new HashSet<>();
+        for (BlockPos at : BlockPos.iterate(crop.add(-2, -1, -2), crop.add(2, 1, 2))) {
+            if (world.isChunkLoaded(at) && !at.equals(crop) && Motor.standCell(world, at)
+                    && !world.getBlockState(at.down()).isOf(Blocks.FARMLAND)) {
+                puestos.add(at.toImmutable());
+            }
+        }
+        var nav = villager.getNavigation();
+        var path = puestos.isEmpty() ? null : nav.findPathTo(puestos, 0);
+        return path != null && path.reachesTarget() && nav.startMovingAlong(path, 0.6);
+    }
+
+    private boolean dejarCultivo(VillagerEntityMCA villager, long now) {
+        inaccessibleCrops.put(crop.asLong(), now + 600);
+        crop = null;
+        villager.getNavigation().stop();
+        return false;
+    }
+
     /** The nearest ripe crop its eye saw within 20 blocks (still ripe there now), or null. */
     @Nullable
-    private static BlockPos seenCrop(ServerWorld world, VillagerEntityMCA villager, VisualMemory memory) {
+    private BlockPos seenCrop(ServerWorld world, VillagerEntityMCA villager, VisualMemory memory) {
         BlockPos feet = Mining.pies(villager);
         BlockPos best = null;
         double bestD = Double.MAX_VALUE;
@@ -4442,7 +4544,9 @@ public class ProspectingTask extends AbstractChoreTask {
                 continue;
             }
             double d = pos.getSquaredDistance(feet);
-            if (d < bestD && world.getBlockState(pos).getBlock() instanceof net.minecraft.block.CropBlock real && real.isMature(world.getBlockState(pos))) {
+            if (d < bestD && inaccessibleCrops.getOrDefault(pos.asLong(), 0L) <= world.getTime() && world.isChunkLoaded(pos)
+                    && !Obras.playersField(world, pos) && world.getBlockState(pos).getBlock() instanceof CropBlock real
+                    && real.isMature(world.getBlockState(pos))) {
                 bestD = d;
                 best = pos.toImmutable();
             }
@@ -4637,7 +4741,7 @@ public class ProspectingTask extends AbstractChoreTask {
         boolean digging = breaking > 0 && breaking != lastBreak;
         lastBreak = breaking;
         breakingNow = digging;
-        boolean byChoice = phase == Phase.REST || troubled() || progreso.cooking() || villager.isSleeping() || digging
+        boolean byChoice = phase == Phase.REST || troubled() || progreso.cooking() || villager.isSleeping() || digging || cueva.activa()
                 || (phase == Phase.HOME_UP || phase == Phase.RETURN) && (viaPendiente || now < viaRetryAt);
         Atasco.Remedio remedy = atasco.tick(world, villager, byChoice, memory.doing() + " (" + phase + ")");
         if (remedy == Atasco.Remedio.NINGUNO) {
@@ -4827,7 +4931,7 @@ public class ProspectingTask extends AbstractChoreTask {
             return false;
         }
         if (phase == Phase.SEEK) {
-            return seekWatchdog(world, villager);
+            return !cueva.activa() && seekWatchdog(world, villager);
         }
         if (phase != Phase.HOME_UP && phase != Phase.HOME_WALK && phase != Phase.RETURN) {
             return false;
@@ -5049,10 +5153,14 @@ public class ProspectingTask extends AbstractChoreTask {
 
     /** Making or upgrading its own tools comes before digging; true while that keeps it busy. */
     private boolean gearUp(ServerWorld world, VillagerEntityMCA villager) {
+        return gearUp(world, villager, false);
+    }
+
+    private boolean gearUp(ServerWorld world, VillagerEntityMCA villager, boolean comidaPrimero) {
         // its table and furnace off its own staircase when there is any other spot: a furnace left burning on the step
         // behind shuts the way up (and a table set there and picked up again looked like a dig-and-fill loop)
         progreso.keepClear(trailCells);
-        boolean busy = progreso.tick(world, villager, this::say);
+        boolean busy = progreso.tick(world, villager, this::say, comidaPrimero);
         if (busy && !wasGearing && !motor.midStep(villager)) {
             // two step machines must never drive one body: the task's stands down while Progreso works
             motor.reset(world, villager);
@@ -5067,14 +5175,18 @@ public class ProspectingTask extends AbstractChoreTask {
     private void seek(ServerWorld world, VillagerEntityMCA villager) {
         VisualMemory memory = Retina.memory(villager);
         long now = world.getTime();
-        if (ore == null && plan.isEmpty() && !motor.busy() && !Entorno.bajoTierra(world, villager) && oldMine(world, Mining.pies(villager))) {
+        if (cueva.caminando()) {
+            cueva.tick(world, villager, motor);
+            return;
+        }
+        if (!cueva.activa() && ore == null && plan.isEmpty() && !motor.busy() && !Entorno.bajoTierra(world, villager) && oldMine(world, Mining.pies(villager))) {
             // up on the land, its own mine still there: back to it and on from its work face, never a new one beside it
             MCA.LOGGER.info("[Tropeles] {} está en la superficie con su mina en {}: vuelve a ella ({} pasos)", name(),
                     mina.entrance() == null ? "?" : mina.entrance().toShortString(), mina.size());
             beginReturn(world, villager);
             return;
         }
-        if (ore == null && plan.isEmpty() && !motor.busy() && shortOfFace(world, Mining.pies(villager), now)) {
+        if (!cueva.activa() && ore == null && plan.isEmpty() && !motor.busy() && shortOfFace(world, Mining.pies(villager), now)) {
             // standing on its own staircase or tunnel short of its work face (a trip back that stopped half way, a fight,
             // its tools): down to the face and on from its end, never a new staircase from the middle of the old one
             MCA.LOGGER.info("[Tropeles] {} está en su propia mina en {}, a {} pasos de su frente {}: baja a él en vez de cavar otra escalera", name(),
@@ -5088,7 +5200,11 @@ public class ProspectingTask extends AbstractChoreTask {
         if (ore != null && !stillOre(memory, ore)) {
             ore = null;
         }
-        if (ore == null && ++chooseTicks >= 10) {
+        if (ore == null && !cueva.activa() && mirarCueva(world, villager, now)) {
+            cueva.tick(world, villager, motor);
+            return;
+        }
+        if (ore == null && (!cueva.activa() || cueva.buscandoMinerales()) && ++chooseTicks >= 10) {
             // a look over the ores it remembers twice a second, not every tick
             chooseTicks = 0;
             ore = chooseOre(world, villager, memory);
@@ -5138,6 +5254,11 @@ public class ProspectingTask extends AbstractChoreTask {
                 return;
             }
             BlockState state = memory.stateAt(ore);
+            if (cueva.activa()) {
+                // It can come closer on an open step. Keep the pocket and the return path intact.
+                ore = null;
+                return;
+            }
             String name = state == null ? "?" : state.getBlock().getName().getString();
             memory.doing(String.format("yendo hacia %s en %d %d %d", name, ore.getX(), ore.getY(), ore.getZ()), now);
             Motor.Result result = motor.step(world, villager, ore, true, true);
@@ -5153,6 +5274,9 @@ public class ProspectingTask extends AbstractChoreTask {
             return;
         }
 
+        if (cueva.tick(world, villager, motor)) {
+            return;
+        }
         // nothing seen: open rock in front of the eyes, from ground that is its to dig
         if (plan.isEmpty() && !motor.busy() && needsSite(world, villager, memory, now)) {
             return;
@@ -5161,7 +5285,14 @@ public class ProspectingTask extends AbstractChoreTask {
             if (levelCells >= BARREN_CELLS) {
                 barrenLevel(world, villager);
             }
-            planExploration(world, villager);
+            for (int intento = 0; intento < 4 && plan.isEmpty(); intento++) {
+                planExploration(world, villager);
+                BlockPos siguiente = plan.peekFirst();
+                if (siguiente != null && isIgnored(siguiente, now)) {
+                    plan.clear();
+                    tunnelDir = (tunnelDir + 1) & 3;
+                }
+            }
         }
         BlockPos goal = plan.peekFirst();
         if (goal == null) {
@@ -5177,10 +5308,32 @@ public class ProspectingTask extends AbstractChoreTask {
         if (result == Motor.Result.ARRIVED) {
             plan.pollFirst();
         } else if (result == Motor.Result.BLOCKED) {
+            ignore(goal, now);
             plan.clear();
             motor.reset(world, villager);
-            tunnelDir = (tunnelDir + (villager.getRandom().nextBoolean() ? 1 : 3)) & 3;
+            tunnelDir = (tunnelDir + 1) & 3;
         }
+    }
+
+    private boolean mirarCueva(ServerWorld world, VillagerEntityMCA villager, long now) {
+        BlockPos pies = Mining.pies(villager);
+        if (!villager.isOnGround() || motor.midStep(villager) || breakingNow
+                || pies.equals(ultimaMiraCueva) && now < mirarCuevaDesde) {
+            return false;
+        }
+        ultimaMiraCueva = pies.toImmutable();
+        mirarCuevaDesde = now + 20;
+        if (!Entorno.bajoTierra(world, villager) && Entorno.profundidad(world, villager) < 4) {
+            return false;
+        }
+        BlockPos atras = mina.size() > 1 ? mina.crumb(mina.size() - 2) : null;
+        if (!cueva.abrir(world, villager, pies, atras)) {
+            return false;
+        }
+        motor.reset(world, villager);
+        plan.clear();
+        resetWatch();
+        return true;
     }
 
     /**
@@ -5565,6 +5718,10 @@ public class ProspectingTask extends AbstractChoreTask {
             }
             double distance = Math.sqrt(seen.pos.getSquaredDistance(feet));
             if (distance > ORE_SEARCH_RADIUS) {
+                continue;
+            }
+            if (cueva.activa() && (distance > 5 || seen.pos.equals(feet.down())
+                    || Retina.visibleFace(world, villager, seen.pos, Retina.BLOCK_REACH) == null)) {
                 continue;
             }
             // up or down costs more than along: stairs and pillars are slow

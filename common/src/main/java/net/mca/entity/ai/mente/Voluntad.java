@@ -134,6 +134,11 @@ public final class Voluntad {
     private long desde;
     /** The last time its player said anything to it. */
     private long oido;
+    private static final int INTERVALO_PREGUNTA = 200;
+    private static final String[] PREGUNTAS_SEGUIR_ES = {"¿Qué quieres hacer?", "¿Sigues ahí?", "¿Vamos a algún sitio?", "¿Necesitas ayuda con algo?"};
+    private static final String[] PREGUNTAS_SEGUIR_EN = {"What would you like to do?", "Still there?", "Are we going somewhere?", "Do you need a hand?"};
+    private int preguntasSeguir;
+    private long proximaPregunta;
     private long ultimoTick = Long.MIN_VALUE / 2;
     /** Since when the player it is with has been nowhere to be found, or -1. */
     private long sinJugador = -1;
@@ -399,6 +404,8 @@ public final class Voluntad {
         w.esConocido = true;
         if (w.quien == null || w.quien.equals(player.getUuid())) {
             w.oido = villager.getWorld().getTime();
+            w.preguntasSeguir = 0;
+            w.follow.escucho();
         }
     }
 
@@ -709,7 +716,13 @@ public final class Voluntad {
             return;
         }
         sinJugador = -1;
-        follow.guard(world, villager, player);
+        if (follow.guard(world, villager, player, entrega == null, preguntasSeguir > 0)) {
+            preguntarAlJugador(world, villager, player);
+            return;
+        }
+        if (villager.squaredDistanceTo(player) >= 25) {
+            preguntasSeguir = 0;
+        }
         if ((villager.age % 20) == 0) {
             Companero.juntos(world, villager, player);
         }
@@ -717,6 +730,23 @@ public final class Voluntad {
                 && villager.squaredDistanceTo(player) < 3.2 * 3.2 && Retina.canSee(world, villager, player)) {
             alLado(world, villager, player);
         }
+    }
+
+    private void preguntarAlJugador(ServerWorld world, VillagerEntityMCA villager, PlayerEntity player) {
+        long now = world.getTime();
+        if (preguntasSeguir > 0 && now < proximaPregunta) {
+            return;
+        }
+        if (preguntasSeguir == 8) {
+            hablar(world, villager, player, "Voy a empezar por mi cuenta. Si quieres que vaya contigo, avísame.",
+                    "I'll get started on my own. Let me know if you want me to come with you.");
+            libre(villager, null, spanish());
+            return;
+        }
+        int i = preguntasSeguir % PREGUNTAS_SEGUIR_ES.length;
+        hablar(world, villager, player, PREGUNTAS_SEGUIR_ES[i], PREGUNTAS_SEGUIR_EN[i]);
+        preguntasSeguir++;
+        proximaPregunta = now + INTERVALO_PREGUNTA;
     }
 
     /** At the side of the one it got things for: it hands them over (asked to bring them) or offers them. */
@@ -1039,12 +1069,18 @@ public final class Voluntad {
         }
         Retina.look(world, villager);
         Constructor c = Constructor.de(villager);
+        if ((villager.age % 40) == 0 && task.food() <= 12 && ProspectingTask.comidaEnMochila(villager) < 5) {
+            task.hacerPan(world);
+        }
         boolean hambre = task.food() <= 4 && ProspectingTask.comidaEnMochila(villager) == 0;
         boolean sueno = !hambre && (villager.age % 100) == 0 && task.quiereDormir(world, villager);
         if (hambre || sueno) {
             if (c.enAndamio(world, villager)) {
                 c.bajarYa(); // off the scaffold first, then the meal or the bed
             } else {
+                if (hambre) {
+                    task.buscarComida();
+                }
                 pausaInterna = true;
                 try {
                     change(villager, Modo.LIBRE, null, null, hambre ? "tengo hambre: dejo la casa un rato para comer" : "se hizo de noche: dejo la casa hasta mañana");
@@ -2095,6 +2131,7 @@ public final class Voluntad {
         }
         if (from == Modo.SIGUIENDO && to != Modo.SIGUIENDO && villager.getWorld() instanceof ServerWorld world) {
             follow.release(world, villager);
+            preguntasSeguir = 0;
         }
         if (from == Modo.ESPERANDO || to == Modo.ALERTA) {
             mirada.stop();

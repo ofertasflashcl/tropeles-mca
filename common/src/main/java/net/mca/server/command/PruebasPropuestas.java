@@ -289,10 +289,10 @@ final class PruebasPropuestas {
     private static void balcon(Arena a) {
         CatalogoPlanos.Borrador base = CatalogoPlanos.Borrador.de(ModelosCasa.Modelo.DOS_PISOS, Plano.Madera.ABETO);
         for (CambioCasa.Lado lado : CambioCasa.Lado.values()) {
-            CatalogoPlanos.Borrador b = CatalogoPlanos.balcon(base, lado);
-            exige(b != null, "No generó el balcón " + lado);
+            CatalogoPlanos.Resultado cambio = CatalogoPlanos.balcon(base, lado);
+            exige(cambio.ok(), "No generó el balcón " + lado + ": " + cambio.porQue());
             for (Direction frente : Direction.Type.HORIZONTAL) {
-                var rev = ModelosCasa.revisar(b.plano(), frente);
+                var rev = ModelosCasa.revisar(cambio.plano(), frente);
                 exige(rev.ok(), "Balcón " + lado + " hacia " + frente + ": " + rev.resumen());
             }
         }

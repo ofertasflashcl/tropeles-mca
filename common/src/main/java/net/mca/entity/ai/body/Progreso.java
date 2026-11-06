@@ -312,6 +312,7 @@ public final class Progreso {
     private boolean warnedNoWood;
     /** Something is in its furnace and it is off doing other things meanwhile. */
     private boolean cooking;
+    private boolean comidaPrimero;
     /** When collecting, take everything and the furnace too: it is leaving. */
     private boolean packFurnace;
     private int collectTicks;
@@ -749,7 +750,7 @@ public final class Progreso {
         for (net.minecraft.entity.EquipmentSlot slot : new net.minecraft.entity.EquipmentSlot[]{net.minecraft.entity.EquipmentSlot.HEAD,
                 net.minecraft.entity.EquipmentSlot.CHEST, net.minecraft.entity.EquipmentSlot.LEGS, net.minecraft.entity.EquipmentSlot.FEET}) {
             ItemStack best = ItemStack.EMPTY;
-            int prot = -1;
+            int prot = villager.getEquippedStack(slot).getItem() instanceof net.minecraft.item.ArmorItem worn ? worn.getProtection() : -1;
             for (int i = 0; i < inv.size(); i++) {
                 ItemStack stack = inv.getStack(i);
                 if (stack.getItem() instanceof net.minecraft.item.ArmorItem armor && armor.getSlotType() == slot && armor.getProtection() > prot) {
@@ -757,7 +758,7 @@ public final class Progreso {
                     best = stack;
                 }
             }
-            if (!best.isEmpty() && villager.getEquippedStack(slot) != best) {
+            if (!best.isEmpty()) {
                 villager.equipStack(slot, best);
                 net.mca.MCA.LOGGER.info("[Tropeles] {} se pone {}", villager.getName().getString(), best.getName().getString());
             }
@@ -992,6 +993,16 @@ public final class Progreso {
         if (troncos > 0) {
             return LENA;
         }
+        if (comidaPrimero) {
+            if (inv.count(Items.BREAD) < 8 && (count(inv, Mat.WHEAT) >= 3 || inv.count(Items.HAY_BLOCK) > 0)
+                    && (shortLogs(inv, BREAD, !tableInReach(world, villager)) == 0
+                    || woodHere(world, villager) && nearestLog(world, villager, Retina.memory(villager), world.getTime()) != null)) {
+                return BREAD;
+            }
+            if (puedeCocinar(world, inv, true)) {
+                return COOK;
+            }
+        }
         if (wantChest && count(inv, Items.CHEST) > 0) {
             wantChest = false;
         }
@@ -1114,13 +1125,27 @@ public final class Progreso {
                 && (count(inv, Mat.FURNACE) > 0 || count(inv, Mat.STONE) >= 8)) {
             return FURNACE; // stands for "smelt": a furnace is needed first
         }
-        int raw = count(inv, Mat.RAW);
-        if (!cooking && raw > 0 && (raw >= 2 || wantCook) && fuelFor(inv, raw, keep) != null
-                && (count(inv, Mat.FURNACE) > 0 || count(inv, Mat.STONE) >= 8)) {
+        if (puedeCocinar(world, inv, wantCook)) {
             return COOK; // raw meat on it: into the furnace, like a player who hunted
         }
         wantCook = false;
         return null;
+    }
+
+    private boolean tieneHorno(ServerWorld world, SimpleInventory inv) {
+        return count(inv, Mat.FURNACE) > 0 || furnace != null && world.getBlockState(furnace).isOf(Blocks.FURNACE);
+    }
+
+    private boolean puedeCocinar(ServerWorld world, SimpleInventory inv, boolean unaPieza) {
+        int raw = count(inv, Mat.RAW);
+        return !cooking && raw >= (unaPieza ? 1 : 2) && fuelFor(inv, raw, woodToKeep(inv)) != null
+                && (tieneHorno(world, inv) || count(inv, Mat.STONE) >= 8);
+    }
+
+    public boolean faltaPiedraParaComer(ServerWorld world, VillagerEntityMCA villager) {
+        SimpleInventory inv = villager.getInventory();
+        return count(inv, Mat.RAW) > 0 && !cooking && !tieneHorno(world, inv)
+                && count(inv, Mat.STONE) < 8 && fuelFor(inv, 1, woodToKeep(inv)) != null;
     }
 
     // ------------------------------------------------------------------ the loop
@@ -1130,6 +1155,14 @@ public final class Progreso {
      * the caller leaves mining for later.
      */
     public boolean tick(ServerWorld world, VillagerEntityMCA villager, BiConsumer<String, Object[]> say) {
+        return tick(world, villager, say, false);
+    }
+
+    public boolean tick(ServerWorld world, VillagerEntityMCA villager, BiConsumer<String, Object[]> say, boolean comidaPrimero) {
+        if (comidaPrimero && !this.comidaPrimero) {
+            nextCheck = 0;
+        }
+        this.comidaPrimero = comidaPrimero;
         VisualMemory memory = Retina.memory(villager);
         long now = world.getTime();
         if (step == Step.IDLE && cooking) {
@@ -1169,8 +1202,8 @@ public final class Progreso {
                     wantKit = false;
                     return false;
                 }
-            } else if (goal == FURNACE && count(inv, Items.RAW_IRON) > 0 && canSmelt || goal == COOK && count(inv, Mat.RAW) > 0 && canSmelt) {
-                step = count(inv, Mat.FURNACE) > 0 ? Step.SMELT : Step.TABLE;
+            } else if (goal == FURNACE && count(inv, Items.RAW_IRON) > 0 && canSmelt || goal == COOK) {
+                step = tieneHorno(world, inv) ? Step.SMELT : Step.TABLE;
             } else if (shortLogs(inv, goal, goal.table() && !tableInReach(world, villager)) > 0) {
                 step = Step.WOOD;
             } else {
@@ -2476,7 +2509,7 @@ public final class Progreso {
             }
             // more to make while the table is out?
             Recipe next = nextGoal(world, villager);
-            if (next != null && !smelting(next) && next.table() && affordableWithWood(villager.getInventory(), next)) {
+            if (goal != COOK && next != null && !smelting(next) && next.table() && affordableWithWood(villager.getInventory(), next)) {
                 Recipe smelt = goal;
                 goal = next;
                 prepareWood(villager, goal, false);
