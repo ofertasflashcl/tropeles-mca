@@ -63,6 +63,7 @@ public class FollowTask extends MultiTickTask<VillagerEntityMCA> {
     @Nullable
     private Vec3d wardLast;
     private long wardLastAt;
+    private long nextPacePath;
     private UUID gestoDe;
     private boolean shift;
     private int pulsos;
@@ -102,6 +103,7 @@ public class FollowTask extends MultiTickTask<VillagerEntityMCA> {
         wardFeet = null;
         wardLast = null;
         wardPace = 0;
+        nextPacePath = 0;
         gestoDe = null;
         villager.setSprinting(false);
         Postura.agachar(villager, SNEAK, false);
@@ -314,7 +316,8 @@ public class FollowTask extends MultiTickTask<VillagerEntityMCA> {
         double legs = Math.max(0.05, villager.getAttributeValue(EntityAttributes.GENERIC_MOVEMENT_SPEED));
         double m = MathHelper.clamp(Math.sqrt(want / 2.2) / legs, 0.3, 1.8);
         EntityNavigation nav = villager.getNavigation();
-        if (nav.isIdle() || (villager.age % 10) == 0) {
+        if (now >= nextPacePath) {
+            nextPacePath = now + 10;
             nav.startMovingTo(ward, m);
         }
         nav.setSpeed(m);

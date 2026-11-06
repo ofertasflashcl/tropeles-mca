@@ -3,6 +3,8 @@ package net.mca.server.command;
 import net.mca.Config;
 import net.mca.entity.VillagerEntityMCA;
 import net.mca.entity.ai.Chore;
+import net.mca.entity.ai.chatAI.Cerebros;
+import net.mca.entity.ai.chatAI.OpenAIChatAI;
 import net.mca.entity.ai.mente.Voluntad;
 import net.mca.entity.ai.obra.CambioCasa;
 import net.mca.entity.ai.obra.CatalogoPlanos;
@@ -22,6 +24,7 @@ import net.minecraft.nbt.NbtElement;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.Hand;
+import net.minecraft.util.Pair;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
@@ -29,6 +32,7 @@ import net.minecraft.util.math.Vec3d;
 
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Function;
 
 /**
  * C03b checks: a house is proposed, changed and approved by the player's own words. One command, {@code mca-prueba
@@ -43,6 +47,7 @@ final class PruebasPropuestas {
 
     private static final BlockPos O = new BlockPos(33000, 100, 33000);
     private static final UUID REINICIO = UUID.fromString("c03b0000-0000-4000-8000-00000000c03b");
+    private static final UUID SIN_PARCELA = UUID.fromString("c03b0000-0000-4000-8000-00000000c03c");
     private static final UUID JUGADOR = UUID.fromString("c03b0000-0000-4000-8000-0000000b3a1a");
     private static final BlockPos ORIGEN_REINICIO = new BlockPos(33200, 100, 33200);
 
@@ -306,8 +311,20 @@ final class PruebasPropuestas {
         Voluntad.editarCasa(a.v2, a.tercero, "ponle un balcón a la derecha", true);
         exige(p.borrador().balcon() == CambioCasa.Lado.DERECHA && !antes.equals(p.plano().hash())
                         && p.vista().centro().down().equals(suelo), "No actualizó el plano sobre la parcela");
-        Voluntad.editarCasa(a.v2, a.tercero, "mueve el balcón a la izquierda", true);
-        exige(p.borrador().balcon() == CambioCasa.Lado.IZQUIERDA && !p.pendienteSitio(), "Mover el balcón movió la parcela");
+        OpenAIChatAI chat = new OpenAIChatAI() {
+            @Override
+            protected Cerebros.Reply askMinds(List<Cerebros.Mind> minds, Function<Cerebros.Mind, String> system,
+                                             List<Pair<String, String>> history, String msg, String playerName, String villagerName,
+                                             UUID villager, long deadline, String image) {
+                return new Cerebros.Reply("prueba", """
+                        {"message":"Ya está construida.","optionalCommand":"edit-house","argument":"mueve el balcón a la izquierda"}
+                        """, 0, false);
+            }
+        };
+        String respuesta = chat.answer(a.tercero, a.v2, "Sorpréndeme con otro detalle, Lia").orElse("");
+        exige(p.borrador().balcon() == CambioCasa.Lado.IZQUIERDA && !p.pendienteSitio() && p.vista().centro().down().equals(suelo),
+                "La edición elegida por el modelo no se aplicó en la parcela: " + respuesta);
+        exige(a.obra(a.v2) == null && !respuesta.contains("Ya está construida."), "El modelo afirmó que ya había construido: " + respuesta);
         var copia = Propuestas.leer(Propuestas.get(a.world).writeNbt(new NbtCompound())).de(a.v2.getUuid());
         exige(copia != null && copia.borrador().balcon() == CambioCasa.Lado.IZQUIERDA && copia.plano().hash().equals(p.plano().hash()),
                 "Perdió el balcón al guardar el borrador");
@@ -339,6 +356,13 @@ final class PruebasPropuestas {
         exige(ps.de(REINICIO) == null, "La prueba requiere un primer proceso sin propuesta anterior");
         ps.poner(new Propuestas.Propuesta("reinicio", REINICIO, "Constructor de prueba", JUGADOR, "Jugador de prueba", borrador(), ORIGEN_REINICIO,
                 Direction.SOUTH, world.getTime()));
+        CatalogoPlanos.Resultado balcon = CatalogoPlanos.balcon(CatalogoPlanos.Borrador.de(ModelosCasa.Modelo.DOS_PISOS, Plano.Madera.ABETO),
+                CambioCasa.Lado.FRENTE);
+        exige(balcon.ok(), "No generó el balcón de reinicio");
+        Propuestas.Propuesta pendiente = new Propuestas.Propuesta("reinicio-parcela", SIN_PARCELA, "Constructora de prueba", JUGADOR,
+                "Jugador de prueba", balcon.borrador(), BlockPos.ORIGIN, Direction.NORTH, world.getTime());
+        pendiente.pedirSitio(balcon.borrador(), world.getTime());
+        ps.poner(pendiente);
         exige(ps.de(REINICIO) != null, "No guardó la propuesta para reiniciar");
     }
 
@@ -351,6 +375,11 @@ final class PruebasPropuestas {
         exige(p.origen().equals(ORIGEN_REINICIO) && p.frente() == Direction.SOUTH && p.para.equals(JUGADOR), "Perdió sitio o dueño al reiniciar");
         exige(CambioCasa.aplicar(p.borrador(), CambioCasa.leer("techo a dos aguas")).ok(), "Tras reiniciar ya no se puede cambiar");
         exige(ObrasMundo.get(world).de(REINICIO) == null, "Una propuesta se volvió obra al reiniciar");
+        Propuestas.Propuesta pendiente = ps.de(SIN_PARCELA);
+        exige(pendiente != null && pendiente.pendienteSitio() && pendiente.vista().id.startsWith(Propuestas.PARCELA)
+                && pendiente.borrador().balcon() == CambioCasa.Lado.FRENTE && ObrasMundo.get(world).de(SIN_PARCELA) == null,
+                "Perdió el balcón o la espera de parcela al reiniciar");
+        ps.quitar(pendiente);
         ps.quitar(p);
     }
 }

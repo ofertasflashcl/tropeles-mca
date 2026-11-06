@@ -27,12 +27,15 @@ import net.minecraft.util.BlockRotation;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 
-import java.util.Map;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -128,6 +131,7 @@ public final class Fantasmas {
         BlockRenderManager blocks = client.getBlockRenderManager();
         double t = (System.currentTimeMillis() % 2400L) / 2400.0;
         float alpha = 0.30F + 0.08F * MathHelper.sin((float) (t * Math.PI * 2.0));
+        List<Box> parcelas = new ArrayList<>(2);
         int drawn = 0;
         for (var entry : TODOS.entrySet()) {
             Fantasma f = entry.getValue();
@@ -153,8 +157,7 @@ public final class Fantasmas {
                 Direction frente = Sitio.hacia(suelo.getX(), suelo.getZ(), client.player.getPos());
                 giro = Plano.giro(frente);
                 origen = suelo.subtract(MarcadorParcela.centro(marker).rotate(giro));
-                trazarParcela(matrices, immediate, cam, f, origen, giro, suelo);
-                vc = immediate.getBuffer(layer);
+                parcelas.add(contorno(cam, f, origen, giro, suelo));
             }
             float cambio = MathHelper.clamp((System.nanoTime() - f.recibido()) / 230_000_000.0F, 0, 1);
             for (int i = 0; i < f.pos().length && drawn < MAX_BLOQUES; i++) {
@@ -209,29 +212,27 @@ public final class Fantasmas {
                 drawn++;
             }
         }
-        if (drawn == 0) {
-            immediate.draw(layer);
-            return;
-        }
         RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, alpha);
         try {
             immediate.draw(layer);
         } finally {
             RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
         }
+        if (!parcelas.isEmpty()) {
+            RenderLayer lineLayer = RenderLayer.getLines();
+            VertexConsumer lines = immediate.getBuffer(lineLayer);
+            for (Box box : parcelas) {
+                WorldRenderer.drawBox(matrices, lines, box, 1.0F, 0.28F, 0.18F, 0.95F);
+            }
+            immediate.draw(lineLayer);
+        }
     }
 
-    private static void trazarParcela(MatrixStack matrices, VertexConsumerProvider.Immediate buffers, Vec3d camera,
-                                      Fantasma f, BlockPos origen, BlockRotation giro, BlockPos suelo) {
+    private static Box contorno(Vec3d camera, Fantasma f, BlockPos origen, BlockRotation giro, BlockPos suelo) {
         BlockPos a = Plano.enMundo(origen, giro, f.min());
         BlockPos b = Plano.enMundo(origen, giro, f.max());
-        RenderLayer layer = RenderLayer.getLines();
-        VertexConsumer lines = buffers.getBuffer(layer);
         double y = suelo.getY() + 1.0 - camera.y;
-        WorldRenderer.drawBox(matrices, lines,
-                Math.min(a.getX(), b.getX()) - camera.x, y - 0.01, Math.min(a.getZ(), b.getZ()) - camera.z,
-                Math.max(a.getX(), b.getX()) + 1 - camera.x, y + 0.06, Math.max(a.getZ(), b.getZ()) + 1 - camera.z,
-                1.0F, 0.28F, 0.18F, 0.95F);
-        buffers.draw(layer);
+        return new Box(Math.min(a.getX(), b.getX()) - camera.x, y - 0.01, Math.min(a.getZ(), b.getZ()) - camera.z,
+                Math.max(a.getX(), b.getX()) + 1 - camera.x, y + 0.06, Math.max(a.getZ(), b.getZ()) + 1 - camera.z);
     }
 }

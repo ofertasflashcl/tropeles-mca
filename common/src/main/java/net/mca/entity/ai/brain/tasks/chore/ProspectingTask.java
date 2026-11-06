@@ -407,6 +407,7 @@ public class ProspectingTask extends AbstractChoreTask {
     private int lootTicks;
     @Nullable
     private BlockPos ovenStone;
+    private int ovenCuts;
     /** Looking around for food, or for a spot to start a mine: where it looked already and which way it went. */
     private final Explorar explorar = new Explorar();
     private final Cueva cueva = new Cueva();
@@ -1709,7 +1710,8 @@ public class ProspectingTask extends AbstractChoreTask {
             healTicks = 0;
         }
         if ((villager.age % 20) == 0 && phase != Phase.FIGHT && (food <= EAT_BELOW || health < max * 0.5F && food < HEAL_ABOVE)) {
-            if (!eatBest(world, villager) && food < GO_HOME_BELOW) {
+            boolean reservaCruda = phase == Phase.FORAGE && food > 0;
+            if (!eatBest(world, villager, reservaCruda) && food < GO_HOME_BELOW) {
                 askForFood(world, villager);
             }
         }
@@ -1740,12 +1742,16 @@ public class ProspectingTask extends AbstractChoreTask {
 
     /** Eats the most filling everyday food it carries (cooked before raw). False when it has nothing to eat. */
     private boolean eatBest(ServerWorld world, VillagerEntityMCA villager) {
+        return eatBest(world, villager, false);
+    }
+
+    private boolean eatBest(ServerWorld world, VillagerEntityMCA villager, boolean reservaCruda) {
         SimpleInventory inv = villager.getInventory();
         int slot = -1;
         int best = Integer.MIN_VALUE;
         for (int i = 0; i < inv.size(); i++) {
             ItemStack stack = inv.getStack(i);
-            if (!edible(stack)) {
+            if (!edible(stack) || reservaCruda && Progreso.rawFood(stack)) {
                 continue;
             }
             int score = mealScore(stack);
@@ -1791,10 +1797,14 @@ public class ProspectingTask extends AbstractChoreTask {
 
     /** Food points in the bag: what it can still eat before it has to go and find more. */
     private static int foodPoints(SimpleInventory inv) {
+        return foodPoints(inv, true);
+    }
+
+    private static int foodPoints(SimpleInventory inv, boolean crudo) {
         int points = 0;
         for (int i = 0; i < inv.size(); i++) {
             ItemStack stack = inv.getStack(i);
-            if (edible(stack)) {
+            if (edible(stack) && (crudo || !Progreso.rawFood(stack))) {
                 FoodComponent component = stack.getItem().getFoodComponent();
                 points += (component == null ? 1 : component.getHunger()) * stack.getCount();
             }
@@ -4257,6 +4267,7 @@ public class ProspectingTask extends AbstractChoreTask {
         lootTicks = 0;
         lootAt = null;
         ovenStone = null;
+        ovenCuts = 0;
         explorar.reset();
         provisioning = false;
         foraged = true;
@@ -4272,7 +4283,7 @@ public class ProspectingTask extends AbstractChoreTask {
         VisualMemory memory = Retina.memory(villager);
         long now = world.getTime();
         SimpleInventory inv = villager.getInventory();
-        int carried = foodPoints(inv);
+        int carried = foodPoints(inv, false);
         if (carried >= 12 || food >= FOOD_MAX - 2 && carried >= 6 || ++forageTicks > FORAGE_TICKS) {
             finishForage(world, villager);
             return;
@@ -4310,6 +4321,11 @@ public class ProspectingTask extends AbstractChoreTask {
             }
             memory.doing("cazando " + prey.getName().getString(), now);
             CombatMind.fight(world, villager, null, prey);
+            return;
+        }
+        if (progreso.idle() && rawCount(inv) == 0 && inv.count(Items.WHEAT) < 3 && inv.count(Items.HAY_BLOCK) == 0
+                && pickCrops(world, villager, memory, now)) {
+            noFoodTicks = 0;
             return;
         }
         if (gearUp(world, villager, true)) {
@@ -4363,7 +4379,7 @@ public class ProspectingTask extends AbstractChoreTask {
 
     /** Up to eight tool stones for the recipe, using exposed, reachable natural rock. */
     private boolean piedraParaHorno(ServerWorld world, VillagerEntityMCA villager, VisualMemory memory, long now) {
-        if (!progreso.faltaPiedraParaComer(world, villager) || !Progreso.holdBestPick(villager)) {
+        if (ovenCuts >= 12 || !progreso.faltaPiedraParaComer(world, villager) || !Progreso.holdBestPick(villager)) {
             ovenStone = null;
             return false;
         }
@@ -4390,8 +4406,10 @@ public class ProspectingTask extends AbstractChoreTask {
         memory.doing("sacando piedra para el horno de la comida", now);
         int r = motor.breaker().tick(world, villager, ovenStone);
         if (r == Hands.Breaker.DONE) {
+            ovenCuts++;
             Hands.collect(world, villager, ovenStone, 2.0, s -> s.isIn(ItemTags.STONE_TOOL_MATERIALS));
         } else if (r == Hands.Breaker.FAILED) {
+            ovenCuts++;
             ignore(ovenStone, now);
         }
         if (r != Hands.Breaker.RUNNING) {
@@ -4463,7 +4481,8 @@ public class ProspectingTask extends AbstractChoreTask {
             return false;
         }
         BlockState state = world.getBlockState(crop);
-        if (!(state.getBlock() instanceof CropBlock plant) || !plant.isMature(state) || Obras.playersField(world, crop)) {
+        if (!world.isChunkLoaded(crop) || !(state.getBlock() instanceof CropBlock plant) || !plant.isMature(state)
+                || Obras.playersField(world, crop)) {
             crop = null;
             return false;
         }
@@ -4645,7 +4664,7 @@ public class ProspectingTask extends AbstractChoreTask {
                     same++;
                 }
             }
-            if (same < 2 || penned(world, animal.getBlockPos()) || Obras.inVillageBuilding(world, animal.getBlockPos())) {
+            if (same < 2 && food > 4 || penned(world, animal.getBlockPos()) || Obras.inVillageBuilding(world, animal.getBlockPos())) {
                 continue;
             }
             // one grazing where it was attacked looks much farther away than it is: another one first, if there is one

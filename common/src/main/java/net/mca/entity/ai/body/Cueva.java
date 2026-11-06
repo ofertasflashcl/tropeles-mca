@@ -57,7 +57,7 @@ public final class Cueva {
             if (puerta == null || puerta.equals(atras) || revisados.getOrDefault(puerta, 0L) > now || !visible(world, v, puerta)) {
                 continue;
             }
-            if (!abertura(world, v, puerta, d)) {
+            if (!abertura(world, v, puerta, d, !libre(world, pies.up(2)))) {
                 continue;
             }
             camino.add(pies);
@@ -154,16 +154,19 @@ public final class Cueva {
         observarHasta = 0;
     }
 
-    private static boolean abertura(ServerWorld world, VillagerEntityMCA v, BlockPos puerta, Direction d) {
+    private static boolean abertura(ServerWorld world, VillagerEntityMCA v, BlockPos puerta, Direction d, boolean tunelBajo) {
         // A short ray into natural cave air, a high ceiling, or a wider pocket. A two-high work tunnel is not a cue.
         for (int i = 0; i < 3; i++) {
             BlockPos at = puerta.offset(d, i);
             if (!seguro(world, at) || !visible(world, v, at)) {
                 break;
             }
-            if (world.getBlockState(at).isOf(Blocks.CAVE_AIR) || libre(world, at.up(2)) && visible(world, v, at.up())
+            if (world.getBlockState(at).isOf(Blocks.CAVE_AIR)) {
+                return true;
+            }
+            if (tunelBajo && (libre(world, at.up(2)) && visible(world, v, at.up())
                     || seguro(world, at.offset(d.rotateYClockwise())) && visible(world, v, at.offset(d.rotateYClockwise()))
-                    || seguro(world, at.offset(d.rotateYCounterclockwise())) && visible(world, v, at.offset(d.rotateYCounterclockwise()))) {
+                    || seguro(world, at.offset(d.rotateYCounterclockwise())) && visible(world, v, at.offset(d.rotateYCounterclockwise())))) {
                 return true;
             }
         }
