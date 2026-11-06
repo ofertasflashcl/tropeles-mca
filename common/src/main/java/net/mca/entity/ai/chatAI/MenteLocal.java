@@ -76,6 +76,16 @@ public final class MenteLocal {
 
     /** A house, as said in "constrúyeme una casa" (never "vuelve a tu casa": that is going home). */
     private static final String CASA = "casa|casita|casota|hogar|cabana|refugio|house|home|hut|cabin";
+    private static final Pattern BUSCA_SUBIDA = Pattern.compile("\\b(sube|subete|sal|salte|trepa|"
+            + "(intenta|trata de|puedes|podrias|prueba a) (subir|salir|trepar)|"
+            + "(busca|prueba|revisa) (otra |una |la )?(subida|salida)|"
+            + "climb|go (back )?up|go out|(find|try|look for) (an? |another |the )?(way up|way out|exit))\\b");
+    private static final Pattern NIEGA_SUBIDA = Pattern.compile("\\b(no (subas|salgas|trepes|intentes|busques)|do not|don'?t|never)\\b");
+    private static final Map<String, Pattern> LADOS_SALIDA = Map.of(
+            "behind", Pattern.compile("\\b(detras|atras|espalda|tras de ti|behind|backward|backwards|back)\\b"),
+            "left", Pattern.compile("\\b(izquierda|left)\\b"),
+            "right", Pattern.compile("\\b(derecha|right)\\b"),
+            "ahead", Pattern.compile("\\b(delante|adelante|frente|ahead|forward)\\b"));
 
     /**
      * Orders, most specific first: "no me sigas" must win over "sigueme", and "sal de la mina" or "deja de minar
@@ -548,6 +558,11 @@ public final class MenteLocal {
     public static Intent read(String text) {
         String t = clean(text);
         boolean spanish = spanish(text);
+        String lado = ladoSalida(t);
+        if (lado != null && (BUSCA_SUBIDA.matcher(t).find() || NIEGA_SUBIDA.matcher(t).find())) {
+            return NIEGA_SUBIDA.matcher(t).find() ? new Intent(null, "", null, spanish)
+                    : new Intent("seek-exit", lado, null, spanish);
+        }
         // a bare "para", "alto" or "stop" is an order to stop whatever it is doing
         if (t.matches("(para|alto|stop|basta|halt|ya basta|para ya)")) {
             return new Intent("stop", "", null, spanish);
@@ -597,6 +612,21 @@ public final class MenteLocal {
             return new Intent("sorry", "", null, spanish);
         }
         return new Intent(null, "", null, spanish);
+    }
+
+    @Nullable
+    public static String ladoSalida(String words) {
+        String t = clean(words);
+        String lado = null;
+        for (var entry : LADOS_SALIDA.entrySet()) {
+            if (entry.getValue().matcher(t).find()) {
+                if (lado != null) {
+                    return null;
+                }
+                lado = entry.getKey();
+            }
+        }
+        return lado;
     }
 
     /**
@@ -748,6 +778,9 @@ public final class MenteLocal {
                 return es ? vuelta.es() : vuelta.en();
             }
             return es ? "Mm, déjame pensarlo." : "Hm, let me think about it.";
+        }
+        if ("seek-exit".equals(command)) {
+            return outcome == null ? es ? "Ahora no puedo buscar esa subida." : "I can't look for that way up right now." : outcome;
         }
         if (outcome == null && "come-up".equals(command)) {
             // only a miner climbs out of a mine
