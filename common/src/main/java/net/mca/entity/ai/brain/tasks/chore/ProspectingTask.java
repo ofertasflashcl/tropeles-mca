@@ -408,6 +408,8 @@ public class ProspectingTask extends AbstractChoreTask {
     @Nullable
     private BlockPos ovenStone;
     private int ovenCuts;
+    private int ovenWalkTicks;
+    private long ovenScanAt;
     /** Looking around for food, or for a spot to start a mine: where it looked already and which way it went. */
     private final Explorar explorar = new Explorar();
     private final Cueva cueva = new Cueva();
@@ -4269,6 +4271,7 @@ public class ProspectingTask extends AbstractChoreTask {
         lootAt = null;
         ovenStone = null;
         ovenCuts = 0;
+        ovenScanAt = 0;
         explorar.reset();
         provisioning = false;
         foraged = true;
@@ -4378,20 +4381,23 @@ public class ProspectingTask extends AbstractChoreTask {
         lookAround(world, villager, memory, now);
     }
 
-    /** Up to eight tool stones for the recipe, using exposed, reachable natural rock. */
+    /** A short quarry errand for a meal, with a walking approach to exposed rock. */
     private boolean piedraParaHorno(ServerWorld world, VillagerEntityMCA villager, VisualMemory memory, long now) {
         if (ovenCuts >= 12 || !progreso.faltaPiedraParaComer(world, villager) || !Progreso.holdBestPick(villager)) {
             ovenStone = null;
             return false;
         }
-        if (ovenStone == null && villager.age % 10 == 0) {
-            double nearest = Double.MAX_VALUE;
+        if (ovenStone == null && now >= ovenScanAt) {
+            ovenScanAt = now + 10;
+            ovenWalkTicks = 0;
+            BlockPos support = Mining.pies(villager).down();
+            double nearest = 12 * 12;
             for (VisualMemory.SeenBlock seen : memory.blocks(s -> piedraDeHorno(s.state))) {
                 double distance = villager.getEyePos().squaredDistanceTo(Vec3d.ofCenter(seen.pos));
-                if (distance < nearest && distance <= 36 && world.isChunkLoaded(seen.pos)
-                        && !seen.pos.equals(Mining.pies(villager).down()) && !isIgnored(seen.pos, now)
+                if (distance < nearest && world.isChunkLoaded(seen.pos)
+                        && !seen.pos.equals(support) && !isIgnored(seen.pos, now)
                         && piedraDeHorno(world.getBlockState(seen.pos)) && Obras.mayBreak(world, villager, seen.pos)
-                        && Retina.visibleFace(world, villager, seen.pos, Retina.BLOCK_REACH) != null) {
+                        && Retina.visibleFace(world, villager, seen.pos, 12) != null) {
                     ovenStone = seen.pos;
                     nearest = distance;
                 }
@@ -4400,9 +4406,20 @@ public class ProspectingTask extends AbstractChoreTask {
         if (ovenStone == null) {
             return false;
         }
-        if (!piedraDeHorno(world.getBlockState(ovenStone))) {
+        if (!world.isChunkLoaded(ovenStone) || !piedraDeHorno(world.getBlockState(ovenStone))
+                || ovenStone.equals(Mining.pies(villager).down())) {
             ovenStone = null;
-            return false;
+            ovenScanAt = now;
+            return true;
+        }
+        if (Retina.visibleFace(world, villager, ovenStone, Retina.BLOCK_REACH) == null) {
+            memory.doing("acercándose a la piedra para el horno", now);
+            if (++ovenWalkTicks > 120 || ovenWalkTicks % 20 == 1 && !acercarseACelda(world, villager, ovenStone)) {
+                ignore(ovenStone, now);
+                ovenStone = null;
+                ovenScanAt = now;
+            }
+            return true;
         }
         Motor.standStill(villager);
         memory.doing("sacando piedra para el horno de la comida", now);
@@ -4410,12 +4427,13 @@ public class ProspectingTask extends AbstractChoreTask {
         if (r == Hands.Breaker.DONE) {
             ovenCuts++;
             Hands.collect(world, villager, ovenStone, 2.0, s -> s.isIn(ItemTags.STONE_TOOL_MATERIALS));
+            progreso.wantCook();
         } else if (r == Hands.Breaker.FAILED) {
-            ovenCuts++;
             ignore(ovenStone, now);
         }
         if (r != Hands.Breaker.RUNNING) {
             ovenStone = null;
+            ovenScanAt = now;
         }
         return true;
     }
@@ -4496,7 +4514,7 @@ public class ProspectingTask extends AbstractChoreTask {
         }
         double reach = villager.getEyePos().distanceTo(Vec3d.ofCenter(crop));
         if (reach > 3.5 || Retina.visibleFace(world, villager, crop, Retina.BLOCK_REACH) == null) {
-            if ((cropTicks % 20) == 1 && !irACultivo(world, villager)) {
+            if ((cropTicks % 20) == 1 && !acercarseACelda(world, villager, crop)) {
                 return dejarCultivo(villager, now);
             }
             memory.doing("yendo a cosechar " + state.getBlock().getName().getString(), now);
@@ -4536,10 +4554,10 @@ public class ProspectingTask extends AbstractChoreTask {
         return true;
     }
 
-    private boolean irACultivo(ServerWorld world, VillagerEntityMCA villager) {
+    private static boolean acercarseACelda(ServerWorld world, VillagerEntityMCA villager, BlockPos target) {
         Set<BlockPos> puestos = new HashSet<>();
-        for (BlockPos at : BlockPos.iterate(crop.add(-2, -1, -2), crop.add(2, 1, 2))) {
-            if (world.isChunkLoaded(at) && !at.equals(crop) && Motor.standCell(world, at)
+        for (BlockPos at : BlockPos.iterate(target.add(-2, -2, -2), target.add(2, 1, 2))) {
+            if (world.isChunkLoaded(at) && !at.equals(target) && Motor.standCell(world, at)
                     && !world.getBlockState(at.down()).isOf(Blocks.FARMLAND)) {
                 puestos.add(at.toImmutable());
             }
