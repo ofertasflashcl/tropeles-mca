@@ -110,7 +110,7 @@ public final class Vistazo {
     /** Whether a question is about seeing or the surroundings: worth a picture for the minds that can look. */
     public static boolean aboutSight(MenteLocal.Intent intent) {
         String q = intent.question();
-        return !intent.order() && q != null && (q.equals("see") || q.equals("where") || q.equals("light") || q.startsWith("see:"));
+        return !intent.order() && q != null && (q.equals("see") || q.equals("focus") || q.equals("where") || q.equals("light") || q.startsWith("see:"));
     }
 
     @Nullable

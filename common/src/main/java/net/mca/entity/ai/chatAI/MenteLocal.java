@@ -291,7 +291,10 @@ public final class MenteLocal {
                     + "cuanto te falta|que te falta( para la casa)?|que (mas )?necesitas( para la casa)?|como vas con la casa|"
                     + "how'?s the house( going)?|how is the house( going)?|how much (is )?left|what do you need( for the house)?|how far along"),
             order("doing", "que (estas haciendo|haces|andas haciendo)|en que andas|en que estas|what are you doing|what('re| are) you up to"),
-            order("bag", "que (tienes|llevas|traes|cargas)|tu inventario|tu mochila|que hay en tu mochila|what do you have|what are you carrying|your inventory|your bag"),
+            order("focus", "(mira|revisa|inspecciona|examina|identifica|comprueba) (ese|este|aquel|el|de nuevo ese) bloque|"
+                    + "que bloque (es (ese|este)|ves|tienes (delante|enfrente))|que tienes (delante|enfrente)|"
+                    + "(look at|inspect|check|identify) (this|that|the) block|what block (is (this|that)|do you see)|what('s| is) in front of you"),
+            order("bag", "^que (tienes|llevas|traes|cargas)$|tu inventario|tu mochila|^what do you have$|what are you carrying|your inventory|your bag"),
             // what it hears, and how light it is where it stands ({@link Ahora})
             order("hear", "que (oyes|escuchas|estas (oyendo|escuchando))|(oyes|escuchas|oiste|escuchaste) (algo|eso|un ruido|ruidos|pasos)|"
                     + "hay (algun )?ruido|what (do you|can you) hear|do you hear|did you hear|hear anything|any (noise|sound)s?"),
@@ -725,6 +728,7 @@ public final class MenteLocal {
             case "where" -> where(villager, es);
             case "coords" -> coords(villager, es);
             case "see" -> see(villager, es);
+            case "focus" -> focus(villager, es);
             case "hear" -> hear(villager, es);
             case "light" -> light(villager, es);
             case "name" -> es ? "Me llamo " + villager.getName().getString() + "." : "I'm " + villager.getName().getString() + ".";
@@ -1194,6 +1198,16 @@ public final class MenteLocal {
             }
         }
         return sightings(villager, es);
+    }
+
+    private static String focus(VillagerEntityMCA villager, boolean es) {
+        var world = villager.getWorld();
+        Retina.Focus focus = Retina.focus(world, villager, Retina.memory(villager), world.getTime());
+        if (focus == null || focus.state() == null || focus.pos() == null) {
+            return es ? "No distingo ningún bloque justo delante." : "I can't make out a block directly in front of me.";
+        }
+        String name = focus.state().getBlock().getName().getString();
+        return es ? "Veo " + name + " en " + coords(focus.pos()) + "." : "I see " + name + " at " + coords(focus.pos()) + ".";
     }
 
     /** What it hears: the beings it hears and does not see (where, coming closer or not), or that all is quiet ({@link Ahora}). */
