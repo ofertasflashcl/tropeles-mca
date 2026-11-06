@@ -10,6 +10,7 @@ import net.minecraft.registry.Registries;
 import net.minecraft.registry.RegistryKey;
 import net.minecraft.registry.tag.FluidTags;
 import net.minecraft.server.world.ServerWorld;
+import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
@@ -64,7 +65,8 @@ public final class VistaSituada {
     /** World access is confined to the server thread. Encoding can then run with the model call. */
     public static VistaSituada captar(ServerWorld world, VillagerEntityMCA v, boolean imagen) {
         Retina.lookAll(world, v);
-        Retina.Pixel[] pixels = Retina.memory(v).frame();
+        VisualMemory memoria = Retina.memory(v);
+        Retina.Pixel[] pixels = memoria.frame();
         int[] rgb = imagen ? new int[Retina.WIDTH * Retina.HEIGHT] : null;
         Map<BlockPos, Bloque> distintos = new HashMap<>();
         Map<Integer, String> cuerpos = new LinkedHashMap<>();
@@ -87,8 +89,15 @@ public final class VistaSituada {
                         + p.entity().getBlockPos().toShortString());
             }
         }
+        Retina.Focus foco = memoria.focus();
+        BlockPos centrado = foco != null && foco.distance() <= ALCANCE_INSPECCION ? foco.pos() : null;
+        if (centrado != null && foco.state() != null && foco.face() != null && world.isChunkLoaded(centrado)) {
+            distintos.put(centrado, new Bloque(centrado.toImmutable(), foco.state(), foco.face(),
+                    Retina.WIDTH / 2, Retina.HEIGHT / 2, foco.distance()));
+        }
         List<Bloque> seleccion = distintos.values().stream().sorted(Comparator
-                .comparingInt((Bloque b) -> relevancia(b.estado()))
+                .comparing((Bloque b) -> !b.pos().equals(centrado))
+                .thenComparingInt(b -> relevancia(b.estado()))
                 .thenComparingDouble(Bloque::distancia)
                 .thenComparingLong(b -> b.pos().asLong())).limit(MAX_BLOQUES).toList();
         return new VistaSituada(world, v, seleccion, new ArrayList<>(cuerpos.values()), agua, rgb);
@@ -113,6 +122,9 @@ public final class VistaSituada {
         int base = f.isIn(FluidTags.LAVA) ? Foto.LAVA : f.isIn(FluidTags.WATER) ? Foto.WATER : s.getMapColor(world, p.pos()).color;
         if (base == 0) {
             base = 0x8a8781;
+        }
+        if (p.water()) {
+            base = ((base & 0xfefefe) >>> 1) + ((Foto.WATER & 0xfefefe) >>> 1);
         }
         double luz = (0.45 + 0.55 * Math.max(0, p.light()) / 15) * (p.face() == Direction.UP ? 1 : 0.83)
                 * (1 - Math.min(0.3, p.distance() / 120));
@@ -179,12 +191,19 @@ public final class VistaSituada {
             return es ? "Necesito mirar otra vez para identificar ese bloque." : "I need a fresh look to identify that block.";
         }
         Bloque b = bloques.get(indice);
-        if (!world.isChunkLoaded(b.pos()) || !world.getBlockState(b.pos()).equals(b.estado())
-                || Retina.visibleFace(world, v, b.pos(), ALCANCE_INSPECCION) == null) {
-            return es ? "Ese bloque ya cambió o perdí la vista de él." : "That block changed or I lost sight of it.";
+        BlockHitResult cara = world.isChunkLoaded(b.pos()) && world.getBlockState(b.pos()).equals(b.estado())
+                ? Retina.visibleFace(world, v, b.pos(), ALCANCE_INSPECCION) : null;
+        String perdido = es ? "Ese bloque ya cambió o perdí la vista de él." : "That block changed or I lost sight of it.";
+        if (cara == null || !Retina.perceives(Retina.lightAt(world, b.pos(), cara.getSide(), b.estado()),
+                Retina.eye(v).distanceTo(cara.getPos()), Retina.nightVision(v))) {
+            return perdido;
         }
-        Hands.aim(v, Vec3d.ofCenter(b.pos()));
+        Hands.aim(v, cara.getPos());
         Retina.lookAll(world, v);
+        Retina.Focus foco = Retina.memory(v).focus();
+        if (foco == null || !b.pos().equals(foco.pos()) || !b.estado().equals(foco.state())) {
+            return perdido;
+        }
         Recuerdos.anotar(v, "vista", "vi " + b.id() + " en " + b.pos().toShortString(), b.pos());
         String pos = b.pos().getX() + " " + b.pos().getY() + " " + b.pos().getZ();
         return es ? "Estoy mirando " + b.estado().getBlock().getName().getString() + " en " + pos + "."

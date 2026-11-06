@@ -20,17 +20,17 @@ import net.mca.entity.ai.sense.VistaSituada;
 import net.mca.util.WorldUtils;
 import net.minecraft.inventory.SimpleInventory;
 import net.minecraft.item.ItemStack;
-import net.minecraft.registry.RegistryKey;
-import net.minecraft.world.World;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtElement;
 import net.minecraft.nbt.NbtList;
 import net.minecraft.nbt.NbtString;
+import net.minecraft.registry.RegistryKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.PersistentState;
+import net.minecraft.world.World;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
@@ -111,7 +111,7 @@ public final class Conciencia {
                        String cita) {
     }
 
-    private record Pendiente(Pensamiento pensamiento, int generacion, RegistryKey<World> mundo) {
+    private record Pendiente(Pensamiento pensamiento, int generacion, RegistryKey<World> mundo, @Nullable VistaSituada vista) {
     }
 
     private long proximoMs = System.currentTimeMillis() + 20_000 + (long) (Math.random() * 30_000);
@@ -134,7 +134,8 @@ public final class Conciencia {
     void tick(ServerWorld world, VillagerEntityMCA villager, Voluntad will, @Nullable ProspectingTask task) {
         try {
             Pendiente p = listo.getAndSet(null);
-            if (p != null && p.generacion() == Voluntad.generacion(villager.getUuid()) && p.mundo().equals(world.getRegistryKey())) {
+            if (p != null && p.generacion() == Voluntad.generacion(villager.getUuid()) && p.mundo().equals(world.getRegistryKey())
+                    && (p.vista() == null || p.vista().vigente(world, villager))) {
                 aplicar(world, villager, will, task, p.pensamiento());
             }
             if ((villager.age % 20) != 13) {
@@ -242,11 +243,11 @@ public final class Conciencia {
                         MCA.LOGGER.info("[Tropeles] {} quiso pensar pero ninguna mente respondió; piensa solo un rato", villagerName);
                         String local = pasado.isEmpty() ? null : pensarLocal(villager, null, pasado);
                         if (local != null) {
-                            listo.set(new Pendiente(new Pensamiento(local, "", "", "", "", "", "mente local", pasado, ""), generacion, mundo));
+                            listo.set(new Pendiente(new Pensamiento(local, "", "", "", "", "", "mente local", pasado, ""), generacion, mundo, null));
                         }
                     } else {
                         fallos = 0;
-                        listo.set(new Pendiente(p, generacion, mundo));
+                        listo.set(new Pendiente(p, generacion, mundo, vista));
                     }
                 } catch (RuntimeException e) {
                     MCA.LOGGER.warn("[Tropeles] {} no pudo pensar: {}", villagerName, e.toString());
@@ -283,7 +284,7 @@ public final class Conciencia {
                 + (es ? "español (casual, como un jugador chileno)" : "English") + ".";
     }
 
-    /** Everything it knows of itself right now, short: about 2000 characters at most. */
+    /** The present state, with a bounded visual sample and the older facts it can cite. */
     private static String estado(ServerWorld world, VillagerEntityMCA villager, Voluntad will, @Nullable ProspectingTask task,
                                  @Nullable ServerPlayerEntity cerca, String pasado, @Nullable VistaSituada vista) {
         long now = world.getTime();

@@ -33,67 +33,92 @@ final class PruebasVistaCerebro {
 
     static void run(ServerWorld world, String which) {
         switch (which) {
-            case "vista-accion" -> vista(world);
+            case "vista-accion" -> Pruebas.start(new Vista(world));
             case "subida-detras" -> Pruebas.start(new Subida(world));
             case "agua-exploracion" -> Pruebas.start(new Agua(world));
             default -> throw new IllegalArgumentException(which);
         }
     }
 
-    private static void vista(ServerWorld world) {
-        BlockPos o = new BlockPos(34000, 100, 33000);
-        Pruebas.load(world, o, 20);
-        Pruebas.fill(world, o.add(-6, -1, -6), o.add(10, -1, 6), Blocks.STONE.getDefaultState());
-        Pruebas.fill(world, o.add(-6, 0, -6), o.add(10, 6, 6), Blocks.AIR.getDefaultState());
-        Pruebas.fill(world, o.add(3, 0, -5), o.add(5, 4, 5), Blocks.STONE.getDefaultState());
-        BlockPos oro = o.east(3).up();
-        BlockPos oculto = o.east(4).up();
-        world.setBlockState(oro, Blocks.GOLD_BLOCK.getDefaultState(), 3);
-        world.setBlockState(oculto, Blocks.DIAMOND_BLOCK.getDefaultState(), 3);
-        VillagerEntityMCA v = Pruebas.villager(world, o, Direction.EAST, "Paz Vista");
-        ServerPlayerEntity p = Pruebas.fakePlayer(world, "Vista_CI", Vec3d.ofBottomCenter(o.west(2)));
-        Config config = Config.getInstance();
-        boolean herramientas = config.villagerChatAIUseTools;
-        boolean vision = config.tropelesChatVision;
-        config.villagerChatAIUseTools = true;
-        config.tropelesChatVision = true;
-        try {
-            v.getVillagerBrain().assignJob(Chore.PROSPECT, p);
-            Hands.aim(v, Vec3d.ofCenter(oro));
-            boolean[] obsoleto = {false};
-            int[] fotos = {0};
-            OpenAIChatAI modelo = new OpenAIChatAI() {
-                @Override
-                protected Cerebros.Reply askMinds(List<Cerebros.Mind> minds, Function<Cerebros.Mind, String> sistema,
-                                                 List<Pair<String, String>> historia, String msg, String jugador, String aldeano,
-                                                 UUID id, long plazo, String imagen) {
-                    Cerebros.Mind prueba = new Cerebros.Mind("prueba", "", "", "", true, false, java.util.Map.of(), null);
-                    String contexto = sistema.apply(prueba);
-                    var ref = Pattern.compile("(?m)^(b[0-9]+) = minecraft:gold_block at ").matcher(contexto);
-                    if (imagen == null || !imagen.startsWith("data:image/png;base64,iVBOR") || !ref.find()
-                            || contexto.contains("minecraft:diamond_block") || !contexto.contains("inspect-view")) {
-                        throw new IllegalStateException("La muestra no representa los rayos de ese momento");
+    private static final class Vista extends Pruebas.Scenario {
+        private final BlockPos oro;
+        private final BlockPos oculto;
+        private final VillagerEntityMCA v;
+        private final ServerPlayerEntity p;
+
+        Vista(ServerWorld world) {
+            super("vista-accion", world, 80);
+            BlockPos o = new BlockPos(34000, 100, 33000);
+            oro = o.east(3).up();
+            oculto = o.east(4).up();
+            Pruebas.load(world, o, 20);
+            Pruebas.fill(world, o.add(-6, -1, -6), o.add(10, -1, 6), Blocks.STONE.getDefaultState());
+            Pruebas.fill(world, o.add(-6, 0, -6), o.add(10, 6, 6), Blocks.AIR.getDefaultState());
+            Pruebas.fill(world, o.add(3, 0, -5), o.add(5, 4, 5), Blocks.STONE.getDefaultState());
+            world.setBlockState(oro, Blocks.GOLD_BLOCK.getDefaultState(), 3);
+            world.setBlockState(oculto, Blocks.DIAMOND_BLOCK.getDefaultState(), 3);
+            v = Pruebas.villager(world, o, Direction.EAST, "Paz Vista");
+            p = Pruebas.fakePlayer(world, "Vista_CI", Vec3d.ofBottomCenter(o.west(2)));
+            v.setAiDisabled(true);
+        }
+
+        @Override
+        Boolean step() {
+            if (world.getEntity(v.getUuid()) != v) {
+                return null;
+            }
+            Config config = Config.getInstance();
+            boolean herramientas = config.villagerChatAIUseTools;
+            boolean vision = config.tropelesChatVision;
+            config.villagerChatAIUseTools = true;
+            config.tropelesChatVision = true;
+            try {
+                v.getVillagerBrain().assignJob(Chore.PROSPECT, p);
+                Hands.aim(v, Vec3d.ofCenter(oro));
+                boolean[] obsoleto = {false};
+                int[] fotos = {0};
+                OpenAIChatAI modelo = new OpenAIChatAI() {
+                    @Override
+                    protected Cerebros.Reply askMinds(List<Cerebros.Mind> minds, Function<Cerebros.Mind, String> sistema,
+                                                     List<Pair<String, String>> historia, String msg, String jugador, String aldeano,
+                                                     UUID id, long plazo, String imagen) {
+                        Cerebros.Mind prueba = new Cerebros.Mind("prueba", "", "", "", true, false, java.util.Map.of(), null);
+                        String contexto = sistema.apply(prueba);
+                        var ref = Pattern.compile("(?m)^(b[0-9]+) = minecraft:gold_block at ").matcher(contexto);
+                        if (imagen == null || !imagen.startsWith("data:image/png;base64,iVBOR") || !ref.find()
+                                || contexto.contains("minecraft:diamond_block") || !contexto.contains("inspect-view")) {
+                            throw new IllegalStateException("La muestra no representa los rayos de ese momento");
+                        }
+                        fotos[0]++;
+                        if (obsoleto[0]) {
+                            world.setBlockState(oro, Blocks.STONE.getDefaultState(), 3);
+                        }
+                        return new Cerebros.Reply("prueba", "{\"message\":\"Es diamante.\",\"optionalCommand\":\"inspect-view\",\"argument\":\""
+                                + ref.group(1) + "\"}", 0, true);
                     }
-                    fotos[0]++;
-                    if (obsoleto[0]) {
-                        world.setBlockState(oro, Blocks.STONE.getDefaultState(), 3);
-                    }
-                    return new Cerebros.Reply("prueba", "{\"message\":\"Es diamante.\",\"optionalCommand\":\"inspect-view\",\"argument\":\""
-                            + ref.group(1) + "\"}", 0, true);
-                }
-            };
-            String visto = modelo.answer(p, v, "Revisa ese bloque que tienes delante, por favor.").orElse("");
-            obsoleto[0] = true;
-            String cambio = modelo.answer(p, v, "Comprueba de nuevo ese bloque, por favor.").orElse("");
-            var hechos = Recuerdos.of(world, v).hechos("vista", 8);
-            boolean oroReal = hechos.size() == 1 && oro.equals(hechos.get(0).donde()) && hechos.get(0).texto().contains("minecraft:gold_block");
-            boolean exacto = visto.contains(oro.getX() + " " + oro.getY() + " " + oro.getZ()) && !visto.contains("diamante");
-            Pruebas.check("vista-accion", fotos[0] == 2 && oroReal && exacto && cambio.contains("ya cambió")
-                    && Retina.memory(v).stateAt(oculto) == null,
-                    "modelo recibió PNG y referencia visible, memoria " + oroReal + ", respuesta " + visto + ", cambio " + cambio);
-        } finally {
-            config.villagerChatAIUseTools = herramientas;
-            config.tropelesChatVision = vision;
+                };
+                String visto = modelo.answer(p, v, "Revisa ese bloque que tienes delante, por favor.").orElse("");
+                obsoleto[0] = true;
+                String cambio = modelo.answer(p, v, "Comprueba de nuevo ese bloque, por favor.").orElse("");
+                var hechos = Recuerdos.of(world, v).hechos("vista", 8);
+                boolean oroReal = hechos.size() == 1 && oro.equals(hechos.get(0).donde()) && hechos.get(0).texto().contains("minecraft:gold_block");
+                boolean exacto = visto.contains(oro.getX() + " " + oro.getY() + " " + oro.getZ()) && !visto.contains("diamante");
+                boolean ok = fotos[0] == 2 && oroReal && exacto && cambio.contains("ya cambió") && Retina.memory(v).stateAt(oculto) == null;
+                Pruebas.check(name, ok, "muestras " + fotos[0] + ", memoria " + oroReal + ", respuesta " + visto + ", cambio " + cambio);
+                return ok;
+            } finally {
+                config.villagerChatAIUseTools = herramientas;
+                config.tropelesChatVision = vision;
+            }
+        }
+
+        @Override
+        String state() {
+            return v.getBlockPos().toShortString() + ", registrado " + (world.getEntity(v.getUuid()) == v);
+        }
+
+        @Override
+        void cleanup() {
             OpenAIChatAI.forget(v.getUuid());
             Voluntad.olvidar(v);
             v.discard();
@@ -117,6 +142,9 @@ final class PruebasVistaCerebro {
                 BlockPos celda = o.west(k).up(k);
                 Pruebas.fill(world, celda, celda.up(2), Blocks.AIR.getDefaultState());
                 world.setBlockState(celda.north(), Blocks.GLOWSTONE.getDefaultState(), 3);
+                if (k < 4) {
+                    world.setBlockState(celda.up(3), Blocks.STONE.getDefaultState(), 3);
+                }
             }
             v = Pruebas.villager(world, o, Direction.EAST, "Luz Subida");
             v.getBrain().forget(MemoryModuleTypeMCA.STAYING.get());

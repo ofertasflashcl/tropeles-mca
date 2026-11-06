@@ -664,6 +664,7 @@ public class OpenAIChatAI implements ChatAIStrategy {
                 .filter(c -> CommandPolicy.check(player, villager, c.command, CommandPolicy.Source.MODEL).allowed())
                 .filter(c -> c.isActive == null || c.isActive.test(player, villager))
                 .filter(c -> !"inspect-view".equals(c.command) || vista != null && vista.tieneBloques())
+                .filter(c -> !"seek-exit".equals(c.command) || vista != null)
                 .toList();
         orders.append("Reply with exactly one JSON object and nothing else: {\"message\": \"what you say\", \"optionalCommand\": \"\", \"argument\": \"\"}\n");
         if (!valid.isEmpty()) {

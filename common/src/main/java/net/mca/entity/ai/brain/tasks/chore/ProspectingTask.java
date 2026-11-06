@@ -932,12 +932,16 @@ public class ProspectingTask extends AbstractChoreTask {
             }
         }
         recordTrail(world, villager);
-        boolean aguaEnExploracion = (cueva.activa() || sondeoSalida != null) && villager.isTouchingWater()
-                || explorar.waypoint() != null && Agua.trapped(world, villager);
+        BlockPos destinoExploracion = explorar.waypoint();
+        boolean aguaEnExploracion = villager.isTouchingWater() && (cueva.activa() || sondeoSalida != null
+                || destinoExploracion != null && (Agua.trapped(world, villager) || atasco.origen() != null));
         if (!midStep && (rescateAgua.activo() || aguaEnExploracion)
                 && rescateAgua.tick(world, villager, motor)) {
             cueva.cerrar(now);
-            explorar.reset();
+            if (destinoExploracion != null) {
+                explorar.fail(destinoExploracion, now);
+                explorar.reset();
+            }
             plan.clear();
             return;
         }

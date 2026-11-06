@@ -111,7 +111,7 @@ public final class SondeoSalida {
     }
 
     private static boolean afuera(ServerWorld world, BlockPos at) {
-        return Mining.onSurface(world, at) && Mining.openGround(world, at);
+        return Motor.standCell(world, at) && seco(world, at) && Mining.onSurface(world, at) && Mining.openGround(world, at);
     }
 
     public static boolean seco(World world, BlockPos at) {
