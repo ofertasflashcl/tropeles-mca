@@ -56,7 +56,7 @@ public final class CambioCasa {
             return modelo == null && madera == null && cubierta == null && ventanas.isEmpty() && balcon == null;
         }
 
-        /** The roof and the windows only: what is done to a draft once its design and wood are chosen. */
+        /** Features applied once the design and wood have been chosen. */
         public Pedido arreglos() {
             return new Pedido(null, null, cubierta, ventanas, balcon);
         }

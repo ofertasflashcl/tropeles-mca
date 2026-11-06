@@ -3,6 +3,7 @@ package net.mca.entity.ai.mente;
 import net.mca.MCA;
 import net.mca.entity.VillagerEntityMCA;
 import net.mca.entity.ai.body.Mining;
+import net.mca.entity.ai.body.Motor;
 import net.minecraft.block.Block;
 import net.minecraft.inventory.SimpleInventory;
 import net.minecraft.server.world.ServerWorld;
@@ -45,6 +46,7 @@ public final class Atasco {
     private int bolsa = -1;
     private int mundo;
     private int quieto;
+    private long proximaMuestra;
     private int nivel;
     @Nullable
     private BlockPos origen;
@@ -59,10 +61,11 @@ public final class Atasco {
      * apply this tick, NINGUNO almost always. {@code haciendo} is what it thinks it is doing, for the log.
      */
     public Remedio tick(ServerWorld world, VillagerEntityMCA villager, boolean porGusto, String haciendo) {
-        if ((villager.age % 20) != 3) {
+        long now = world.getTime();
+        if (now < proximaMuestra || !Motor.settled(villager)) {
             return Remedio.NINGUNO;
         }
-        long now = world.getTime();
+        proximaMuestra = now + 20;
         BlockPos feet = Mining.pies(villager);
         int items = items(villager.getInventory());
         int around = around(world, feet);
@@ -149,6 +152,7 @@ public final class Atasco {
         ancla = null;
         quieto = 0;
         nivel = 0;
+        proximaMuestra = 0;
         origen = null;
         meta = null;
         cavar = false;

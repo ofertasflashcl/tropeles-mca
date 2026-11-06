@@ -468,6 +468,7 @@ public class ProspectingTask extends AbstractChoreTask {
     private int stuckItems = -1;
     private int stuckTicks;
     private int stuckRounds;
+    private long nextSeekWatch;
 
     /** The ore each miner was asked to look for first ("busca diamantes"). */
     private static final Map<VillagerEntityMCA, String> WANTED = new WeakHashMap<>();
@@ -4276,8 +4277,8 @@ public class ProspectingTask extends AbstractChoreTask {
     }
 
     /**
-     * No food in the bag or at home: it hunts the wild animals it sees (never a pen, a village's, a named, leashed,
-     * tamed or young one, nor the last of its kind around), picks up what they drop and cooks the meat when it can.
+     * Finds food, bakes from a harvest, or hunts and cooks what it brings back. It leaves protected animals
+     * alone and keeps the last of a kind when it has enough food.
      */
     private void forage(ServerWorld world, VillagerEntityMCA villager) {
         VisualMemory memory = Retina.memory(villager);
@@ -4387,7 +4388,8 @@ public class ProspectingTask extends AbstractChoreTask {
             double nearest = Double.MAX_VALUE;
             for (VisualMemory.SeenBlock seen : memory.blocks(s -> piedraDeHorno(s.state))) {
                 double distance = villager.getEyePos().squaredDistanceTo(Vec3d.ofCenter(seen.pos));
-                if (distance < nearest && !seen.pos.equals(Mining.pies(villager).down()) && !isIgnored(seen.pos, now)
+                if (distance < nearest && distance <= 36 && world.isChunkLoaded(seen.pos)
+                        && !seen.pos.equals(Mining.pies(villager).down()) && !isIgnored(seen.pos, now)
                         && piedraDeHorno(world.getBlockState(seen.pos)) && Obras.mayBreak(world, villager, seen.pos)
                         && Retina.visibleFace(world, villager, seen.pos, Retina.BLOCK_REACH) != null) {
                     ovenStone = seen.pos;
@@ -4480,8 +4482,11 @@ public class ProspectingTask extends AbstractChoreTask {
         if (crop == null) {
             return false;
         }
+        if (!world.isChunkLoaded(crop)) {
+            return dejarCultivo(villager, now);
+        }
         BlockState state = world.getBlockState(crop);
-        if (!world.isChunkLoaded(crop) || !(state.getBlock() instanceof CropBlock plant) || !plant.isMature(state)
+        if (!(state.getBlock() instanceof CropBlock plant) || !plant.isMature(state)
                 || Obras.playersField(world, crop)) {
             crop = null;
             return false;
@@ -4555,15 +4560,16 @@ public class ProspectingTask extends AbstractChoreTask {
     @Nullable
     private BlockPos seenCrop(ServerWorld world, VillagerEntityMCA villager, VisualMemory memory) {
         BlockPos feet = Mining.pies(villager);
+        long now = world.getTime();
         BlockPos best = null;
         double bestD = Double.MAX_VALUE;
-        for (BlockPos pos : BlockPos.iterate(feet.add(-20, -4, -20), feet.add(20, 4, 20))) {
-            BlockState seen = memory.stateAt(pos);
-            if (seen == null || !(seen.getBlock() instanceof net.minecraft.block.CropBlock plant) || !plant.isMature(seen)) {
+        for (VisualMemory.SeenBlock seen : memory.blocks(s -> s.state.getBlock() instanceof CropBlock p && p.isMature(s.state))) {
+            BlockPos pos = seen.pos;
+            if (Math.abs(pos.getX() - feet.getX()) > 20 || Math.abs(pos.getY() - feet.getY()) > 4 || Math.abs(pos.getZ() - feet.getZ()) > 20) {
                 continue;
             }
             double d = pos.getSquaredDistance(feet);
-            if (d < bestD && inaccessibleCrops.getOrDefault(pos.asLong(), 0L) <= world.getTime() && world.isChunkLoaded(pos)
+            if (d < bestD && inaccessibleCrops.getOrDefault(pos.asLong(), 0L) <= now && world.isChunkLoaded(pos)
                     && !Obras.playersField(world, pos) && world.getBlockState(pos).getBlock() instanceof CropBlock real
                     && real.isMature(world.getBlockState(pos))) {
                 bestD = d;
@@ -4657,7 +4663,7 @@ public class ProspectingTask extends AbstractChoreTask {
             if (until != null && until > now || !Retina.canSee(world, villager, animal)) {
                 continue;
             }
-            // never the last of its kind around: at least two of them in sight or fresh in mind
+            // Leave the last one in sight or fresh in mind, except when hungry enough to need it.
             int same = 0;
             for (AnimalEntity other : near) {
                 if (other.getType() == animal.getType() && (other == animal || memory.entity(other.getId()) != null)) {
@@ -4932,6 +4938,7 @@ public class ProspectingTask extends AbstractChoreTask {
         stuckTicks = 0;
         stuckRounds = 0;
         stuckAt = null;
+        nextSeekWatch = 0;
     }
 
     /**
@@ -5118,7 +5125,13 @@ public class ProspectingTask extends AbstractChoreTask {
      * forget that ore, turn; after a minute of that, head up and home and start over from there.
      */
     private boolean seekWatchdog(ServerWorld world, VillagerEntityMCA villager) {
-        if ((villager.age % 20) != 0) {
+        long now = world.getTime();
+        if (now < nextSeekWatch || !Motor.settled(villager)) {
+            return false;
+        }
+        nextSeekWatch = now + 20;
+        if (breakingNow) {
+            stuckTicks = 0;
             return false;
         }
         BlockPos feet = Mining.pies(villager);
@@ -5301,6 +5314,9 @@ public class ProspectingTask extends AbstractChoreTask {
             return;
         }
         if (plan.isEmpty()) {
+            if (!Motor.settled(villager)) {
+                return;
+            }
             if (levelCells >= BARREN_CELLS) {
                 barrenLevel(world, villager);
             }
@@ -5315,6 +5331,15 @@ public class ProspectingTask extends AbstractChoreTask {
         }
         BlockPos goal = plan.peekFirst();
         if (goal == null) {
+            return;
+        }
+        BlockPos pies = Mining.pies(villager);
+        if (villager.isOnGround() && goal.equals(pies.up()) && !Mining.standable(world, goal.down())) {
+            // A waypoint above this same column cannot be reached by jumping from its empty floor.
+            // Plan the branch again from the real landing cell.
+            MCA.LOGGER.info("[Tropeles] {} descarta un tramo de minería sin piso en {}; replantea desde {}", name(), goal.toShortString(), pies.toShortString());
+            plan.clear();
+            motor.reset(world, villager);
             return;
         }
         int target = targetY(world, villager);

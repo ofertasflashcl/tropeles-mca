@@ -87,6 +87,10 @@ public final class MenteLocal {
                     + "cancela (la|esa|tu|mi|nuestra) (casa|obra|construccion)|olvida(te de)? (la|esa) (casa|obra)|abandona (la|esa|tu) (casa|obra)|"
                     + "cancel (the|that|my|your) (house|build(ing)?|construction)|forget (about )?the house|give up (on )?the house|"
                     + "(don'?t|do not) build (the|that|a|my) house"),
+            order("build-house", "(construye|construyeme|construyenos|construir|construyas|construirme|haz|hazme|haznos|hacer|hacerme|haceme|arma|armame|"
+                    + "armar|levanta|levantame|edifica|edificame|crea|creame|build|make)(?![a-z]).{0,30}(?<![a-z])(" + CASA + ")(?![a-z])|"
+                    + "(sigue|segui|continua|termina|retoma)( con)? (la|tu|mi|esa|nuestra) (casa|obra|construccion)|"
+                    + "(keep|go on|carry on) (building|with the house)|finish the house|resume (building|the house)"),
             // a change to the house it proposed ({@link Voluntad#editarCasa}): its roof, a window or two, its design or wood
             order("edit-house", "(ponle|ponele|pon|hazle|hazla con|que tenga|la quiero con|mejor con|cambiale|cambia) (el |un )?techo|"
                     + "techo (mas )?(alto|empinado|inclinado|puntiagudo|girado|al reves|cruzado|normal|a dos aguas)|"
@@ -97,12 +101,8 @@ public final class MenteLocal {
                     + "(steep|steeper|turned|gable) roof|(open|add|close|remove|wall up) (a |one |two |the |another )?windows?|"
                     + "make it (a cabin|a long house|two[- ]floor|of (oak|spruce|birch|jungle|acacia|dark oak|mangrove|cherry))|"
                     + "(ponle|agrega|agregale|anade|anadele|hazle|hazme|quita|quitale|saca|mueve|cambia|add|remove|move) "
-                    + "(un |el |a |the )?(balcon|balcony)|^(un balcon|sin balcon|a balcony|without a balcony)\\b|"
+                    + "(un |el |a |the )?(balcon|balcony)|^((un |sin )?balcon|(a |without a )?balcony)\\b|"
                     + "(mueve|muevela|cambia) (el sitio|la casa|la parcela|de sitio)|muevela (aqui|aca|ahi)|move (the house|it here)"),
-            order("build-house", "(construye|construyeme|construyenos|construir|construyas|construirme|haz|hazme|haznos|hacer|hacerme|haceme|arma|armame|"
-                    + "armar|levanta|levantame|edifica|edificame|crea|creame|build|make)(?![a-z]).{0,30}(?<![a-z])(" + CASA + ")(?![a-z])|"
-                    + "(sigue|segui|continua|termina|retoma)( con)? (la|tu|mi|esa|nuestra) (casa|obra|construccion)|"
-                    + "(keep|go on|carry on) (building|with the house)|finish the house|resume (building|the house)"),
             order("eat-break", "(ve|anda|sal|salte|sube|subete|vete|andate)( de (la )?mina| de ahi( abajo)?)? (a|para) comer( algo)?|"
                     + "buscar? comida|come algo|tienes que comer|go (eat|get (some )?food)|get some food|grab (some food|a bite)|eat something"),
             order("come-up", "sal de (la )?mina|salte de (la )?mina|sal de ahi( abajo)?|sal del (hoyo|pozo|tunel)|sal afuera|sube( ya)?|subete|"
