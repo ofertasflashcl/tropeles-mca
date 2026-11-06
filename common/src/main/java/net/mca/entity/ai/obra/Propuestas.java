@@ -168,6 +168,10 @@ public final class Propuestas extends PersistentState {
             return plano;
         }
 
+        public boolean aMedida() {
+            return EdicionPlano.ID.equals(plano.id);
+        }
+
         public Plano.Madera madera() {
             return borrador.madera();
         }
@@ -201,9 +205,14 @@ public final class Propuestas extends PersistentState {
             cambiar(nuevo, origen, frente, now);
         }
 
+        public void pedirSitio(long now) {
+            pendienteSitio = true;
+            cambiarPlano(plano, origen, frente, now);
+        }
+
         public void fijarSitio(BlockPos origen, Direction frente, long now) {
             pendienteSitio = false;
-            cambiar(borrador, origen, frente, now);
+            cambiarPlano(plano, origen, frente, now);
         }
 
         /** Shown again, or talked about: a bare yes answers it for a while more. */
@@ -219,7 +228,11 @@ public final class Propuestas extends PersistentState {
         /** Another draft, or another place for it: a new revision to look at. */
         public void cambiar(CatalogoPlanos.Borrador b, BlockPos origen, Direction frente, long now) {
             this.borrador = b;
-            this.plano = b.plano();
+            cambiarPlano(b.plano(), origen, frente, now);
+        }
+
+        public void cambiarPlano(Plano plano, BlockPos origen, Direction frente, long now) {
+            this.plano = plano;
             this.origen = origen.toImmutable();
             this.frente = frente;
             this.mostrada = now;
@@ -248,6 +261,10 @@ public final class Propuestas extends PersistentState {
         /** "una cabaña de troncos de abeto en 10 64 -3, con techo alto (revisión 2)". */
         public String resumen(boolean es) {
             Plano p = plano;
+            if (aMedida()) {
+                return (es ? "una construcción a medida, revisión " : "a custom build, revision ") + p.revision
+                        + (pendienteSitio ? (es ? ", pendiente de parcela" : ", waiting for a plot") : (es ? " en " : " at ") + donde());
+            }
             if (pendienteSitio) {
                 return es ? "una " + p.nombre + " de " + madera().es + " pendiente de parcela"
                         : "a " + p.nombreEn + " in " + madera().en + " waiting for a plot";
@@ -308,7 +325,7 @@ public final class Propuestas extends PersistentState {
                 CatalogoPlanos.Borrador b = new CatalogoPlanos.Borrador(modelo, Plano.Madera.valueOf(n.getString("madera")),
                         ModelosCasa.Cubierta.valueOf(n.getString("cubierta")), abiertas, cerradas, n.getInt("revision"), balcon);
                 Plano guardado = PlanoCodec.leer(n.getCompound("plano"));
-                Plano dibujado = b.plano();
+                Plano dibujado = EdicionPlano.ID.equals(guardado.id) ? guardado : b.plano();
                 if (!guardado.hash().equals(dibujado.hash())) {
                     throw new IllegalArgumentException("the catalogue draws another plan for this draft now");
                 }

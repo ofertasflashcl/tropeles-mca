@@ -160,6 +160,11 @@ public final class VistaSituada {
             out.append("\nb").append(i + 1).append(" = ").append(b.id()).append(" at ").append(b.pos().toShortString())
                     .append(" face ").append(b.cara().asString()).append(" pixel ").append(b.x()).append(',').append(b.y())
                     .append(" of ").append(Retina.WIDTH).append('x').append(Retina.HEIGHT);
+            if (!b.estado().getProperties().isEmpty()) {
+                String state = b.estado().toString();
+                int bracket = state.indexOf('[');
+                if (bracket >= 0) out.append(" state ").append(state.substring(bracket));
+            }
         }
         if (!cuerpos.isEmpty()) {
             out.append("\nVisible entities: ").append(String.join(" | ", cuerpos));

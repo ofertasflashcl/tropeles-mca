@@ -36,6 +36,7 @@ final class PruebasVistaCerebro {
             case "vista-accion" -> Pruebas.start(new Vista(world));
             case "subida-detras" -> Pruebas.start(new Subida(world));
             case "agua-exploracion" -> Pruebas.start(new Agua(world));
+            case "agua-tunel" -> Pruebas.start(new AguaTunel(world));
             default -> throw new IllegalArgumentException(which);
         }
     }
@@ -57,6 +58,7 @@ final class PruebasVistaCerebro {
             Pruebas.fill(world, o.add(3, 0, -5), o.add(5, 4, 5), Blocks.STONE.getDefaultState());
             world.setBlockState(oro, Blocks.GOLD_BLOCK.getDefaultState(), 3);
             world.setBlockState(oculto, Blocks.DIAMOND_BLOCK.getDefaultState(), 3);
+            world.setBlockState(oro.south(), Blocks.IRON_ORE.getDefaultState(), 3);
             v = Pruebas.villager(world, o, Direction.EAST, "Paz Vista");
             p = Pruebas.fakePlayer(world, "Vista_CI", Vec3d.ofBottomCenter(o.west(2)));
             v.setAiDisabled(true);
@@ -103,8 +105,11 @@ final class PruebasVistaCerebro {
                 var hechos = Recuerdos.of(world, v).hechos("vista", 8);
                 boolean oroReal = hechos.size() == 1 && oro.equals(hechos.get(0).donde()) && hechos.get(0).texto().contains("minecraft:gold_block");
                 boolean exacto = visto.contains(oro.getX() + " " + oro.getY() + " " + oro.getZ()) && !visto.contains("diamante");
-                boolean ok = fotos[0] == 2 && oroReal && exacto && cambio.contains("ya cambió") && Retina.memory(v).stateAt(oculto) == null;
-                Pruebas.check(name, ok, "muestras " + fotos[0] + ", memoria " + oroReal + ", respuesta " + visto + ", cambio " + cambio);
+                var hallazgos = Recuerdos.of(world, v).hechos("vista-hallazgo", 8);
+                boolean hierroVisto = hallazgos.stream().anyMatch(h -> oro.south().equals(h.donde()) && h.texto().contains("minecraft:iron_ore"));
+                boolean ok = fotos[0] == 2 && oroReal && exacto && hierroVisto && cambio.contains("ya cambió") && Retina.memory(v).stateAt(oculto) == null;
+                Pruebas.check(name, ok, "muestras " + fotos[0] + ", memoria " + oroReal + ", mineral visible guardado " + hierroVisto
+                        + ", respuesta " + visto + ", cambio " + cambio);
                 return ok;
             } finally {
                 config.villagerChatAIUseTools = herramientas;
@@ -233,6 +238,47 @@ final class PruebasVistaCerebro {
         @Override
         String state() {
             return v.getBlockPos().toShortString() + ", aire " + v.getAir() + ", activo " + rescate.activo() + ", " + Retina.memory(v).doing();
+        }
+
+        @Override
+        void cleanup() {
+            v.discard();
+        }
+    }
+
+    private static final class AguaTunel extends Pruebas.Scenario {
+        private final BlockPos o = new BlockPos(34340, 99, 33000);
+        private final VillagerEntityMCA v;
+        private final Motor motor = new Motor();
+        private final RescateAgua rescate = new RescateAgua();
+
+        AguaTunel(ServerWorld world) {
+            super("agua-tunel", world, 380);
+            Pruebas.load(world, o, 20);
+            Pruebas.fill(world, o.add(-5, -1, -4), o.add(9, 3, 4), Blocks.STONE.getDefaultState());
+            Pruebas.fill(world, o.add(-5, 4, -4), o.add(9, 8, 4), Blocks.AIR.getDefaultState());
+            Pruebas.fill(world, o.add(0, 0, -1), o.add(4, 1, 1), Blocks.WATER.getDefaultState());
+            Pruebas.fill(world, o.east(4).up(2), o.east(4).up(3), Blocks.WATER.getDefaultState());
+            v = Pruebas.villager(world, o, Direction.EAST, "Ada Agua");
+            v.getBrain().forget(MemoryModuleTypeMCA.STAYING.get());
+        }
+
+        @Override
+        Boolean step() {
+            if (ticks < 5) return null;
+            if (ticks == 5) v.setAir(95);
+            rescate.tick(world, v, motor);
+            BlockPos orilla = Recuerdos.of(world, v).sitio("orilla segura");
+            if (orilla == null) return null;
+            boolean ok = v.isAlive() && v.getHealth() == v.getMaxHealth() && v.isOnGround() && !v.isTouchingWater()
+                    && orilla.getY() == o.getY() + 4 && world.getBlockState(o.up(2)).isOf(Blocks.STONE) && v.getInventory().isEmpty();
+            Pruebas.check(name, ok, "salió por un respiradero lateral en " + ticks + " ticks; " + state());
+            return ok;
+        }
+
+        @Override
+        String state() {
+            return v.getBlockPos().toShortString() + ", aire " + v.getAir() + ", vida " + v.getHealth() + ", activo " + rescate.activo();
         }
 
         @Override

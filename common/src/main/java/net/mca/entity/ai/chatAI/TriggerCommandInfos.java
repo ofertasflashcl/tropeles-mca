@@ -167,6 +167,12 @@ public class TriggerCommandInfos {
                             + "\"mejor una cabaña\", \"de abeto\", \"balcón a la derecha\", \"sin balcón\", \"mueve la casa\"",
                     (p, v, how) -> Voluntad.editarCasa(v, p, how == null ? "" : how, spanish(v)),
                     (p, v) -> Voluntad.conectado(v) && Voluntad.tienePropuesta(v)),
+            new TriggerCommandInfo(net.mca.entity.ai.obra.EdicionPlano.COMANDO,
+                    "Draft any structure requested, or edit exact blocks on their unapproved plan. Applies only to the preview. Use it for shapes, wings, arches, rooms, "
+                            + "materials or positions the simpler edit-house cannot express. Only use it for a real construction/edit request, not questions or suggestions they rejected.",
+                    net.mca.entity.ai.obra.EdicionPlano.LENGUAJE,
+                    (p, v, ignored) -> "You need the current draft context to edit its blocks.",
+                    (p, v) -> Voluntad.contextoPlano(v, p, false) != null),
             new TriggerCommandInfo("cancel-house", "Give up the house you are building for good (what is already built stays), or drop the one you "
                     + "proposed; to only pause it, that is stop-working",
                     null,

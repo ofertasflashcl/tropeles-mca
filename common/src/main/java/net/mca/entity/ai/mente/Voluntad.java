@@ -18,6 +18,7 @@ import net.mca.entity.ai.sense.VisualMemory;
 import net.mca.entity.ai.obra.CambioCasa;
 import net.mca.entity.ai.obra.CatalogoPlanos;
 import net.mca.entity.ai.obra.Constructor;
+import net.mca.entity.ai.obra.EdicionPlano;
 import net.mca.entity.ai.obra.ModelosCasa;
 import net.mca.entity.ai.obra.Obra;
 import net.mca.entity.ai.obra.ObrasMundo;
@@ -1235,6 +1236,90 @@ public final class Voluntad {
     private static final String PREGUNTA_EN = "Ask me for a different roof, windows, wood or design. The two-storey house can have a balcony. "
             + "Shall I build it like this? Say \"yes\" and I'll start.";
     private static final Pattern MOVER_CASA = Pattern.compile("\\b(mueve|muevela|mover|cambia de sitio|cambia (el sitio|la parcela)|move|relocate)\\b");
+
+    public static boolean pideMoverParcela(String msg) {
+        return MOVER_CASA.matcher(CambioCasa.llano(msg)).find() && CambioCasa.leer(msg).vacio();
+    }
+
+    @Nullable
+    public static EdicionPlano.Base contextoPlano(VillagerEntityMCA villager, PlayerEntity player, boolean geometria) {
+        if (!(villager.getWorld() instanceof ServerWorld world) || player.getWorld() != world || !conectado(villager)
+                || ObrasMundo.get(world).de(villager.getUuid()) != null) {
+            return null;
+        }
+        Propuestas.Propuesta p = Propuestas.get(world).de(villager.getUuid());
+        if (p == null) {
+            return new EdicionPlano.Base(null, -1, "No pending draft. A new design starts around local center (3,0,3). Use reset for a new shape.");
+        }
+        if (!p.para.equals(player.getUuid())) {
+            return null;
+        }
+        return new EdicionPlano.Base(p.id, p.version(), geometria ? EdicionPlano.describir(p.plano(), p.madera()) : "");
+    }
+
+    public static boolean planoAMedida(VillagerEntityMCA villager) {
+        if (villager.getWorld() instanceof ServerWorld world) {
+            Propuestas.Propuesta p = Propuestas.get(world).de(villager.getUuid());
+            return p != null && p.aMedida();
+        }
+        return false;
+    }
+
+    /** Accepts a proposed block edit only against the owner's current, unapproved revision. */
+    public static String editarBloques(VillagerEntityMCA villager, ServerPlayerEntity player, @Nullable EdicionPlano.Base base,
+                                       String cambios, boolean es) {
+        EdicionPlano.Base actual = contextoPlano(villager, player, false);
+        if (base == null || actual == null || !java.util.Objects.equals(base.id(), actual.id()) || base.version() != actual.version()) {
+            return es ? "El plano cambió mientras pensaba. Dime de nuevo qué quieres cambiar." : "The draft changed while I was thinking. Tell me what to edit again.";
+        }
+        ServerWorld world = player.getServerWorld();
+        Voluntad w = of(villager);
+        Gana gana = quiere(villager, player, Pedido.CASA);
+        if (!gana.si()) {
+            w.negarse(villager, player, "OBRA", gana, Pedido.CASA);
+            return es ? w.dichoEs : w.dichoEn;
+        }
+        long now = world.getTime();
+        Propuestas ps = Propuestas.get(world);
+        Propuestas.Propuesta p = ps.de(villager.getUuid());
+        CatalogoPlanos.Borrador b = p == null ? CatalogoPlanos.Borrador.de(ModelosCasa.Modelo.DOS_PISOS, maderaDe(villager)) : p.borrador();
+        Plano antes = p == null ? b.plano() : p.plano();
+        Plano nuevo;
+        try {
+            nuevo = EdicionPlano.aplicar(antes, b.madera(), cambios);
+        } catch (IllegalArgumentException invalid) {
+            MCA.LOGGER.info("[Tropeles] edición de plano rechazada para {}: {}", villager.getUuid(), invalid.getMessage());
+            return es ? "Ese cambio no forma un plano construible. Podemos ajustar el diseño." : "That edit doesn't make a buildable plan. We can adjust the design.";
+        }
+        CatalogoPlanos.Diferencia diferencia = CatalogoPlanos.diferencia(antes, nuevo);
+        if (diferencia.vacia() && antes.entrada.equals(nuevo.entrada)) {
+            return es ? "El plano ya tiene esos bloques." : "The draft already has those blocks.";
+        }
+        if (p != null && !p.pendienteSitio()) {
+            String[] why = {"", ""};
+            if (mismoSitio(world, villager, p, nuevo, why) == null) {
+                return es ? "La ampliación no cabe en esta parcela. " + why[0] + "." : "That addition doesn't fit here. " + why[1] + ".";
+            }
+        }
+        if (p == null) {
+            p = new Propuestas.Propuesta(UUID.randomUUID().toString(), villager.getUuid(), villager.getName().getString(), player.getUuid(),
+                    Companero.nombre(villager, player), b, BlockPos.ORIGIN, Direction.NORTH, now);
+            p.pedirSitio(now);
+            ps.poner(p);
+        }
+        p.cambiarPlano(nuevo, p.origen(), p.frente(), now);
+        ps.cambio();
+        String diff = CambioCasa.diferencia(diferencia, es);
+        MCA.LOGGER.info("[Tropeles] {} dibujó plano {} revisión {} ({}) para {}", villager.getUuid(), p.id, nuevo.revision, nuevo.hash(), player.getUuid());
+        if (p.pendienteSitio()) {
+            w.pedirParcela(world, player, p, "Ya dibujé la revisión " + nuevo.revision + ". ", "I drew revision " + nuevo.revision + ". ");
+        } else {
+            Proyeccion.enviarPropuesta(world, p);
+            w.dicho("OBRA", "Ya ves la revisión " + nuevo.revision + ". " + (es ? diff + ". " : "") + "Dime qué más cambio o responde «sí» para empezar.",
+                    "Revision " + nuevo.revision + " is up. " + (!es ? diff + ". " : "") + "Tell me what else to change, or say yes to begin.");
+        }
+        return es ? w.dichoEs : w.dichoEn;
+    }
     /** What a model is told of a proposal: it cannot start it; only the player can, with their own yes. */
     private static final String PROPUESTA_MODELO = "Nothing is built yet and you cannot start it yourself: it starts only when they themselves"
             + " say yes (never say you have started). They can ask for another roof, windows, design, wood or upstairs balcony (edit-house) or say no. Tell them"
@@ -1393,6 +1478,16 @@ public final class Voluntad {
                           CambioCasa.Pedido pedido, boolean aqui) {
         long now = world.getTime();
         Propuestas ps = Propuestas.get(world);
+        if (p.aMedida()) {
+            if (aqui && pedido.vacio()) {
+                p.pedirSitio(now);
+                ps.cambio();
+                nuevaGeneracion(villager.getUuid());
+                return pedirParcela(world, player, p, "", "");
+            }
+            dicho("OBRA", "Dime el cambio concreto para revisar el plano que dibujamos.", "Tell me exactly what to change in the plan we drew.");
+            return "The current design is a custom block plan; change it with design-blueprint.";
+        }
         p.mostrada(now);
         ps.cambio();
         CambioCasa.Hecho h = pedido.vacio() ? null : CambioCasa.aplicar(p.borrador(), pedido);
@@ -1493,7 +1588,7 @@ public final class Voluntad {
         String[] why = {"", ""};
         Sitio.Elegido s = mismoSitio(world, villager, p, p.plano(), why);
         if (s == null) {
-            p.pedirSitio(p.borrador(), now);
+            p.pedirSitio(now);
             ps.cambio();
             nuevaGeneracion(villager.getUuid());
             w.pedirParcela(world, player, p, "El sitio cambió. " + why[0] + ". ", "The site changed. " + why[1] + ". ");

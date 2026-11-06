@@ -729,6 +729,8 @@ public final class MenteLocal {
             case "coords" -> coords(villager, es);
             case "see" -> see(villager, es);
             case "focus" -> focus(villager, es);
+            case "design" -> es ? "No logré dibujar ese cambio. Dime qué parte quieres ajustar y lo intento de nuevo."
+                    : "I couldn't draw that change. Tell me which part you want to adjust and I'll try again.";
             case "hear" -> hear(villager, es);
             case "light" -> light(villager, es);
             case "name" -> es ? "Me llamo " + villager.getName().getString() + "." : "I'm " + villager.getName().getString() + ".";
@@ -1207,7 +1209,9 @@ public final class MenteLocal {
             return es ? "No distingo ningún bloque justo delante." : "I can't make out a block directly in front of me.";
         }
         String name = focus.state().getBlock().getName().getString();
-        return es ? "Veo " + name + " en " + coords(focus.pos()) + "." : "I see " + name + " at " + coords(focus.pos()) + ".";
+        BlockPos pos = focus.pos();
+        String at = pos.getX() + " " + pos.getY() + " " + pos.getZ();
+        return es ? "Veo " + name + " en " + at + "." : "I see " + name + " at " + at + ".";
     }
 
     /** What it hears: the beings it hears and does not see (where, coming closer or not), or that all is quiet ({@link Ahora}). */

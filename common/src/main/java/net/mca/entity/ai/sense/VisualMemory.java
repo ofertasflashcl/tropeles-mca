@@ -3,13 +3,20 @@ package net.mca.entity.ai.sense;
 import it.unimi.dsi.fastutil.longs.Long2ObjectLinkedOpenHashMap;
 import it.unimi.dsi.fastutil.objects.ObjectIterator;
 import net.mca.entity.ai.body.Mining;
+import net.mca.entity.VillagerEntityMCA;
+import net.mca.entity.ai.mente.Recuerdos;
 import net.minecraft.block.BlockState;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityType;
+import net.minecraft.registry.Registries;
+import net.minecraft.registry.RegistryKey;
+import net.minecraft.registry.tag.FluidTags;
+import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.World;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
@@ -40,6 +47,10 @@ public final class VisualMemory {
      */
     private final Long2ObjectLinkedOpenHashMap<SeenBlock> ores = new Long2ObjectLinkedOpenHashMap<>();
     private final Map<Integer, SeenEntity> entities = new HashMap<>();
+    private final Long2ObjectLinkedOpenHashMap<BlockState> hallazgos = new Long2ObjectLinkedOpenHashMap<>();
+    @Nullable
+    private RegistryKey<World> mundoHallazgos;
+    private long proximoHallazgo;
 
     @Nullable
     private Retina.Pixel[] frame;
@@ -177,6 +188,34 @@ public final class VisualMemory {
 
     void focus(@Nullable Retina.Focus focus) {
         this.focus = focus;
+    }
+
+    /** Saves significant new sightings from the bands that were just scanned. Ordinary terrain stays in the live map. */
+    void guardarHallazgo(ServerWorld world, VillagerEntityMCA viewer, Retina.Pixel[] pixels, long now, int firstBand, int bands) {
+        if (!world.getRegistryKey().equals(mundoHallazgos)) {
+            mundoHallazgos = world.getRegistryKey();
+            hallazgos.clear();
+            proximoHallazgo = now;
+        }
+        if (now < proximoHallazgo) return;
+        for (int band = firstBand; band < firstBand + bands; band++) {
+            for (int row = band % Retina.BANDS; row < Retina.HEIGHT; row += Retina.BANDS) {
+                for (int x = 0; x < Retina.WIDTH; x++) {
+                    Retina.Pixel p = pixels[row * Retina.WIDTH + x];
+                    if (p == null || p.pos() == null || p.state() == null || p.distance() > 24
+                            || !Mining.isOre(p.state()) && !p.state().getFluidState().isIn(FluidTags.LAVA)) continue;
+                    long key = p.pos().asLong();
+                    if (p.state().equals(hallazgos.getAndMoveToLast(key))) continue;
+                    hallazgos.putAndMoveToLast(key, p.state());
+                    if (hallazgos.size() > 128) hallazgos.removeFirst();
+                    proximoHallazgo = now + 40;
+                    Recuerdos.anotar(viewer, "vista-hallazgo", "vi " + Registries.BLOCK.getId(p.state().getBlock())
+                            + " en " + p.pos().toShortString(), p.pos());
+                    return;
+                }
+            }
+        }
+        proximoHallazgo = now + 4;
     }
 
     @Nullable

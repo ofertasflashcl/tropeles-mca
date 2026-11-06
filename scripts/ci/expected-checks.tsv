@@ -105,6 +105,7 @@ propuestas	propuestas-editar
 propuestas	propuestas-aprobar
 propuestas	propuestas-cancelar
 propuestas	propuestas-balcon
+propuestas	propuestas-voxeles
 propuestas	propuestas-guardado
 propuestas	propuestas-preparar
 cueva-autonoma	cueva-autonoma
@@ -114,3 +115,4 @@ seguir-sin-spam	seguir-sin-spam
 vista-accion	vista-accion
 subida-detras	subida-detras
 agua-exploracion	agua-exploracion
+agua-tunel	agua-tunel

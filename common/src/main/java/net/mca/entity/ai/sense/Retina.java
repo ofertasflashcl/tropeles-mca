@@ -196,6 +196,10 @@ public final class Retina {
         }
         memory.frame(frame, WIDTH, HEIGHT, tick);
         memory.focus(focus(world, viewer, memory, tick));
+        if (world instanceof net.minecraft.server.world.ServerWorld server && viewer instanceof VillagerEntityMCA villager
+                && net.mca.entity.ai.mente.Voluntad.conectado(villager)) {
+            memory.guardarHallazgo(server, villager, frame, tick, firstBand, bands);
+        }
         for (Entity body : bodies) {
             if (canSee(world, viewer, body)) {
                 memory.seeEntity(body, distanceToBox(eye, body.getBoundingBox()), tick);

@@ -19,11 +19,14 @@ import java.util.Map;
 /** Immediate, local swim to dry footing. A model is never on the critical path to breathe. */
 public final class RescateAgua {
     private static final int RADIO = 7;
-    private static final int CUOTA = 160;
+    private static final int CUOTA = 256;
+    private static final int AIRE_URGENTE = 100;
     private List<BlockPos> camino = List.of();
     private int paso;
     private long replantear;
     private long vence;
+    private boolean urgente;
+    private final Map<BlockPos, Long> bloqueados = new HashMap<>();
 
     public boolean activo() {
         return !camino.isEmpty();
@@ -42,12 +45,25 @@ public final class RescateAgua {
                 return false;
             }
         }
-        if (!activo() || now >= vence || !libre(world, camino.get(paso))) {
+        if (activo() && paso == camino.size() - 1 && pies.equals(camino.get(paso))
+                && !v.isSubmergedInWater() && !SondeoSalida.seco(world, pies)) {
+            camino = List.of(); // an air pocket buys time; keep looking for solid ground
+            replantear = now;
+        }
+        boolean sinAire = v.isSubmergedInWater() && v.getAir() <= AIRE_URGENTE;
+        boolean cambioPrioridad = sinAire && !urgente;
+        urgente = sinAire;
+        boolean fallo = activo() && (now >= vence || !libre(world, camino.get(paso)));
+        if (!activo() || fallo || cambioPrioridad) {
             if (now < replantear) {
                 return false;
             }
+            if (fallo) {
+                bloqueados.put(camino.get(paso), now + 100);
+            }
+            bloqueados.values().removeIf(hasta -> hasta <= now);
             replantear = now + 16;
-            camino = buscar(world, v, pies);
+            camino = buscar(world, v, pies, bloqueados);
             if (camino.isEmpty()) {
                 return false;
             }
@@ -64,7 +80,10 @@ public final class RescateAgua {
         v.getBrain().forget(MemoryModuleType.WALK_TARGET);
         v.getNavigation().stop();
         v.getMoveControl().moveTo(at.x, at.y, at.z, 0.85);
-        if (meta.getY() > pies.getY() || v.isSubmergedInWater() || SondeoSalida.seco(world, meta)) {
+        if (meta.getY() < pies.getY() && v.isTouchingWater()) {
+            v.addVelocity(0, -0.06, 0);
+        } else if (meta.getY() > pies.getY() || SondeoSalida.seco(world, meta)
+                || v.isSubmergedInWater() && !Agua.water(world, meta.up())) {
             v.getJumpControl().setActive();
         }
         Vec3d avance = new Vec3d(at.x - v.getX(), 0, at.z - v.getZ());
@@ -75,7 +94,7 @@ public final class RescateAgua {
         return true;
     }
 
-    private static List<BlockPos> buscar(ServerWorld world, VillagerEntityMCA v, BlockPos inicio) {
+    private static List<BlockPos> buscar(ServerWorld world, VillagerEntityMCA v, BlockPos inicio, Map<BlockPos, Long> bloqueados) {
         ArrayDeque<BlockPos> cola = new ArrayDeque<>();
         Map<BlockPos, BlockPos> padre = new HashMap<>();
         padre.put(inicio, inicio);
@@ -90,26 +109,27 @@ public final class RescateAgua {
                 }
                 if (respirar == null && v.isSubmergedInWater() && world.getFluidState(at.up()).isEmpty() && at.getY() >= inicio.getY()) {
                     respirar = at;
+                    if (v.getAir() <= AIRE_URGENTE) return ruta(padre, respirar, inicio);
                 }
             }
             for (Direction d : Direction.Type.HORIZONTAL) {
                 BlockPos lado = at.offset(d);
-                agregar(world, padre, cola, at, lado, inicio);
+                agregar(world, padre, cola, at, lado, inicio, bloqueados);
                 if (Mining.passable(world, at.up(2))) {
-                    agregar(world, padre, cola, at, lado.up(), inicio);
+                    agregar(world, padre, cola, at, lado.up(), inicio, bloqueados);
                 }
             }
             if (Agua.water(world, at) || Agua.water(world, at.up())) {
-                agregar(world, padre, cola, at, at.up(), inicio);
-                agregar(world, padre, cola, at, at.down(), inicio);
+                agregar(world, padre, cola, at, at.up(), inicio, bloqueados);
+                agregar(world, padre, cola, at, at.down(), inicio, bloqueados);
             }
         }
         return respirar == null ? List.of() : ruta(padre, respirar, inicio);
     }
 
     private static void agregar(ServerWorld world, Map<BlockPos, BlockPos> padre, ArrayDeque<BlockPos> cola,
-                                BlockPos desde, BlockPos at, BlockPos inicio) {
-        if (!padre.containsKey(at) && at.isWithinDistance(inicio, RADIO) && libre(world, at)
+                                BlockPos desde, BlockPos at, BlockPos inicio, Map<BlockPos, Long> bloqueados) {
+        if (!padre.containsKey(at) && !bloqueados.containsKey(at) && at.isWithinDistance(inicio, RADIO) && libre(world, at)
                 && (Agua.water(world, at) || Agua.water(world, at.up()) || Motor.standCell(world, at))) {
             padre.put(at, desde);
             cola.add(at);
@@ -117,8 +137,13 @@ public final class RescateAgua {
     }
 
     private static boolean libre(ServerWorld world, BlockPos at) {
-        return world.isChunkLoaded(at) && world.isInBuildLimit(at.up()) && world.getWorldBorder().contains(at)
-                && Mining.passable(world, at) && Mining.passable(world, at.up()) && !Mining.heat(world, at);
+        if (!world.isChunkLoaded(at) || !world.isInBuildLimit(at) || !world.isInBuildLimit(at.up()) || !world.getWorldBorder().contains(at)
+                || !Mining.passable(world, at) || !Mining.passable(world, at.up())) return false;
+        for (Direction d : Direction.values()) {
+            BlockPos cerca = at.offset(d);
+            if (world.isChunkLoaded(cerca) && world.getFluidState(cerca).isIn(net.minecraft.registry.tag.FluidTags.LAVA)) return false;
+        }
+        return true;
     }
 
     private static List<BlockPos> ruta(Map<BlockPos, BlockPos> padre, BlockPos at, BlockPos inicio) {

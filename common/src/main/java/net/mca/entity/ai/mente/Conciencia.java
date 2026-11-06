@@ -87,7 +87,7 @@ public final class Conciencia {
     /** What its thoughts are told of its diary. */
     private static final int HECHOS = 12;
     /** Diary entries that are things that happened to it, worth a thought. */
-    private static final String EVENTOS = "atasco|viaje|pelea|hallazgo|charla|camino|cofre";
+    private static final String EVENTOS = "atasco|viaje|pelea|hallazgo|vista-hallazgo|charla|camino|cofre";
 
     /** What it can want, and the order of the chat that does it ("" for none: it carries on). */
     private static final Map<String, String> QUIERO = Map.of(

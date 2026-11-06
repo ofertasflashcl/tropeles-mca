@@ -934,7 +934,8 @@ public class ProspectingTask extends AbstractChoreTask {
         recordTrail(world, villager);
         BlockPos destinoExploracion = explorar.waypoint();
         boolean aguaEnExploracion = villager.isTouchingWater() && (cueva.activa() || sondeoSalida != null
-                || destinoExploracion != null && (Agua.trapped(world, villager) || atasco.origen() != null));
+                || destinoExploracion != null && (Agua.trapped(world, villager) || atasco.origen() != null)
+                || villager.isSubmergedInWater() && (phase == Phase.SEEK || phase == Phase.SURFACE_WORK));
         if (!midStep && (rescateAgua.activo() || aguaEnExploracion)
                 && rescateAgua.tick(world, villager, motor)) {
             cueva.cerrar(now);
