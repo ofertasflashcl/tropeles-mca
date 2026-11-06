@@ -4,6 +4,7 @@ import net.mca.Config;
 import net.mca.entity.VillagerEntityMCA;
 import net.mca.entity.ai.Chore;
 import net.mca.entity.ai.chatAI.Cerebros;
+import net.mca.entity.ai.chatAI.MenteLocal;
 import net.mca.entity.ai.chatAI.OpenAIChatAI;
 import net.mca.entity.ai.mente.Voluntad;
 import net.mca.entity.ai.obra.CambioCasa;
@@ -157,6 +158,8 @@ final class PruebasPropuestas {
     }
 
     private static void palabras() {
+        exige("build-house".equals(MenteLocal.read("Hazme una casa con techo alto y balcón").command()), "Leyó la casa nueva como una edición");
+        exige("edit-house".equals(MenteLocal.read("Balcón a la izquierda").command()), "No reconoció la edición corta del balcón");
         CambioCasa.Pedido p = CambioCasa.leer("ponle techo alto y dos ventanas a la izquierda");
         exige(p.cubierta() == ModelosCasa.Cubierta.ALTO && p.ventanas().equals(List.of(new CambioCasa.Ventanas(true, 2, CambioCasa.Lado.IZQUIERDA))),
                 "Leyó mal techo y ventanas: " + p);

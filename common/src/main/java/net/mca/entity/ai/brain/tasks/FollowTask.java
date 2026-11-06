@@ -208,6 +208,9 @@ public class FollowTask extends MultiTickTask<VillagerEntityMCA> {
                 proximaImitacion = now + SHIFT_COOLDOWN;
             }
         }
+        if (!abajo) {
+            imitaHasta = 0;
+        }
         shift = abajo;
         Postura.agachar(villager, SNEAK, abajo && now < imitaHasta);
     }

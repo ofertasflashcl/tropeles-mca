@@ -236,7 +236,7 @@ final class PruebasVidaViva {
 
         @Override
         Boolean step() {
-            boolean pulsa = (ticks >= 10 && ticks < 24 || ticks >= 200 && ticks < 216) && ticks % 2 == 0;
+            boolean pulsa = (ticks >= 10 && ticks < 24 || ticks >= 260 && ticks < 276) && ticks % 2 == 0;
             p.setSneaking(pulsa);
             if (ticks == 32) {
                 Voluntad.oyo(v, p, true);
