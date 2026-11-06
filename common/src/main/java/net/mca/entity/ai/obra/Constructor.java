@@ -2,6 +2,7 @@ package net.mca.entity.ai.obra;
 
 import net.mca.MCA;
 import net.mca.entity.VillagerEntityMCA;
+import net.mca.entity.ai.body.CombatMind;
 import net.mca.entity.ai.body.Explorar;
 import net.mca.entity.ai.body.Hands;
 import net.mca.entity.ai.body.Mining;
@@ -9,6 +10,8 @@ import net.mca.entity.ai.body.Motor;
 import net.mca.entity.ai.body.Progreso;
 import net.mca.entity.ai.body.Toques;
 import net.mca.entity.ai.brain.tasks.chore.ProspectingTask;
+import net.mca.entity.ai.crafting.Ejecutor;
+import net.mca.entity.ai.crafting.Reserva;
 import net.mca.entity.ai.mente.Recuerdos;
 import net.mca.entity.ai.mente.Voluntad;
 import net.mca.entity.ai.sense.Obras;
@@ -149,6 +152,7 @@ public final class Constructor {
     private Obra obra;
     private Accion accion = Accion.PENSAR;
     private long proximoPensar;
+    private long proximoEquipo;
     @Nullable
     private Objetivo objetivo;
     @Nullable
@@ -380,6 +384,10 @@ public final class Constructor {
             return fin;
         }
         Fuego fuego = fuego(world);
+        if (now >= proximoEquipo) {
+            proximoEquipo = now + 100;
+            equiparse(world, villager, l, fuego);
+        }
         // the furnace first when it stands idle with work for it: it smelts while the hands do the rest
         Objetivo horno = trabajoHorno(world, villager, l, fuego, true);
         if (horno != null && ir(world, villager, horno, false)) {
@@ -416,6 +424,28 @@ public final class Constructor {
         }
         // 3. what it has to go and get
         return conseguir(world, villager, task, l, fuego, now);
+    }
+
+    /** Uses a table and spare ingredients if available, preserving the remaining plan's materials. */
+    private void equiparse(ServerWorld world, VillagerEntityMCA villager, Lectura l, Fuego fuego) {
+        Progreso.wear(villager);
+        BlockPos mesa = mesaParaTrabajarCerca(world, villager);
+        if (CombatMind.hasMelee(villager) || mesa == null || Retina.visibleFace(world, villager, mesa, ALCANCE) == null) {
+            return;
+        }
+        Necesidad n = necesidad(world, villager, l, fuego);
+        Plano.Madera madera = maderaObjetivo();
+        Reserva reserva = Reserva.normal()
+                .guarda(s -> s.isOf(madera.log.asItem()), n.troncos)
+                .guarda(s -> s.isOf(madera.planks.asItem()), n.tablas)
+                .guarda(Taller.PALOS, n.palos)
+                .guarda(Taller.PIEDRA, n.piedra);
+        for (Item espada : List.of(Items.STONE_SWORD, Items.WOODEN_SWORD, Items.IRON_SWORD)) {
+            if (Ejecutor.hacer(world, villager, espada, 1, true, reserva, true).ok()) {
+                villager.swingHand(Hand.MAIN_HAND);
+                return;
+            }
+        }
     }
 
     /** Reads the building cell by cell. */

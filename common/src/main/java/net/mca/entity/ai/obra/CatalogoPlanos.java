@@ -130,13 +130,18 @@ public final class CatalogoPlanos {
      * coordinates), and its revision. Its plan is drawn from these, the same every time.
      */
     public record Borrador(ModelosCasa.Modelo modelo, Plano.Madera madera, ModelosCasa.Cubierta cubierta, List<BlockPos> abiertas, List<BlockPos> cerradas,
-                           int revision) {
+                           int revision, @Nullable CambioCasa.Lado balcon) {
         public Borrador {
             Objects.requireNonNull(modelo);
             Objects.requireNonNull(madera);
             Objects.requireNonNull(cubierta);
             abiertas = List.copyOf(abiertas);
             cerradas = List.copyOf(cerradas);
+        }
+
+        public Borrador(ModelosCasa.Modelo modelo, Plano.Madera madera, ModelosCasa.Cubierta cubierta,
+                        List<BlockPos> abiertas, List<BlockPos> cerradas, int revision) {
+            this(modelo, madera, cubierta, abiertas, cerradas, revision, null);
         }
 
         /** A design as the catalogue has it, in this wood. */
@@ -146,7 +151,7 @@ public final class CatalogoPlanos {
 
         /** The same draft in another wood (the wood is what it is built of: same design, same revision, other blocks). */
         public Borrador en(Plano.Madera otra) {
-            return new Borrador(modelo, otra, cubierta, abiertas, cerradas, revision);
+            return new Borrador(modelo, otra, cubierta, abiertas, cerradas, revision, balcon);
         }
 
         /** Its plan: the same object every time for the same draft. */
@@ -155,7 +160,7 @@ public final class CatalogoPlanos {
                 Plano p = PLANOS.get(this);
                 if (p == null) {
                     String[] why = {"", ""};
-                    p = ModelosCasa.generar(modelo, madera, cubierta, abiertas, cerradas, revision, why);
+                    p = ModelosCasa.generar(modelo, madera, cubierta, abiertas, cerradas, revision, balcon, why);
                     if (p == null) {
                         throw new IllegalStateException("no plan for " + this + ": " + why[1]);
                     }
@@ -328,7 +333,8 @@ public final class CatalogoPlanos {
             return Resultado.no(base, "ya cambié " + VENTANAS_MAX + " ventanas de esta casa: más ya es otra casa",
                     "I've changed " + VENTANAS_MAX + " windows of this house already: more would be another house");
         }
-        return revisado(b, new Borrador(b.modelo(), b.madera(), b.cubierta(), ordenadas(abiertas), ordenadas(cerradas), b.revision() + 1));
+        return revisado(b, new Borrador(b.modelo(), b.madera(), b.cubierta(), ordenadas(abiertas), ordenadas(cerradas),
+                b.revision() + 1, b.balcon()));
     }
 
     /** Puts another roof on the draft: one its walls can carry, of those its design takes. */
@@ -341,13 +347,18 @@ public final class CatalogoPlanos {
         if (!ModelosCasa.admite(b.modelo(), c, why)) {
             return Resultado.no(base, why[0], why[1]);
         }
-        return revisado(b, new Borrador(b.modelo(), b.madera(), c, b.abiertas(), b.cerradas(), b.revision() + 1));
+        return revisado(b, new Borrador(b.modelo(), b.madera(), c, b.abiertas(), b.cerradas(), b.revision() + 1, b.balcon()));
+    }
+
+    public static Resultado balcon(Borrador b, @Nullable CambioCasa.Lado lado) {
+        return revisado(b, new Borrador(b.modelo(), b.madera(), b.cubierta(), b.abiertas(), b.cerradas(), b.revision() + 1, lado));
     }
 
     private static Resultado revisado(Borrador b, Borrador nuevo) {
         Plano base = b.plano();
         String[] why = {"", ""};
-        Plano p = ModelosCasa.generar(nuevo.modelo(), nuevo.madera(), nuevo.cubierta(), nuevo.abiertas(), nuevo.cerradas(), nuevo.revision(), why);
+        Plano p = ModelosCasa.generar(nuevo.modelo(), nuevo.madera(), nuevo.cubierta(), nuevo.abiertas(), nuevo.cerradas(),
+                nuevo.revision(), nuevo.balcon(), why);
         if (p == null) {
             return Resultado.no(base, why[0], why[1]);
         }

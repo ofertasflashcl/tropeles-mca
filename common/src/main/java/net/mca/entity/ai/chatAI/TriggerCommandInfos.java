@@ -143,18 +143,18 @@ public class TriggerCommandInfos {
                     (p, v, what) -> Voluntad.encargar(v, p, Encargo.Tipo.HACER, what, spanish(v)),
                     (p, v) -> Voluntad.conectado(v)),
             new TriggerCommandInfo("build-house", "Build a log cabin, a long house or the default two-floor house with your own hands: you chop the trees, dig the stone, find "
-                    + "the sand, craft and smelt everything and set every block yourself. A new house is first proposed: they see its plan as a "
-                    + "golden see-through ghost and only their own yes starts it, never you. Also to go on with a house you left. Not for crafting "
+                    + "the sand, craft and smelt everything and set every block yourself. A new house gets a red plot marker so the player can pick the "
+                    + "site and see its translucent plan. Only their own yes after placing the marker starts it. Also to go on with a house you left. Not for crafting "
                     + "one item (that is craft-item)",
-                    "Include the design in the player's words (\"cabaña\", \"casa larga\", \"dos pisos\"), \"aquí\" for where they look, "
-                            + "and their wood (\"de abeto\", \"spruce\"); do not drop the requested design or wood",
+                    "Include the design (\"cabaña\", \"casa larga\", \"dos pisos\"), wood (\"de abeto\", \"spruce\") and any requested features",
                     (p, v, how) -> Voluntad.construir(v, p, how == null ? "" : how, spanish(v)),
                     (p, v) -> Voluntad.conectado(v)),
             new TriggerCommandInfo("edit-house", "Change the house you proposed and they have not approved yet: another roof (gable, steep, turned), "
                     + "open or wall up one or two windows on one wall (front, back, left, right), another design (log cabin, long house, two-floor "
-                    + "house) or another wood. It stays a proposal: only their own yes starts it",
+                    + "house), another wood, or add, move or remove a balcony on a two-floor house. You can choose a specific valid edit yourself if "
+                    + "they ask for a design idea. Moving the whole house gives them a marker to choose the plot. It stays a proposal until they approve it",
                     "the change in the player's words, for example \"techo alto\", \"dos ventanas a la izquierda\", \"cierra la ventana del frente\", "
-                            + "\"mejor una cabaña\", \"de abeto\"",
+                            + "\"mejor una cabaña\", \"de abeto\", \"balcón a la derecha\", \"sin balcón\", \"mueve la casa\"",
                     (p, v, how) -> Voluntad.editarCasa(v, p, how == null ? "" : how, spanish(v)),
                     (p, v) -> Voluntad.conectado(v) && Voluntad.tienePropuesta(v)),
             new TriggerCommandInfo("cancel-house", "Give up the house you are building for good (what is already built stays), or drop the one you "

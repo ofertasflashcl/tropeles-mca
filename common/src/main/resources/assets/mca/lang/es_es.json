@@ -1,4 +1,7 @@
 {
+  "item.mca.marcador_parcela": "Marcador de parcela",
+  "item.mca.marcador_parcela.inactivo": "Este marcador necesita una propuesta activa de tu aldeano en esta dimensión.",
+  "item.mca.marcador_parcela.aldeano": "Acércate al aldeano que te dio el marcador.",
   "itemGroup.mca.mca_tab": "Minecraft Comes Alive",
   "entity.minecraft.villager.mca.none": "Desempleado(a)",
   "entity.minecraft.villager.mca.outlaw": "Bandido",

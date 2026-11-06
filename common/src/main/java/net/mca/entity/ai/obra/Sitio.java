@@ -42,6 +42,24 @@ public final class Sitio {
     private Sitio() {
     }
 
+    public static BlockPos origen(BlockPos suelo, Plano plano, Direction frente) {
+        return suelo.subtract(plano.centro.rotate(Plano.giro(frente)));
+    }
+
+    /** Validates the marked position at the chosen floor height and orientation. */
+    @Nullable
+    public static Elegido exacto(ServerWorld world, VillagerEntityMCA villager, Plano plano, BlockPos origen,
+                                 Direction frente, String[] porQue) {
+        ObrasMundo obras = ObrasMundo.get(world);
+        int[] coste = obras.tienePlanosIncompatibles() ? null : completo(world, villager, plano, origen, Plano.giro(frente), obras, null);
+        if (coste == null) {
+            porQue[0] = "la parcela tiene obstáculos, agua, terreno irregular o zonas sin cargar";
+            porQue[1] = "the plot has obstacles, water, uneven ground or unloaded areas";
+            return null;
+        }
+        return new Elegido(origen, frente, coste[0], coste[1]);
+    }
+
     /** The block the player is looking at within 48 blocks, or the one under their feet: "aquí". */
     public static BlockPos mirada(PlayerEntity player) {
         HitResult hit = player.raycast(48.0, 1.0F, false);
@@ -101,7 +119,7 @@ public final class Sitio {
         for (int i = 0; i < Math.min(14, rough.size()); i++) {
             Candidato c = rough.get(i);
             BlockRotation giro = Plano.giro(c.frente());
-            BlockPos origen = new BlockPos(c.cx(), c.y0(), c.cz()).subtract(plano.centro.rotate(giro));
+            BlockPos origen = origen(new BlockPos(c.cx(), c.y0(), c.cz()), plano, c.frente());
             int[] result = completo(world, villager, plano, origen, giro, obras, salvo);
             if (result == null) {
                 built++;
@@ -174,7 +192,7 @@ public final class Sitio {
         for (int x = plano.minX; x <= plano.maxX; x++) {
             for (int z = plano.minZ; z <= plano.maxZ; z++) {
                 BlockPos at = Plano.enMundo(origen, giro, new BlockPos(x, 0, z));
-                if (!world.isChunkLoaded(at)) {
+                if (!world.isChunkLoaded(at) || !world.getWorldBorder().contains(at)) {
                     return null;
                 }
                 int y = suelo(world, at.getX(), at.getZ());
@@ -190,6 +208,9 @@ public final class Sitio {
         }
         for (Plano.Pieza p : plano.piezas) {
             BlockPos at = Plano.enMundo(origen, giro, p.rel());
+            if (world.isOutOfHeightLimit(at)) {
+                return null;
+            }
             min = min == null ? at : new BlockPos(Math.min(min.getX(), at.getX()), Math.min(min.getY(), at.getY()), Math.min(min.getZ(), at.getZ()));
             max = max == null ? at : new BlockPos(Math.max(max.getX(), at.getX()), Math.max(max.getY(), at.getY()), Math.max(max.getZ(), at.getZ()));
             BlockState s = world.getBlockState(at);

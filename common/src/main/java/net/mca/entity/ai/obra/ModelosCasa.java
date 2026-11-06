@@ -171,10 +171,22 @@ public final class ModelosCasa {
     @Nullable
     static Plano generar(Modelo modelo, Plano.Madera madera, Cubierta cubierta, Collection<BlockPos> abiertas, Collection<BlockPos> cerradas,
                          int revision, String[] porQue) {
+        return generar(modelo, madera, cubierta, abiertas, cerradas, revision, null, porQue);
+    }
+
+    @Nullable
+    static Plano generar(Modelo modelo, Plano.Madera madera, Cubierta cubierta, Collection<BlockPos> abiertas, Collection<BlockPos> cerradas,
+                         int revision, @Nullable CambioCasa.Lado balcon, String[] porQue) {
         if (!admite(modelo, cubierta, porQue)) {
             return null;
         }
-        if (modelo == Modelo.DOS_PISOS && cubierta == Cubierta.DOS_AGUAS && abiertas.isEmpty() && cerradas.isEmpty() && revision == modelo.revision()) {
+        if (balcon != null && modelo != Modelo.DOS_PISOS) {
+            porQue[0] = "para llegar a un balcón necesito el segundo piso. Pídeme la casa de dos pisos";
+            porQue[1] = "a balcony needs access from upstairs. Ask me for the two-storey house";
+            return null;
+        }
+        if (balcon == null && modelo == Modelo.DOS_PISOS && cubierta == Cubierta.DOS_AGUAS && abiertas.isEmpty()
+                && cerradas.isEmpty() && revision == modelo.revision()) {
             return Plano.casa(madera);
         }
         Dibujo d = new Dibujo();
@@ -188,7 +200,52 @@ public final class ModelosCasa {
         }
         String es = modelo.nombre(true) + (cubierta == Cubierta.DOS_AGUAS ? "" : ", " + cubierta.es);
         String en = modelo.nombre(false) + (cubierta == Cubierta.DOS_AGUAS ? "" : ", " + cubierta.en);
+        if (balcon != null) {
+            balcon(d, madera, balcon);
+            es += " con balcón " + balcon.es;
+            en += " with a balcony " + balcon.en;
+        }
         return Plano.crear(modelo.id(), revision, es, en, modelo.centro(), modelo.entrada(), d.lista());
+    }
+
+    /** A walkable deck upstairs, with a two-block opening, a parapet and posts down to ground level. */
+    private static void balcon(Dibujo d, Plano.Madera madera, CambioCasa.Lado lado) {
+        Direction exterior = switch (lado) {
+            case FRENTE -> Direction.NORTH;
+            case ATRAS -> Direction.SOUTH;
+            case IZQUIERDA -> Direction.EAST;
+            case DERECHA -> Direction.WEST;
+        };
+        // Avoid the torch at the back and the staircase opening along the east wall.
+        BlockPos piso = switch (lado) {
+            case FRENTE -> new BlockPos(3, 4, 0);
+            case ATRAS -> new BlockPos(2, 4, 6);
+            case IZQUIERDA -> new BlockPos(6, 4, 1);
+            case DERECHA -> new BlockPos(0, 4, 3);
+        };
+        for (int y = 1; y <= 2; y++) {
+            BlockPos at = piso.up(y);
+            d.p.put(at, new Plano.Pieza(at, Blocks.AIR.getDefaultState(), Plano.Rol.AIRE));
+        }
+        Direction costado = exterior.rotateYClockwise();
+        BlockState tabla = madera.planks.getDefaultState();
+        for (int profundidad = 1; profundidad <= 3; profundidad++) {
+            for (int ancho = -1; ancho <= 1; ancho++) {
+                BlockPos at = piso.offset(exterior, profundidad).offset(costado, ancho);
+                d.put(at, tabla, Plano.Rol.TABLA);
+                if (ancho != 0 || profundidad == 3) {
+                    d.put(at.up(), tabla, Plano.Rol.TABLA);
+                } else {
+                    d.put(at.up(), Blocks.AIR.getDefaultState(), Plano.Rol.AIRE);
+                    d.put(at.up(2), Blocks.AIR.getDefaultState(), Plano.Rol.AIRE);
+                }
+                if (ancho != 0 && profundidad == 3) {
+                    for (int y = 1; y <= 4; y++) {
+                        d.put(at.down(y), tronco(madera, Direction.Axis.Y), Plano.Rol.TRONCO);
+                    }
+                }
+            }
+        }
     }
 
     /** The first house drawn again, its own roof made with {@link #techo}: the check that the roof module draws what {@link Plano#casa} draws. */

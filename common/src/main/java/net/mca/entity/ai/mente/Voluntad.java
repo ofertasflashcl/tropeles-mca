@@ -26,6 +26,7 @@ import net.mca.entity.ai.obra.Propuestas;
 import net.mca.entity.ai.obra.Proyeccion;
 import net.mca.entity.ai.obra.Sitio;
 import net.mca.entity.ai.nucleo.Vinculo;
+import net.mca.item.MarcadorParcela;
 import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.SpawnGroup;
@@ -38,6 +39,7 @@ import net.minecraft.nbt.NbtCompound;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import org.jetbrains.annotations.Nullable;
@@ -132,6 +134,11 @@ public final class Voluntad {
     private long desde;
     /** The last time its player said anything to it. */
     private long oido;
+    private static final int INTERVALO_PREGUNTA = 200;
+    private static final String[] PREGUNTAS_SEGUIR_ES = {"¿Qué quieres hacer?", "¿Sigues ahí?", "¿Vamos a algún sitio?", "¿Necesitas ayuda con algo?"};
+    private static final String[] PREGUNTAS_SEGUIR_EN = {"What would you like to do?", "Still there?", "Are we going somewhere?", "Do you need a hand?"};
+    private int preguntasSeguir;
+    private long proximaPregunta;
     private long ultimoTick = Long.MIN_VALUE / 2;
     /** Since when the player it is with has been nowhere to be found, or -1. */
     private long sinJugador = -1;
@@ -378,7 +385,9 @@ public final class Voluntad {
             Propuestas.Propuesta q = Propuestas.get(pw).de(villager.getUuid());
             if (q != null) {
                 mode += ". You proposed " + q.resumen(false) + " to " + (q.paraNombre.isEmpty() ? "someone" : q.paraNombre) + " ("
-                        + CambioCasa.piezas(q.plano(), false) + "): it waits for their own yes. You cannot start it; you can change it (edit-house)"
+                        + CambioCasa.piezas(q.plano(), false) + "). "
+                        + (q.pendienteSitio() ? "They need to place their plot marker first. " : "It waits for their own yes. ")
+                        + "You can change it (edit-house)"
                         + " or drop it (cancel-house)";
             }
         }
@@ -395,6 +404,8 @@ public final class Voluntad {
         w.esConocido = true;
         if (w.quien == null || w.quien.equals(player.getUuid())) {
             w.oido = villager.getWorld().getTime();
+            w.preguntasSeguir = 0;
+            w.follow.escucho();
         }
     }
 
@@ -705,7 +716,13 @@ public final class Voluntad {
             return;
         }
         sinJugador = -1;
-        follow.guard(world, villager, player);
+        if (follow.guard(world, villager, player, entrega == null, preguntasSeguir > 0)) {
+            preguntarAlJugador(world, villager, player);
+            return;
+        }
+        if (villager.squaredDistanceTo(player) >= 25) {
+            preguntasSeguir = 0;
+        }
         if ((villager.age % 20) == 0) {
             Companero.juntos(world, villager, player);
         }
@@ -713,6 +730,23 @@ public final class Voluntad {
                 && villager.squaredDistanceTo(player) < 3.2 * 3.2 && Retina.canSee(world, villager, player)) {
             alLado(world, villager, player);
         }
+    }
+
+    private void preguntarAlJugador(ServerWorld world, VillagerEntityMCA villager, PlayerEntity player) {
+        long now = world.getTime();
+        if (preguntasSeguir > 0 && now < proximaPregunta) {
+            return;
+        }
+        if (preguntasSeguir == 8) {
+            hablar(world, villager, player, "Voy a empezar por mi cuenta. Si quieres que vaya contigo, avísame.",
+                    "I'll get started on my own. Let me know if you want me to come with you.");
+            libre(villager, null, spanish());
+            return;
+        }
+        int i = preguntasSeguir % PREGUNTAS_SEGUIR_ES.length;
+        hablar(world, villager, player, PREGUNTAS_SEGUIR_ES[i], PREGUNTAS_SEGUIR_EN[i]);
+        preguntasSeguir++;
+        proximaPregunta = now + INTERVALO_PREGUNTA;
     }
 
     /** At the side of the one it got things for: it hands them over (asked to bring them) or offers them. */
@@ -1035,12 +1069,18 @@ public final class Voluntad {
         }
         Retina.look(world, villager);
         Constructor c = Constructor.de(villager);
+        if ((villager.age % 40) == 0 && task.food() <= 12 && ProspectingTask.comidaEnMochila(villager) < 5) {
+            task.hacerPan(world);
+        }
         boolean hambre = task.food() <= 4 && ProspectingTask.comidaEnMochila(villager) == 0;
         boolean sueno = !hambre && (villager.age % 100) == 0 && task.quiereDormir(world, villager);
         if (hambre || sueno) {
             if (c.enAndamio(world, villager)) {
                 c.bajarYa(); // off the scaffold first, then the meal or the bed
             } else {
+                if (hambre) {
+                    task.buscarComida();
+                }
                 pausaInterna = true;
                 try {
                     change(villager, Modo.LIBRE, null, null, hambre ? "tengo hambre: dejo la casa un rato para comer" : "se hizo de noche: dejo la casa hasta mañana");
@@ -1190,13 +1230,14 @@ public final class Voluntad {
         return "You go back to building the house for " + name + ": " + Constructor.estado(world, villager, o, false) + " Say so briefly.";
     }
 
-    private static final String PREGUNTA_ES = "Puedo cambiarle el techo (dos aguas, alto o girado), abrir o cerrar ventanas, o hacerla de otro diseño"
-            + " o de otra madera. ¿La hago así? Dime «sí» y empiezo.";
-    private static final String PREGUNTA_EN = "I can change its roof (gable, steep or turned), open or wall up windows, or make it another design or"
-            + " wood. Shall I build it like this? Say \"yes\" and I'll start.";
+    private static final String PREGUNTA_ES = "Puedes pedirme otro techo, ventanas, madera o diseño. A la de dos pisos también puedo ponerle un balcón. "
+            + "¿La hago así? Dime «sí» y empiezo.";
+    private static final String PREGUNTA_EN = "Ask me for a different roof, windows, wood or design. The two-storey house can have a balcony. "
+            + "Shall I build it like this? Say \"yes\" and I'll start.";
+    private static final Pattern MOVER_CASA = Pattern.compile("\\b(mueve|muevela|mover|cambia de sitio|cambia (el sitio|la parcela)|move|relocate)\\b");
     /** What a model is told of a proposal: it cannot start it; only the player can, with their own yes. */
     private static final String PROPUESTA_MODELO = "Nothing is built yet and you cannot start it yourself: it starts only when they themselves"
-            + " say yes (never say you have started). They can ask for another roof, windows, design or wood (edit-house) or say no. Tell them"
+            + " say yes (never say you have started). They can ask for another roof, windows, design, wood or upstairs balcony (edit-house) or say no. Tell them"
             + " briefly what it is and what it takes, and ask whether to build it.";
 
     /**
@@ -1226,6 +1267,9 @@ public final class Voluntad {
             }
             p.mostrada(now);
             ps.cambio();
+            if (p.pendienteSitio()) {
+                return pedirParcela(world, player, p, "", "");
+            }
             Proyeccion.enviarPropuesta(world, p);
             dicho("OBRA", "Sigue en pie lo que te propuse, " + name + ": " + p.resumen(true) + ". " + CambioCasa.piezas(p.plano(), true) + ". " + PREGUNTA_ES,
                     "What I proposed still stands, " + name + ": " + p.resumen(false) + ". " + CambioCasa.piezas(p.plano(), false) + ". " + PREGUNTA_EN);
@@ -1244,30 +1288,66 @@ public final class Voluntad {
                 b = hecho.despues();
             }
         }
-        Plano plano = b.plano();
-        String[] why = {"", ""};
-        Sitio.Elegido s = aqui ? Sitio.buscar(world, villager, plano, Sitio.mirada(player), player.getPos(), 0, 8, null, why)
-                : Sitio.buscar(world, villager, plano, player.getBlockPos(), player.getPos(), 7, 28, null, why);
-        if (s == null) {
-            dicho("OBRA", "No encuentro dónde hacer una casa " + (aqui ? "ahí" : "por aquí") + ", " + name + ": " + why[0] + ". ¿Me muestras otro sitio?",
-                    "I can't find anywhere to put a house " + (aqui ? "there" : "around here") + ", " + name + ": " + why[1] + ". Can you show me another spot?");
-            return "You can't find anywhere to build a house " + (aqui ? "where they are looking" : "around here") + ": " + why[1]
-                    + ". Say so, and ask them to look at (or stand on) a flatter, dry, free spot and ask again.";
-        }
-        p = new Propuestas.Propuesta(UUID.randomUUID().toString().substring(0, 8), villager.getUuid(), villager.getName().getString(), player.getUuid(),
-                name, b, s.origen(), s.frente(), now);
+        p = new Propuestas.Propuesta(UUID.randomUUID().toString(), villager.getUuid(), villager.getName().getString(), player.getUuid(),
+                name, b, BlockPos.ORIGIN, Direction.NORTH, now);
+        p.pedirSitio(b, now);
         ps.poner(p);
+        nuevaGeneracion(villager.getUuid());
+        String noEs = hecho != null && !hecho.ok() ? "El cambio que pediste necesita un ajuste. " + hecho.es() + ". " : "";
+        String noEn = hecho != null && !hecho.ok() ? "That change needs an adjustment. " + hecho.en() + ". " : "";
+        return pedirParcela(world, player, p, noEs, noEn);
+    }
+
+    private String pedirParcela(ServerWorld world, PlayerEntity player, Propuestas.Propuesta p, String avisoEs, String avisoEn) {
+        boolean entregado = MarcadorParcela.entregar(world, player, p);
         Proyeccion.enviarPropuesta(world, p);
-        MCA.LOGGER.info("[Tropeles] {} propone a {} {}: {} rev {} hash {}", villager.getName().getString(), name, p.resumen(true), plano.id,
-                plano.revision, plano.hash());
-        String noEs = hecho != null && !hecho.ok() ? " Lo otro que pediste no se puede: " + hecho.es() + "." : "";
-        String noEn = hecho != null && !hecho.ok() ? " The rest of what you asked can't be done: " + hecho.en() + "." : "";
-        dicho("OBRA", "Mira, " + name + ": te propongo " + p.resumen(true) + "; ahí ves el plano en dorado. " + CambioCasa.piezas(plano, true)
-                        + "; en material, " + Constructor.materiales(plano, true) + "." + noEs + " " + PREGUNTA_ES,
-                "Look, " + name + ": I propose " + p.resumen(false) + "; you can see the plan there in gold. " + CambioCasa.piezas(plano, false)
-                        + "; in materials, " + Constructor.materiales(plano, false) + "." + noEn + " " + PREGUNTA_EN);
-        return "You proposed " + p.resumen(false) + " to " + name + ": they see its plan as a golden see-through ghost. It takes "
-                + CambioCasa.piezas(plano, false) + " (" + Constructor.materiales(plano, false) + ")." + noEn + " " + PROPUESTA_MODELO;
+        String es = entregado
+                ? "¿Dónde quieres la casa? Toma el marcador rojo, apunta al suelo y colócalo con clic derecho. Verás el plano al apuntar."
+                : "Haz espacio para el marcador rojo y vuelve a pedirme la casa. Así podrás mostrarme dónde va.";
+        String en = entregado
+                ? "Where should the house go? Hold the red marker, aim at the ground and right-click. You can see the plan as you aim."
+                : "Make room for the red marker and ask me again so you can show me where it goes.";
+        dicho("OBRA", avisoEs + es, avisoEn + en);
+        return avisoEn + en + " You are waiting for their plot marker. It starts only when they themselves say yes after choosing the plot.";
+    }
+
+    public static boolean elegirParcela(ServerWorld world, VillagerEntityMCA villager, ServerPlayerEntity player,
+                                        Propuestas.Propuesta p, BlockPos suelo) {
+        Voluntad w = of(villager);
+        boolean es = w.spanish();
+        Propuestas ps = Propuestas.get(world);
+        if (ps.de(villager.getUuid()) != p || !p.pendienteSitio() || !p.para.equals(player.getUuid()) || !conectado(villager)
+                || player.getEyePos().squaredDistanceTo(Vec3d.ofCenter(suelo)) > 9 * 9
+                || !world.isChunkLoaded(suelo) || !world.canPlayerModifyAt(player, suelo)) {
+            return false;
+        }
+        var permiso = net.mca.entity.ai.chatAI.CommandPolicy.check(player, villager, "build-house",
+                net.mca.entity.ai.chatAI.CommandPolicy.Source.LOCAL);
+        if (!permiso.allowed()) {
+            net.mca.entity.ai.chatAI.ChatAI.deliver(player, villager, permiso.line(es));
+            return false;
+        }
+        Direction frente = Sitio.hacia(suelo.getX(), suelo.getZ(), player.getPos());
+        BlockPos origen = Sitio.origen(suelo, p.plano(), frente);
+        String[] why = {"", ""};
+        Sitio.Elegido sitio = Sitio.exacto(world, villager, p.plano(), origen, frente, why);
+        if (sitio == null) {
+            w.hablar(world, villager, player, "Prueba otra parcela, " + why[0] + ".", "Try another plot. " + why[1] + ".");
+            return false;
+        }
+        p.fijarSitio(sitio.origen(), sitio.frente(), world.getTime());
+        ps.cambio();
+        nuevaGeneracion(villager.getUuid());
+        oyo(villager, player, es);
+        Proyeccion.enviarPropuesta(world, p);
+        Plano plano = p.plano();
+        String lineaEs = "Aquí queda " + p.resumen(true) + ". " + CambioCasa.piezas(plano, true) + ". "
+                + Constructor.materiales(plano, true) + ". " + PREGUNTA_ES;
+        String lineaEn = "Here's " + p.resumen(false) + ". " + CambioCasa.piezas(plano, false) + ". "
+                + Constructor.materiales(plano, false) + ". " + PREGUNTA_EN;
+        w.dicho("OBRA", lineaEs, lineaEn);
+        w.hablar(world, villager, player, lineaEs, lineaEn);
+        return true;
     }
 
     /**
@@ -1298,7 +1378,7 @@ public final class Voluntad {
         }
         String low = words == null ? "" : words.toLowerCase(java.util.Locale.ROOT);
         CambioCasa.Pedido pedido = CambioCasa.leer(low);
-        boolean aqui = AQUI.matcher(low).find();
+        boolean aqui = AQUI.matcher(low).find() || MOVER_CASA.matcher(CambioCasa.llano(low)).find() && pedido.balcon() == null;
         if (pedido.vacio() && !aqui) {
             p.mostrada(world.getTime());
             w.dicho("OBRA", "No entendí qué cambiarle, " + name + ". " + PREGUNTA_ES, "I didn't get what to change, " + name + ". " + PREGUNTA_EN);
@@ -1322,44 +1402,43 @@ public final class Voluntad {
             return "You can't make that change: " + h.en() + ". The proposal stays as it was (" + p.resumen(false) + "). Say so and ask whether to build it.";
         }
         CatalogoPlanos.Borrador b = h == null ? p.borrador() : h.despues();
+        if (p.pendienteSitio() || aqui && pedido.vacio()) {
+            p.pedirSitio(b, now);
+            ps.cambio();
+            nuevaGeneracion(villager.getUuid());
+            return pedirParcela(world, player, p, h == null ? "" : "El plano queda " + h.es() + ". ",
+                    h == null ? "" : "The plan is now " + h.en() + ". ");
+        }
         Plano antes = p.plano();
         Plano plano = b.plano();
         String[] why = {"", ""};
-        // "aquí" moves it only when that is all the change says ("cierra la ventana de ahí" is no move)
-        boolean mover = aqui && pedido.ventanas().isEmpty() && pedido.cubierta() == null;
-        Sitio.Elegido s = mover ? Sitio.buscar(world, villager, plano, Sitio.mirada(player), player.getPos(), 0, 8, null, why)
-                : mismoSitio(world, villager, p, plano, why, true);
+        Sitio.Elegido s = mismoSitio(world, villager, p, plano, why);
         if (s == null) {
-            dicho("OBRA", "Así no cabe " + (mover ? "ahí" : "donde estaba") + ", " + name + ": " + why[0] + ". Lo que te propuse sigue igual.",
-                    "That way it doesn't fit " + (mover ? "there" : "where it was") + ", " + name + ": " + why[1] + ". What I proposed stays as it was.");
-            return "The changed house does not fit " + (mover ? "where they look" : "on its site") + ": " + why[1] + ". The proposal stays as it was. Say so.";
+            dicho("OBRA", "Ese cambio necesita otra parcela, " + name + ". Dime «mueve la casa» para marcarla.",
+                    "That change needs another plot, " + name + ". Say \"move the house\" to mark it.");
+            return "The changed house needs a different plot. " + why[1];
         }
-        boolean movida = !s.origen().equals(p.origen()) || s.frente() != p.frente();
         p.cambiar(b, s.origen(), s.frente(), now);
         ps.cambio();
+        nuevaGeneracion(villager.getUuid());
         Proyeccion.enviarPropuesta(world, p);
         CatalogoPlanos.Diferencia d = CatalogoPlanos.diferencia(antes, plano);
         MCA.LOGGER.info("[Tropeles] {} cambia la propuesta {} para {}: {} (rev {} hash {}) -> {} (rev {} hash {})", villager.getName().getString(), p.id,
                 name, antes.id, antes.revision, antes.hash(), plano.id, plano.revision, plano.hash());
-        String hechoEs = h == null ? "la puse donde miras" : h.es();
-        String hechoEn = h == null ? "I put it where you're looking" : h.en();
-        String corrida = movida && h != null ? ", y la corrí un poco para que quepa" : "";
-        String moved = movida && h != null ? ", moved a little so it fits" : "";
-        dicho("OBRA", "Listo: " + hechoEs + corrida + ". En piezas, " + CambioCasa.diferencia(d, true) + ". Queda " + p.resumen(true) + "; en material, "
-                        + Constructor.materiales(plano, true) + ". ¿Así sí? Dime «sí» y empiezo.",
-                "Done: " + hechoEn + moved + ". In pieces, " + CambioCasa.diferencia(d, false) + ". It's now " + p.resumen(false) + "; in materials, "
-                        + Constructor.materiales(plano, false) + ". Like this? Say \"yes\" and I'll start.");
-        return "You changed the proposal: " + hechoEn + moved + "; the exact difference in pieces: " + CambioCasa.diferencia(d, false) + ". It is now "
+        String hechoEs = h == null ? "actualicé el plano" : h.es();
+        String hechoEn = h == null ? "I updated the plan" : h.en();
+        dicho("OBRA", "Mira el cambio. Si te gusta, dime «sí» y empiezo. Ahora queda " + hechoEs + ". En piezas, " + CambioCasa.diferencia(d, true) + ". Es " + p.resumen(true) + ". En material, "
+                        + Constructor.materiales(plano, true) + ".",
+                "Look at the change. If you like it, say \"yes\" and I'll start. It's now " + hechoEn + ". In pieces, " + CambioCasa.diferencia(d, false) + ". It's " + p.resumen(false) + ". In materials, "
+                        + Constructor.materiales(plano, false) + ".");
+        return "You changed the proposal. " + hechoEn + ". The exact difference in pieces is " + CambioCasa.diferencia(d, false) + ". It is now "
                 + p.resumen(false) + " (" + Constructor.materiales(plano, false) + "). " + PROPUESTA_MODELO;
     }
 
-    /** {@code plano} on the proposal's spot: exactly there with its door the same way, else (if {@code cerca}) the nearest that fits. */
     @Nullable
-    private static Sitio.Elegido mismoSitio(ServerWorld world, VillagerEntityMCA villager, Propuestas.Propuesta p, Plano plano, String[] why, boolean cerca) {
-        BlockPos c = p.vista().centro();
-        Vec3d delante = Vec3d.ofCenter(c.offset(p.frente(), 32));
-        Sitio.Elegido s = Sitio.buscar(world, villager, plano, c, delante, 0, 0, null, why);
-        return s != null || !cerca ? s : Sitio.buscar(world, villager, plano, c, delante, 2, 8, null, why);
+    private static Sitio.Elegido mismoSitio(ServerWorld world, VillagerEntityMCA villager, Propuestas.Propuesta p, Plano plano, String[] why) {
+        BlockPos suelo = p.vista().centro().down();
+        return Sitio.exacto(world, villager, plano, Sitio.origen(suelo, plano, p.frente()), p.frente(), why);
     }
 
     /**
@@ -1389,6 +1468,7 @@ public final class Voluntad {
         if (!si) {
             ps.quitar(p);
             Proyeccion.borrarPropuesta(world, p);
+            nuevaGeneracion(villager.getUuid());
             MCA.LOGGER.info("[Tropeles] {} no quiso la propuesta {} de {}", player.getName().getString(), p.id, villager.getName().getString());
             return spanish ? "Vale, " + name + ", no la hago. Si cambias de idea, pídemela otra vez." : "Okay, " + name + ", I won't build it. If you change your mind, just ask.";
         }
@@ -1396,6 +1476,10 @@ public final class Voluntad {
                 net.mca.entity.ai.chatAI.CommandPolicy.Source.LOCAL);
         if (!ok.allowed()) {
             return ok.line(spanish);
+        }
+        if (p.pendienteSitio()) {
+            w.pedirParcela(world, player, p, "", "");
+            return spanish ? w.dichoEs : w.dichoEn;
         }
         Gana g = quiere(villager, player, Pedido.CASA);
         if (!g.si()) {
@@ -1407,19 +1491,13 @@ public final class Voluntad {
             return spanish ? "Ya estoy con otra casa, " + name + ". Cuando la termine, te hago esa." : "I'm on another house already, " + name + ". When it's done, I'll make that one.";
         }
         String[] why = {"", ""};
-        Sitio.Elegido s = obras.tienePlanosIncompatibles() ? null : mismoSitio(world, villager, p, p.plano(), why, false);
+        Sitio.Elegido s = mismoSitio(world, villager, p, p.plano(), why);
         if (s == null) {
-            p.mostrada(now);
-            return spanish ? "Ahora ese sitio ya no sirve, " + name + ": " + why[0] + ". Muéstrame otro («aquí») y te la propongo ahí."
-                    : "That spot won't do any more, " + name + ": " + why[1] + ". Show me another (\"here\") and I'll propose it there.";
-        }
-        if (!s.origen().equals(p.origen()) || s.frente() != p.frente()) {
-            // the ground changed under it: they see it again where it would really stand before they say yes
-            p.cambiar(p.borrador(), s.origen(), s.frente(), now);
+            p.pedirSitio(p.borrador(), now);
             ps.cambio();
-            Proyeccion.enviarPropuesta(world, p);
-            return spanish ? "Espera, " + name + ": el suelo cambió y tendría que quedar un poco distinta. Mira el plano otra vez. ¿Así sí?"
-                    : "Wait, " + name + ": the ground changed and it would stand a little differently. Look at the plan again. Like this?";
+            nuevaGeneracion(villager.getUuid());
+            w.pedirParcela(world, player, p, "El sitio cambió. " + why[0] + ". ", "The site changed. " + why[1] + ". ");
+            return spanish ? w.dichoEs : w.dichoEn;
         }
         Plano plano = p.plano();
         Obra o = new Obra(UUID.randomUUID().toString().substring(0, 8), villager.getUuid(), villager.getName().getString(), p.origen(), p.frente(),
@@ -1457,6 +1535,7 @@ public final class Voluntad {
             }
             Propuestas.get(world).quitar(propuesta);
             Proyeccion.borrarPropuesta(world, propuesta);
+            nuevaGeneracion(villager.getUuid());
             MCA.LOGGER.info("[Tropeles] {} deja la propuesta {} para {}", villager.getName().getString(), propuesta.id, name);
             w.dicho("OBRA", "Vale, " + name + ", olvido la casa que te propuse.", "Okay, " + name + ", I'll forget the house I proposed.");
             return "You dropped the house you had proposed to them (nothing of it was built). Say so.";
@@ -2052,6 +2131,7 @@ public final class Voluntad {
         }
         if (from == Modo.SIGUIENDO && to != Modo.SIGUIENDO && villager.getWorld() instanceof ServerWorld world) {
             follow.release(world, villager);
+            preguntasSeguir = 0;
         }
         if (from == Modo.ESPERANDO || to == Modo.ALERTA) {
             mirada.stop();

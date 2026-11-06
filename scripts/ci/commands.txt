@@ -66,6 +66,10 @@ mca-prueba catalogo
 mca-prueba construccion
 mca-prueba autonomia
 mca-prueba propuestas
+mca-prueba cueva-autonoma
+mca-prueba pan-autonomo
+mca-prueba cocina-autonoma
+mca-prueba seguir-sin-spam
 await-checks 320
 mca-prueba resumen
 sleep 2

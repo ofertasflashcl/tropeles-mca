@@ -69,8 +69,10 @@ public class OpenAIChatAI implements ChatAIStrategy {
             Map.entry("resume-house", "build-house"), Map.entry("cancel-build", "cancel-house"), Map.entry("stop-building", "cancel-house"),
             Map.entry("cancel-construction", "cancel-house"), Map.entry("abandon-house", "cancel-house"),
             Map.entry("change-house", "edit-house"), Map.entry("modify-house", "edit-house"), Map.entry("edit-proposal", "edit-house"),
-            Map.entry("edit-plan", "edit-house"), Map.entry("change-roof", "edit-house"), Map.entry("add-window", "edit-house")
+            Map.entry("edit-plan", "edit-house"), Map.entry("change-roof", "edit-house"), Map.entry("add-window", "edit-house"),
+            Map.entry("add-balcony", "edit-house"), Map.entry("move-balcony", "edit-house")
     );
+    private static final Set<String> HOUSE_ACTIONS = Set.of("build-house", "edit-house", "cancel-house");
 
     public static String translate(String phrase) {
         return phrase.replace("_", " ").toLowerCase(Locale.ROOT).replace("mca.", "");
@@ -175,7 +177,9 @@ public class OpenAIChatAI implements ChatAIStrategy {
         }
 
         String line = null;
-        if (prep.intent().order() && !prep.refused() && !prep.done()) {
+        if (prep.intent().order() && HOUSE_ACTIONS.contains(prep.intent().command())) {
+            line = prep.local();
+        } else if (prep.intent().order() && !prep.refused() && !prep.done()) {
             // an order it could not carry out, or was already doing: its own words say exactly why, and no mind
             // may dress that up as a yes
             MCA.LOGGER.info("[Tropeles] {} no pudo con la orden '{}': contesta su propia mente", prep.villagerName(), prep.intent().command());
@@ -352,7 +356,7 @@ public class OpenAIChatAI implements ChatAIStrategy {
             finally { lease.acknowledgeAction(); }
         });
         if (acted == null) {
-            return message;
+            return HOUSE_ACTIONS.contains(chosen) ? prep.local() : message;
         }
         if (acted.failLine() != null) {
             return acted.failLine(); // it could not: say so, never what the model hoped
@@ -364,7 +368,7 @@ public class OpenAIChatAI implements ChatAIStrategy {
             boolean fits = message != null && agrees(message, acted.goesBack()) && !contradicts(message, acted.goesBack());
             return fits ? message : onServer(server, lease, () -> MenteLocal.answer(player, villager, weighed, acted.how(), null, null, false));
         }
-        if (message != null && !("alert".equals(chosen) && !message.contains("?"))) {
+        if (message != null && !HOUSE_ACTIONS.contains(chosen) && !("alert".equals(chosen) && !message.contains("?"))) {
             String words = MenteLocal.promise(message);
             if (words == null || sameOrder(words, chosen)) {
                 return message;

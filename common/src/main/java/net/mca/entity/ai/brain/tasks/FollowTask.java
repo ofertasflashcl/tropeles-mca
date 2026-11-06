@@ -25,6 +25,8 @@ import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.UUID;
+
 /**
  * Stay with the player and fight at their side: whatever hurts them, whatever they are hitting, and any
  * threat the eye catches near them. With a bow or crossbow the villager shoots from range; with a sword or
@@ -43,8 +45,10 @@ public class FollowTask extends MultiTickTask<VillagerEntityMCA> {
     private static final double CLOSE = 3.5;
     /** Where it likes to be: this far from the player. */
     private static final double KEEP = 2.6;
-    /** Crouch reason in {@link Postura}: the player sneaks, so does it. */
+    /** A brief social gesture, independent of crouching for danger or a ledge. */
     private static final String SNEAK = "como su jugador";
+    private static final int SHIFT_WINDOW = 60;
+    private static final int SHIFT_COOLDOWN = 120;
 
     private int stuckTicks;
     private int unreachableTicks;
@@ -59,6 +63,14 @@ public class FollowTask extends MultiTickTask<VillagerEntityMCA> {
     @Nullable
     private Vec3d wardLast;
     private long wardLastAt;
+    private long nextPacePath;
+    private UUID gestoDe;
+    private boolean shift;
+    private int pulsos;
+    private long pulsoAnterior;
+    private long imitaHasta;
+    private long proximaImitacion;
+    private long preguntarHasta;
 
     public FollowTask() {
         super(ImmutableMap.of(
@@ -91,6 +103,8 @@ public class FollowTask extends MultiTickTask<VillagerEntityMCA> {
         wardFeet = null;
         wardLast = null;
         wardPace = 0;
+        nextPacePath = 0;
+        gestoDe = null;
         villager.setSprinting(false);
         Postura.agachar(villager, SNEAK, false);
         stuckTicks = 0;
@@ -103,16 +117,24 @@ public class FollowTask extends MultiTickTask<VillagerEntityMCA> {
         villager.getBrain().getOptionalMemory(MemoryModuleTypeMCA.PLAYER_FOLLOWING.get()).ifPresent(player -> guard(world, villager, player));
     }
 
-    /** One tick of following and protecting {@code ward}. */
     public void guard(ServerWorld world, VillagerEntityMCA villager, LivingEntity ward) {
+        guard(world, villager, ward, false, false);
+    }
+
+    /** True while it can safely turn to its player and ask what they want. */
+    public boolean guard(ServerWorld world, VillagerEntityMCA villager, LivingEntity ward, boolean conversar, boolean esperando) {
         if (villager.getBrain().getOptionalMemory(MemoryModuleType.HURT_BY_ENTITY).filter(livingEntity -> livingEntity == ward).isPresent()) {
             villager.getBrain().forget(MemoryModuleTypeMCA.PLAYER_FOLLOWING.get());
-            return;
+            return false;
         }
         if ((villager.age & 1) == 0) {
             Retina.look(world, villager);
         }
 
+        long now = world.getTime();
+        double distance = villager.distanceTo(ward);
+        ritmo(ward, now);
+        gestos(villager, ward, distance, now);
         // an archer covers more ground than a swordsman
         LivingEntity threat = CombatMind.pickTarget(world, villager, ward, CombatMind.hasRanged(villager) ? 24 : 16);
         if (threat != null && threat.isAlive()) {
@@ -121,12 +143,25 @@ public class FollowTask extends MultiTickTask<VillagerEntityMCA> {
                 villager.sendChatMessage(player, "chore.escort.engaging");
             }
             motor.reset(world, villager);
+            Postura.agachar(villager, SNEAK, false);
             villager.setSprinting(false);
             CombatMind.fight(world, villager, ward, threat);
-            return;
+            return false;
         }
         warned = false;
         CombatMind.disengage(villager);
+
+        if (conversar && (esperando || now < preguntarHasta) && distance < 5 && wardPace < 0.045
+                && villager.isOnGround() && !motor.midStep(villager) && Retina.canSee(world, villager, ward)) {
+            preguntarHasta = 0;
+            Postura.agachar(villager, SNEAK, false);
+            villager.getBrain().forget(MemoryModuleType.WALK_TARGET);
+            villager.setSprinting(false);
+            Motor.standStill(villager);
+            villager.getLookControl().lookAt(ward, 20.0F, 20.0F);
+            Retina.memory(villager).doing("esperando que le diga qué hacer", now);
+            return true;
+        }
 
         BlockPos lost = VillagerEyes.searchWhere(world, villager);
         if (lost == null) {
@@ -138,9 +173,46 @@ public class FollowTask extends MultiTickTask<VillagerEntityMCA> {
             if ((villager.age & 3) == 0) {
                 villager.getNavigation().startMovingTo(lost.getX() + 0.5, lost.getY(), lost.getZ() + 0.5, 1.0);
             }
-            return;
+            return false;
         }
         follow(world, villager, ward);
+        return false;
+    }
+
+    /** Their words answer the gesture and give any subsequent tapping a fresh window. */
+    public void escucho() {
+        pulsos = 0;
+        imitaHasta = 0;
+        preguntarHasta = 0;
+    }
+
+    private void gestos(VillagerEntityMCA villager, LivingEntity ward, double distance, long now) {
+        if (!ward.getUuid().equals(gestoDe)) {
+            gestoDe = ward.getUuid();
+            escucho();
+            shift = false;
+            proximaImitacion = now;
+        }
+        boolean abajo = ward.isSneaking() && distance < 5;
+        if (abajo && !shift) {
+            pulsos = now - pulsoAnterior <= SHIFT_WINDOW ? pulsos + 1 : 1;
+            pulsoAnterior = now;
+            if (pulsos >= 3) {
+                imitaHasta = 0;
+                if (now >= proximaImitacion || pulsos == 3) {
+                    preguntarHasta = now + SHIFT_COOLDOWN;
+                }
+                proximaImitacion = now + SHIFT_COOLDOWN;
+            } else if (now >= proximaImitacion) {
+                imitaHasta = now + 14;
+                proximaImitacion = now + SHIFT_COOLDOWN;
+            }
+        }
+        if (!abajo) {
+            imitaHasta = 0;
+        }
+        shift = abajo;
+        Postura.agachar(villager, SNEAK, abajo && now < imitaHasta);
     }
 
     private void follow(ServerWorld world, VillagerEntityMCA villager, LivingEntity ward) {
@@ -203,9 +275,9 @@ public class FollowTask extends MultiTickTask<VillagerEntityMCA> {
     /**
      * At a player's pace, like another player by their side: walking with a walker and running with a runner (the same
      * speed, read off how fast they really go over the ground), a little faster to close a gap, sprinting and jumping
-     * as it goes when it fell far behind, still beside a player who stands, and crouched while they sneak.
+     * as it goes when it fell far behind, and still beside a player who stands.
      */
-    private void pace(ServerWorld world, VillagerEntityMCA villager, LivingEntity ward, double distance, long now) {
+    private void ritmo(LivingEntity ward, long now) {
         Vec3d at = ward.getPos();
         if (wardLast != null && now > wardLastAt) {
             long dt = Math.min(20, now - wardLastAt);
@@ -216,9 +288,11 @@ public class FollowTask extends MultiTickTask<VillagerEntityMCA> {
         }
         wardLast = at;
         wardLastAt = now;
+    }
+
+    private void pace(ServerWorld world, VillagerEntityMCA villager, LivingEntity ward, double distance, long now) {
         double pace = ward.isSprinting() ? Math.max(wardPace, SPRINT) : wardPace;
-        boolean sneak = ward.isSneaking() && distance < FAR;
-        Postura.agachar(villager, SNEAK, sneak);
+        boolean sneak = villager.isSneaking();
         double want;
         if (distance > FAR) {
             want = Math.max(pace + 0.06, HOP);
@@ -245,11 +319,13 @@ public class FollowTask extends MultiTickTask<VillagerEntityMCA> {
         double legs = Math.max(0.05, villager.getAttributeValue(EntityAttributes.GENERIC_MOVEMENT_SPEED));
         double m = MathHelper.clamp(Math.sqrt(want / 2.2) / legs, 0.3, 1.8);
         EntityNavigation nav = villager.getNavigation();
-        if (nav.isIdle() || (villager.age % 10) == 0) {
+        if (now >= nextPacePath) {
+            nextPacePath = now + 10;
             nav.startMovingTo(ward, m);
         }
         nav.setSpeed(m);
-        if (distance > FAR && run && villager.isOnGround() && nav.isFollowingPath() && headRoom(world, villager)) {
+        if (distance > FAR && run && villager.isOnGround() && nav.isFollowingPath()
+                && villager.getVelocity().horizontalLengthSquared() > 0.0064 && headRoom(world, villager)) {
             villager.getJumpControl().setActive(); // sprint-jumping to make up the ground, like a player
         }
     }

@@ -70,6 +70,7 @@ public final class Explorar {
     private static final long FAILED_TICKS = 6000;
     /** A pause in the calls longer than this means a new search from where it stands. */
     private static final long PAUSE = 400;
+    private static final int LOCAL_LOOK_COOLDOWN = 160;
     private static final float SPEED = 0.65F;
     /** How far away a tree it saw may be and still be walked to: a player's twelve chunks of view. */
     public static final int FAR_TREES = 192;
@@ -104,6 +105,8 @@ public final class Explorar {
     /** The way the last leg went (degrees, Minecraft yaw), NaN before the first. */
     private float heading = Float.NaN;
     private boolean sweeping;
+    private BlockPos lastSweepFrom;
+    private long lastSweepAt;
     private boolean exhausted;
     private long lastTick = Long.MIN_VALUE;
     private int ticks;
@@ -180,7 +183,7 @@ public final class Explorar {
         if (waypoint == null) {
             // a tree it already saw comes before looking round: no turning the head for what it knows is there
             if (!goToKnownTree(world, villager, mapa, feet, now, "recuerda")) {
-                sweep(villager);
+                replan(world, villager, mapa, feet, now);
             }
             return true;
         }
@@ -212,7 +215,7 @@ public final class Explorar {
                 fail(waypoint, now);
             }
             waypoint = null;
-            sweep(villager);
+            replan(world, villager, mapa, feet, now);
             return true;
         }
         if (busca == Busca.ARBOLES && legTicks % 40 == 0) {
@@ -238,7 +241,7 @@ public final class Explorar {
             }
             waypoint = null;
             if (!goToKnownTree(world, villager, mapa, feet, now, "sigue hacia")) {
-                sweep(villager);
+                replan(world, villager, mapa, feet, now);
             }
             return true;
         }
@@ -255,13 +258,15 @@ public final class Explorar {
                 Retina.memory(villager).doing("quita las hojas que le cierran el paso", now);
                 return true;
             }
-            if ((!started || stuck) && ++navFails >= 2) {
+            if (started && !stuck) {
+                navFails = 0;
+            } else if (++navFails >= 2) {
                 // its legs find no way there: remember that, look around and choose again
                 MCA.LOGGER.info("[Tropeles] {} no encuentra camino hacia {}: mira otra vez", name(villager), waypoint.toShortString());
                 fail(waypoint, now);
                 waypoint = null;
                 if (!goToKnownTree(world, villager, mapa, feet, now, "prueba con")) {
-                    sweep(villager);
+                    replan(world, villager, mapa, feet, now);
                 }
                 return true;
             }
@@ -276,7 +281,13 @@ public final class Explorar {
         busca = what;
     }
 
-    private void sweep(VillagerEntityMCA villager) {
+    private void replan(ServerWorld world, VillagerEntityMCA villager, MapaVisto mapa, BlockPos feet, long now) {
+        if (lastSweepFrom != null && lastSweepFrom.isWithinDistance(feet, 3) && now - lastSweepAt < LOCAL_LOOK_COOLDOWN) {
+            plan(world, villager, mapa, feet, now);
+            return;
+        }
+        lastSweepFrom = feet.toImmutable();
+        lastSweepAt = now;
         sweeping = true;
         villager.getNavigation().stop();
         mirada.start(villager);
