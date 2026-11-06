@@ -3,7 +3,6 @@ package net.mca.entity.ai.mente;
 import net.mca.MCA;
 import net.mca.entity.VillagerEntityMCA;
 import net.mca.entity.ai.body.Mining;
-import net.mca.entity.ai.body.Motor;
 import net.minecraft.block.Block;
 import net.minecraft.inventory.SimpleInventory;
 import net.minecraft.server.world.ServerWorld;
@@ -62,7 +61,8 @@ public final class Atasco {
      */
     public Remedio tick(ServerWorld world, VillagerEntityMCA villager, boolean porGusto, String haciendo) {
         long now = world.getTime();
-        if (now < proximaMuestra || !Motor.settled(villager)) {
+        // A caller can skip a tick while finishing a jump. Sample on its next eligible tick.
+        if (now < proximaMuestra) {
             return Remedio.NINGUNO;
         }
         proximaMuestra = now + 20;
