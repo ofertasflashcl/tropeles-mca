@@ -901,7 +901,8 @@ public class ProspectingTask extends AbstractChoreTask {
      */
     private void work(ServerWorld world, VillagerEntityMCA villager, boolean look) {
         comidaDe(villager);
-        if (!Voluntad.conectado(villager) && net.mca.entity.ai.mente.Interrupcion.pausado(villager) && !motor.midStep(villager)) {
+        if (!Voluntad.conectado(villager) && net.mca.entity.ai.mente.Interrupcion.pausado(villager) && !motor.midStep(villager)
+                && !rescateAgua.activo() && !RescateAgua.necesitaAire(villager)) {
             // stopped with "¡para!": the hands and legs wait with it, the mine and the plan stay as they were
             Motor.standStill(villager);
             return;
@@ -910,6 +911,12 @@ public class ProspectingTask extends AbstractChoreTask {
         // every step it takes is remembered, whoever drives the body
         remember(world, villager);
         Atasco atasco = Voluntad.of(villager).atasco();
+        // Breathing outranks errands and an unfinished mining step. In deep water the gear routine may already
+        // have changed SEEK to HOME_UP; that phase change must not disable the rescue or steal its next tick.
+        if ((rescateAgua.activo() || RescateAgua.necesitaAire(villager)) && rescatarAgua(world, villager, now)) {
+            metabolism(world, villager);
+            return;
+        }
         if (!motor.midStep(villager) && Voluntad.of(villager).manda(world, villager, this)) {
             metabolism(world, villager);
             return;
@@ -936,14 +943,7 @@ public class ProspectingTask extends AbstractChoreTask {
         boolean aguaEnExploracion = villager.isTouchingWater() && (cueva.activa() || sondeoSalida != null
                 || destinoExploracion != null && (Agua.trapped(world, villager) || atasco.origen() != null)
                 || villager.isSubmergedInWater() && (phase == Phase.SEEK || phase == Phase.SURFACE_WORK));
-        if (!midStep && (rescateAgua.activo() || aguaEnExploracion)
-                && rescateAgua.tick(world, villager, motor)) {
-            cueva.cerrar(now);
-            if (destinoExploracion != null) {
-                explorar.fail(destinoExploracion, now);
-                explorar.reset();
-            }
-            plan.clear();
+        if (!midStep && aguaEnExploracion && rescatarAgua(world, villager, now)) {
             return;
         }
         if (now >= nextSave) {
@@ -998,6 +998,18 @@ public class ProspectingTask extends AbstractChoreTask {
             case REST -> rest(world, villager);
             case SLEEP -> sleep(world, villager);
         }
+    }
+
+    private boolean rescatarAgua(ServerWorld world, VillagerEntityMCA villager, long now) {
+        if (!rescateAgua.tick(world, villager, motor)) return false;
+        cueva.cerrar(now);
+        BlockPos destino = explorar.waypoint();
+        if (destino != null) {
+            explorar.fail(destino, now);
+            explorar.reset();
+        }
+        plan.clear();
+        return true;
     }
 
     // ------------------------------------------------------------------ what the checks and the chat may ask

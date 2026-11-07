@@ -32,6 +32,10 @@ public final class RescateAgua {
         return !camino.isEmpty();
     }
 
+    public static boolean necesitaAire(VillagerEntityMCA v) {
+        return v.isSubmergedInWater() && v.getAir() <= AIRE_URGENTE;
+    }
+
     public boolean tick(ServerWorld world, VillagerEntityMCA v, Motor motor) {
         long now = world.getTime();
         BlockPos pies = Mining.pies(v);
@@ -49,7 +53,7 @@ public final class RescateAgua {
             camino = List.of(); // a swim step or air pocket is progress, not the end of the rescue
             replantear = now;
         }
-        boolean sinAire = v.isSubmergedInWater() && v.getAir() <= AIRE_URGENTE;
+        boolean sinAire = necesitaAire(v);
         boolean cambioPrioridad = sinAire && !urgente;
         urgente = sinAire;
         boolean fallo = activo() && (now >= vence || !libre(world, camino.get(paso)));

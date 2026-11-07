@@ -1,6 +1,7 @@
 package net.mca.server.command;
 
 import net.mca.Config;
+import net.mca.MCA;
 import net.mca.entity.VillagerEntityMCA;
 import net.mca.entity.ai.Chore;
 import net.mca.entity.ai.MemoryModuleTypeMCA;
@@ -275,6 +276,14 @@ final class PruebasVistaCerebro {
             }
             aireMinimo = Math.min(aireMinimo, v.getAir());
             task.practice(world, v);
+            if (!v.isAlive() || v.getHealth() < v.getMaxHealth()) {
+                Pruebas.check(name, false, "perdió vida durante el rescate; " + state());
+                return false;
+            }
+            if (ticks % 40 == 0) {
+                MCA.LOGGER.info("PRUEBA agua-profunda t={}: {}, sumergido {}, velocidad {}", ticks, state(),
+                        v.isSubmergedInWater(), v.getVelocity());
+            }
             BlockPos orilla = Recuerdos.of(world, v).sitio("orilla segura");
             if (orilla == null) return null;
             boolean ok = v.isAlive() && v.getHealth() == v.getMaxHealth() && v.isOnGround() && !v.isTouchingWater()
