@@ -255,6 +255,7 @@ final class PruebasVistaCerebro {
         private final VillagerEntityMCA v;
         private final ProspectingTask task = new ProspectingTask();
         private int aireMinimo = 300;
+        private boolean iniciada;
 
         AguaProfunda(ServerWorld world) {
             super("agua-profunda", world, 800);
@@ -269,10 +270,10 @@ final class PruebasVistaCerebro {
 
         @Override
         Boolean step() {
-            if (ticks < 5) return null;
-            if (ticks == 5) {
+            if (!iniciada) {
                 v.setAir(180);
                 v.setAiDisabled(false);
+                iniciada = true;
             }
             aireMinimo = Math.min(aireMinimo, v.getAir());
             task.practice(world, v);
@@ -286,7 +287,7 @@ final class PruebasVistaCerebro {
             }
             BlockPos orilla = Recuerdos.of(world, v).sitio("orilla segura");
             if (orilla == null) return null;
-            boolean ok = v.isAlive() && v.getHealth() == v.getMaxHealth() && v.isOnGround() && !v.isTouchingWater()
+            boolean ok = iniciada && aireMinimo <= 180 && !v.isAiDisabled() && v.isAlive() && v.getHealth() == v.getMaxHealth() && v.isOnGround() && !v.isTouchingWater()
                     && orilla.getY() == o.getY() + 12 && world.getBlockState(o).isOf(Blocks.WATER) && v.getInventory().isEmpty();
             Pruebas.check(name, ok, "el ciclo de exploración salió de 12 bloques de agua en " + ticks + " ticks; " + state());
             return ok;
@@ -308,6 +309,8 @@ final class PruebasVistaCerebro {
         private final VillagerEntityMCA v;
         private final Motor motor = new Motor();
         private final RescateAgua rescate = new RescateAgua();
+        private boolean iniciada;
+        private int aireMinimo = 300;
 
         AguaTunel(ServerWorld world) {
             super("agua-respiradero", world, 380);
@@ -322,12 +325,15 @@ final class PruebasVistaCerebro {
 
         @Override
         Boolean step() {
-            if (ticks < 5) return null;
-            if (ticks == 5) v.setAir(95);
+            if (!iniciada) {
+                v.setAir(95);
+                iniciada = true;
+            }
+            aireMinimo = Math.min(aireMinimo, v.getAir());
             rescate.tick(world, v, motor);
             BlockPos orilla = Recuerdos.of(world, v).sitio("orilla segura");
             if (orilla == null) return null;
-            boolean ok = v.isAlive() && v.getHealth() == v.getMaxHealth() && v.isOnGround() && !v.isTouchingWater()
+            boolean ok = iniciada && aireMinimo <= 95 && v.isAlive() && v.getHealth() == v.getMaxHealth() && v.isOnGround() && !v.isTouchingWater()
                     && orilla.getY() == o.getY() + 4 && world.getBlockState(o.up(2)).isOf(Blocks.STONE) && v.getInventory().isEmpty();
             Pruebas.check(name, ok, "salió por un respiradero lateral en " + ticks + " ticks; " + state());
             return ok;
@@ -335,7 +341,8 @@ final class PruebasVistaCerebro {
 
         @Override
         String state() {
-            return v.getBlockPos().toShortString() + ", aire " + v.getAir() + ", vida " + v.getHealth() + ", activo " + rescate.activo();
+            return v.getBlockPos().toShortString() + ", aire " + v.getAir() + ", aire mínimo " + aireMinimo
+                    + ", vida " + v.getHealth() + ", activo " + rescate.activo();
         }
 
         @Override
