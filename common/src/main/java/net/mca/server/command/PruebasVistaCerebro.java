@@ -4,6 +4,7 @@ import net.mca.Config;
 import net.mca.entity.VillagerEntityMCA;
 import net.mca.entity.ai.Chore;
 import net.mca.entity.ai.MemoryModuleTypeMCA;
+import net.mca.entity.ai.brain.tasks.chore.ProspectingTask;
 import net.mca.entity.ai.body.Hands;
 import net.mca.entity.ai.body.Motor;
 import net.mca.entity.ai.body.RescateAgua;
@@ -37,6 +38,7 @@ final class PruebasVistaCerebro {
             case "subida-detras" -> Pruebas.start(new Subida(world));
             case "agua-exploracion" -> Pruebas.start(new Agua(world));
             case "agua-respiradero" -> Pruebas.start(new AguaTunel(world));
+            case "agua-profunda" -> Pruebas.start(new AguaProfunda(world));
             default -> throw new IllegalArgumentException(which);
         }
     }
@@ -107,9 +109,10 @@ final class PruebasVistaCerebro {
                 boolean exacto = visto.contains(oro.getX() + " " + oro.getY() + " " + oro.getZ()) && !visto.contains("diamante");
                 var hallazgos = Recuerdos.of(world, v).hechos("vista-hallazgo", 8);
                 boolean hierroVisto = hallazgos.stream().anyMatch(h -> oro.south().equals(h.donde()) && h.texto().contains("minecraft:iron_ore"));
-                boolean ok = fotos[0] == 2 && oroReal && exacto && hierroVisto && cambio.contains("ya cambió") && Retina.memory(v).stateAt(oculto) == null;
+                boolean mochila = "bag".equals(MenteLocal.read("¿Qué tienes en la mochila?").question());
+                boolean ok = fotos[0] == 2 && oroReal && exacto && hierroVisto && mochila && cambio.contains("ya cambió") && Retina.memory(v).stateAt(oculto) == null;
                 Pruebas.check(name, ok, "muestras " + fotos[0] + ", memoria " + oroReal + ", mineral visible guardado " + hierroVisto
-                        + ", respuesta " + visto + ", cambio " + cambio);
+                        + ", distingue mochila " + mochila + ", respuesta " + visto + ", cambio " + cambio);
                 return ok;
             } finally {
                 config.villagerChatAIUseTools = herramientas;
@@ -238,6 +241,51 @@ final class PruebasVistaCerebro {
         @Override
         String state() {
             return v.getBlockPos().toShortString() + ", aire " + v.getAir() + ", activo " + rescate.activo() + ", " + Retina.memory(v).doing();
+        }
+
+        @Override
+        void cleanup() {
+            v.discard();
+        }
+    }
+
+    private static final class AguaProfunda extends Pruebas.Scenario {
+        private final BlockPos o = new BlockPos(34440, 99, 33000);
+        private final VillagerEntityMCA v;
+        private final ProspectingTask task = new ProspectingTask();
+        private int aireMinimo = 300;
+
+        AguaProfunda(ServerWorld world) {
+            super("agua-profunda", world, 800);
+            Pruebas.load(world, o, 20);
+            Pruebas.fill(world, o.add(-7, -1, -5), o.add(7, 11, 5), Blocks.STONE.getDefaultState());
+            Pruebas.fill(world, o.add(-7, 12, -5), o.add(7, 18, 5), Blocks.AIR.getDefaultState());
+            Pruebas.fill(world, o.add(-2, 0, -1), o.add(2, 11, 1), Blocks.WATER.getDefaultState());
+            v = Pruebas.villager(world, o, Direction.EAST, "Eva Agua");
+            v.getBrain().forget(MemoryModuleTypeMCA.STAYING.get());
+            v.setAiDisabled(true);
+        }
+
+        @Override
+        Boolean step() {
+            if (ticks < 5) return null;
+            if (ticks == 5) {
+                v.setAir(180);
+                v.setAiDisabled(false);
+            }
+            aireMinimo = Math.min(aireMinimo, v.getAir());
+            task.practice(world, v);
+            BlockPos orilla = Recuerdos.of(world, v).sitio("orilla segura");
+            if (orilla == null) return null;
+            boolean ok = v.isAlive() && v.getHealth() == v.getMaxHealth() && v.isOnGround() && !v.isTouchingWater()
+                    && orilla.getY() == o.getY() + 12 && world.getBlockState(o).isOf(Blocks.WATER) && v.getInventory().isEmpty();
+            Pruebas.check(name, ok, "el ciclo de exploración salió de 12 bloques de agua en " + ticks + " ticks; " + state());
+            return ok;
+        }
+
+        @Override
+        String state() {
+            return v.getBlockPos().toShortString() + ", aire mínimo " + aireMinimo + ", vida " + v.getHealth() + ", " + task.debug();
         }
 
         @Override

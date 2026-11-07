@@ -74,6 +74,7 @@ mca-prueba vista-accion
 mca-prueba subida-detras
 mca-prueba agua-exploracion
 mca-prueba agua-respiradero
+mca-prueba agua-profunda
 await-checks 320
 mca-prueba resumen
 sleep 2

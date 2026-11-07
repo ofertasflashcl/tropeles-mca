@@ -45,9 +45,8 @@ public final class RescateAgua {
                 return false;
             }
         }
-        if (activo() && paso == camino.size() - 1 && pies.equals(camino.get(paso))
-                && !v.isSubmergedInWater() && !SondeoSalida.seco(world, pies)) {
-            camino = List.of(); // an air pocket buys time; keep looking for solid ground
+        if (activo() && paso == camino.size() - 1 && pies.equals(camino.get(paso)) && !SondeoSalida.seco(world, pies)) {
+            camino = List.of(); // a swim step or air pocket is progress, not the end of the rescue
             replantear = now;
         }
         boolean sinAire = v.isSubmergedInWater() && v.getAir() <= AIRE_URGENTE;
@@ -124,7 +123,12 @@ public final class RescateAgua {
                 agregar(world, padre, cola, at, at.down(), inicio, bloqueados);
             }
         }
-        return respirar == null ? List.of() : ruta(padre, respirar, inicio);
+        if (respirar != null) return ruta(padre, respirar, inicio);
+        // In deep water neither air nor a bank fits in this local search. Keep swimming up through a verified
+        // free cell instead of abandoning the rescue and resuming the exploration that put it under water.
+        BlockPos subir = inicio.up();
+        return v.isSubmergedInWater() && Agua.water(world, inicio) && !bloqueados.containsKey(subir) && libre(world, subir)
+                ? List.of(subir) : List.of();
     }
 
     private static void agregar(ServerWorld world, Map<BlockPos, BlockPos> padre, ArrayDeque<BlockPos> cola,
