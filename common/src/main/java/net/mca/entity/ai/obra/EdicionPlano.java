@@ -48,6 +48,10 @@ public final class EdicionPlano {
     public record Base(@Nullable String id, int version, String descripcion) {
     }
 
+    /** A dry run never changes the draft. An outdated base must not be repaired against a different revision. */
+    public record Validacion(boolean vigente, @Nullable String error) {
+    }
+
     private static final Pattern CASA_SIMPLE = Pattern.compile(
             "(?:(?:por favor|oye|ya) )?(?:construye(?:me|nos)?|haz(?:me|nos)?|arma(?:me)?|levanta(?:me)?|build(?: me)?|make(?: me)?) "
                     + "(?:una |un |a |an |my |mi )?(?:casa(?: (?:de )?(?:dos pisos|2 pisos|dos plantas|larga|alargada))?|cabana|refugio|"

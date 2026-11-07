@@ -5,6 +5,7 @@ import net.mca.entity.ai.body.Progreso;
 import net.mca.entity.ai.chatAI.TriggerCommandInfos;
 import net.mca.entity.ai.obra.CatalogoPlanos;
 import net.mca.entity.ai.obra.Constructor;
+import net.mca.entity.ai.obra.EdicionPlano;
 import net.mca.entity.ai.obra.Obra;
 import net.mca.entity.ai.obra.PedidoCasa;
 import net.mca.entity.ai.obra.Plano;
@@ -169,6 +170,22 @@ final class PruebasConstruccion {
                 ordenes.add(new ArrayList<>(o.celdas().stream().filter(c -> c.rol().bloque())
                         .sorted(java.util.Comparator.comparingInt(c -> c.rol().estructura ? 0 : 1)).toList()));
             }
+            Plano propio = EdicionPlano.aplicar(Plano.casa(Plano.Madera.ABETO), Plano.Madera.ABETO,
+                    "reset;fill 1 0 1 7 0 5 cobblestone;line 1 1 1 1 4 1 stone_bricks;"
+                            + "line 7 1 1 7 4 1 stone_bricks;line 1 4 1 7 4 1 stone_bricks;"
+                            + "set 2 3 1 brick_stairs[facing=east,half=top];set 6 3 1 stone_brick_stairs[facing=west,half=top];"
+                            + "line 1 1 5 1 3 5 birch_log[axis=y];line 1 3 5 7 3 5 birch_log[axis=x];"
+                            + "set 4 3 4 stone_slab[type=top];set 7 1 5 white_concrete;fill 3 1 5 4 2 5 red_wool;entry 4 1 1");
+            for (Direction frente : Direction.Type.HORIZONTAL) {
+                BlockPos origin = new BlockPos(21500 + 30 * i++, 100, 100);
+                Pruebas.load(world, origin, 20);
+                Pruebas.fill(world, origin.add(-20, -1, -20), origin.add(20, -1, 20), Blocks.STONE.getDefaultState());
+                Pruebas.fill(world, origin.add(-20, 0, -20), origin.add(20, 16, 20), Blocks.AIR.getDefaultState());
+                Obra o = new Obra("prueba-medida-" + frente.asString(), java.util.UUID.randomUUID(), "Prueba", origin,
+                        frente, Plano.Madera.ABETO, propio);
+                obras.add(o);
+                ordenes.add(new ArrayList<>(o.celdas().stream().filter(c -> c.rol().bloque()).toList()));
+            }
             v = Pruebas.villager(world, new BlockPos(21496, 100, 96), Direction.SOUTH, "Colocador de casas");
         }
 
@@ -176,7 +193,8 @@ final class PruebasConstruccion {
             for (int batch = 0; batch < 8; batch++) {
                 if (casa == obras.size()) {
                     exige(sinApoyo > 0, "No se ejercitó la espera de apoyos");
-                    Pruebas.check(name, true, "tres diseños con " + puestas + " objetos colocados por Constructor.colocar; posición asistida, inventario mixto");
+                    Pruebas.check(name, true, obras.size() + " planos, incluidos bloques a medida en cuatro orientaciones; " + puestas
+                            + " objetos colocados por Constructor.colocar; posición asistida, inventario mixto");
                     return true;
                 }
                 Obra o = obras.get(casa);

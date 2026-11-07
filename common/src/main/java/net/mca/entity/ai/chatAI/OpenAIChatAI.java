@@ -195,6 +195,7 @@ public class OpenAIChatAI implements ChatAIStrategy {
                 if (reply != null) {
                     StructuredResponse said = structured(reply.content(), prep.villagerName());
                     said = repairAction(server, villager, prep, msg, said, lease, deadline, imagen);
+                    said = repairBlueprint(server, player, villager, prep, msg, said, lease, deadline, imagen);
                     line = speak(server, player, villager, prep, said, lease);
                     MCA.LOGGER.info("[Tropeles] {} pensó con {} en {} ms (orden '{}'){}", prep.villagerName(), reply.mind(), reply.millis(),
                             said.optionalCommand(), reply.saw() ? ", mirando la foto de lo que ve" : "");
@@ -265,6 +266,32 @@ public class OpenAIChatAI implements ChatAIStrategy {
             return new StructuredResponse(null, choice.optionalCommand(), choice.argument());
         }
         return said;
+    }
+
+    /** One bounded compiler-feedback pass. Neither the failed program nor the dry run writes any blocks or revisions. */
+    private StructuredResponse repairBlueprint(MinecraftServer server, ServerPlayerEntity player, VillagerEntityMCA villager,
+                                               Prepared prep, String msg, StructuredResponse said, ActionTurn lease,
+                                               long deadline, @Nullable String imagen) {
+        if (!EdicionPlano.COMANDO.equals(command(said.optionalCommand())) || prep.plano() == null
+                || !prep.actions().containsKey(EdicionPlano.COMANDO) || System.currentTimeMillis() + 1_000 >= deadline) return said;
+        EdicionPlano.Validacion revision = onServer(server, lease, () -> {
+            if (!CommandPolicy.check(player, villager, EdicionPlano.COMANDO, CommandPolicy.Source.MODEL).allowed()) return null;
+            return Voluntad.validarBloques(villager, player, prep.plano(), said.argument());
+        });
+        if (revision == null || !revision.vigente() || revision.error() == null || System.currentTimeMillis() >= deadline) return said;
+        String prompt = "Repair the proposed block edit using the compiler's exact error and the current draft below. "
+                + "Nothing from the rejected program was applied. Preserve the player's request and unrelated cells. "
+                + "Return ONLY JSON {\"optionalCommand\":\"design-blueprint\",\"argument\":\"complete corrected program\"}. "
+                + "The argument must be a string, at most " + EdicionPlano.MAX_ARGUMENTO + " characters.\n"
+                + EdicionPlano.LENGUAJE + "\n" + prep.plano().descripcion();
+        JsonObject data = new JsonObject();
+        data.addProperty("playerMessage", msg);
+        data.addProperty("rejectedProgram", said.argument());
+        data.addProperty("compilerError", revision.error());
+        Cerebros.Reply repair = askMinds(prep.minds(), mind -> prompt, List.of(), data.toString(),
+                prep.playerName(), prep.villagerName(), villager.getUuid(), deadline, imagen);
+        StructuredResponse choice = repair == null ? null : actionChoice(repair.content(), Set.of(EdicionPlano.COMANDO));
+        return choice != null && EdicionPlano.COMANDO.equals(choice.optionalCommand()) ? choice : said;
     }
 
     /** The action-only reply is stricter than free speech: no prose, aliases, nested values or unlisted actions. */

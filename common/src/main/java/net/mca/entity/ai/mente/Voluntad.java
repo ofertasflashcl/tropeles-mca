@@ -1265,6 +1265,23 @@ public final class Voluntad {
         return false;
     }
 
+    /** Checks the model's program before spending its one action. Called on the server thread, without effects. */
+    public static EdicionPlano.Validacion validarBloques(VillagerEntityMCA villager, ServerPlayerEntity player,
+                                                        @Nullable EdicionPlano.Base base, String cambios) {
+        EdicionPlano.Base actual = contextoPlano(villager, player, false);
+        if (base == null || actual == null || !java.util.Objects.equals(base.id(), actual.id()) || base.version() != actual.version()) {
+            return new EdicionPlano.Validacion(false, null);
+        }
+        Propuestas.Propuesta p = Propuestas.get(player.getServerWorld()).de(villager.getUuid());
+        CatalogoPlanos.Borrador b = p == null ? CatalogoPlanos.Borrador.de(ModelosCasa.Modelo.DOS_PISOS, maderaDe(villager)) : p.borrador();
+        try {
+            EdicionPlano.aplicar(p == null ? b.plano() : p.plano(), b.madera(), cambios);
+            return new EdicionPlano.Validacion(true, null);
+        } catch (IllegalArgumentException invalid) {
+            return new EdicionPlano.Validacion(true, invalid.getMessage());
+        }
+    }
+
     /** Accepts a proposed block edit only against the owner's current, unapproved revision. */
     public static String editarBloques(VillagerEntityMCA villager, ServerPlayerEntity player, @Nullable EdicionPlano.Base base,
                                        String cambios, boolean es) {

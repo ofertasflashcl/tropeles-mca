@@ -44,9 +44,9 @@ import java.util.function.Function;
  */
 final class PruebasPropuestas {
     static final List<String> NOMBRES = List.of("propuestas-palabras", "propuestas-crear", "propuestas-editar", "propuestas-aprobar",
-            "propuestas-cancelar", "propuestas-balcon", "propuestas-voxeles", "propuestas-guardado", "propuestas-preparar");
+            "propuestas-cancelar", "propuestas-balcon", "propuestas-voxeles", "propuestas-reparar", "propuestas-guardado", "propuestas-preparar");
     private static final List<String> EN_ARENA = List.of("propuestas-crear", "propuestas-editar", "propuestas-aprobar", "propuestas-cancelar", "propuestas-balcon",
-            "propuestas-voxeles");
+            "propuestas-voxeles", "propuestas-reparar");
 
     private static final BlockPos O = new BlockPos(33000, 100, 33000);
     private static final UUID REINICIO = UUID.fromString("c03b0000-0000-4000-8000-00000000c03b");
@@ -82,6 +82,7 @@ final class PruebasPropuestas {
             caso("propuestas-cancelar", () -> cancelar(x));
             caso("propuestas-balcon", () -> balcon(x));
             caso("propuestas-voxeles", () -> voxeles(x));
+            caso("propuestas-reparar", () -> reparar(x));
         } catch (RuntimeException e) {
             for (String n : EN_ARENA) {
                 Pruebas.check(n, false, "no se pudo armar la arena: " + e);
@@ -406,6 +407,53 @@ final class PruebasPropuestas {
         Voluntad.respuestaPropuesta(a.v2, a.tercero, "sí", true);
         Obra o = a.obra(a.v2);
         exige(o != null && o.plano() == editado && o.centro().down().equals(suelo), "No aprobó el plano visible");
+    }
+
+    private static void reparar(Arena a) {
+        Voluntad.cancelarObra(a.v2, a.tercero, true);
+        EdicionPlano.Base inicial = Voluntad.contextoPlano(a.v2, a.tercero, false);
+        Voluntad.editarBloques(a.v2, a.tercero, inicial, ARCO, true);
+        Propuestas.Propuesta p = a.propuesta(a.v2);
+        exige(p != null && p.aMedida(), "No preparó el borrador para la reparación");
+        Plano[] antes = {p.plano()};
+        int[] llamadas = {0};
+        int[] modo = {0};
+        String invalido = "set 1 4 1 tnt";
+        OpenAIChatAI chat = new OpenAIChatAI() {
+            @Override
+            protected Cerebros.Reply askMinds(List<Cerebros.Mind> minds, Function<Cerebros.Mind, String> system,
+                                             List<Pair<String, String>> history, String msg, String playerName, String villagerName,
+                                             UUID villager, long deadline, String image) {
+                boolean reparando = llamadas[0]++ % 2 == 1;
+                exige(p.plano() == antes[0], "El intento rechazado ya alteró la revisión");
+                if (reparando) {
+                    exige(msg.contains("compilerError") && msg.contains("operation 1") && msg.contains(invalido),
+                            "El modelo no recibió el programa y el error del compilador");
+                    if (modo[0] == 2) {
+                        Voluntad.editarBloques(a.v2, a.tercero, Voluntad.contextoPlano(a.v2, a.tercero, false),
+                                "set 1 4 1 blue_concrete", true);
+                    }
+                }
+                var reply = new com.google.gson.JsonObject();
+                reply.addProperty("optionalCommand", EdicionPlano.COMANDO);
+                reply.addProperty("argument", reparando && modo[0] != 1 ? "set 1 4 1 white_concrete" : invalido);
+                return new Cerebros.Reply("prueba", reply.toString(), 0, false);
+            }
+        };
+        String respuesta = chat.answer(a.tercero, a.v2, "Cambia el bloque superior izquierdo del arco por hormigón blanco.").orElse("");
+        exige(llamadas[0] == 2 && p.plano().revision == antes[0].revision + 1 && respuesta.contains("revisión")
+                && p.plano().piezas.stream().anyMatch(c -> c.rel().equals(new BlockPos(1, 4, 1)) && c.state().isOf(Blocks.WHITE_CONCRETE)),
+                "La reparación no publicó exactamente una revisión: " + respuesta);
+        antes[0] = p.plano();
+        modo[0] = 1;
+        respuesta = chat.answer(a.tercero, a.v2, "Vuelve a cambiar ese bloque del arco.").orElse("");
+        exige(llamadas[0] == 4 && p.plano() == antes[0] && respuesta.contains("no forma un plano"),
+                "Una reparación inválida cambió el plano o se repitió sin límite: " + respuesta);
+        modo[0] = 2;
+        respuesta = chat.answer(a.tercero, a.v2, "Prueba otro bloque en esa esquina del arco.").orElse("");
+        exige(llamadas[0] == 6 && respuesta.contains("plano cambió") && p.plano().revision == antes[0].revision + 1
+                && p.plano().piezas.stream().anyMatch(c -> c.rel().equals(new BlockPos(1, 4, 1)) && c.state().isOf(Blocks.BLUE_CONCRETE))
+                && a.obra(a.v2) == null, "La reparación sobrescribió una edición más nueva: " + respuesta);
     }
 
     private static void preparar(ServerWorld world) {
