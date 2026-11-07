@@ -13,8 +13,10 @@ import net.mca.entity.ai.chatAI.Cerebros;
 import net.mca.entity.ai.chatAI.MenteLocal;
 import net.mca.entity.ai.chatAI.TriggerCommandInfo;
 import net.mca.entity.ai.chatAI.TriggerCommandInfos;
+import net.mca.entity.ai.chatAI.Vistazo;
 import net.mca.entity.ai.sense.Ahora;
 import net.mca.entity.ai.sense.Retina;
+import net.mca.entity.ai.sense.VistaSituada;
 import net.mca.util.WorldUtils;
 import net.minecraft.inventory.SimpleInventory;
 import net.minecraft.item.ItemStack;
@@ -22,11 +24,13 @@ import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtElement;
 import net.minecraft.nbt.NbtList;
 import net.minecraft.nbt.NbtString;
+import net.minecraft.registry.RegistryKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.PersistentState;
+import net.minecraft.world.World;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
@@ -83,7 +87,7 @@ public final class Conciencia {
     /** What its thoughts are told of its diary. */
     private static final int HECHOS = 12;
     /** Diary entries that are things that happened to it, worth a thought. */
-    private static final String EVENTOS = "atasco|viaje|pelea|hallazgo|charla|camino|cofre";
+    private static final String EVENTOS = "atasco|viaje|pelea|hallazgo|vista-hallazgo|charla|camino|cofre";
 
     /** What it can want, and the order of the chat that does it ("" for none: it carries on). */
     private static final Map<String, String> QUIERO = Map.of(
@@ -107,6 +111,9 @@ public final class Conciencia {
                        String cita) {
     }
 
+    private record Pendiente(Pensamiento pensamiento, int generacion, RegistryKey<World> mundo, @Nullable VistaSituada vista) {
+    }
+
     private long proximoMs = System.currentTimeMillis() + 20_000 + (long) (Math.random() * 30_000);
     private long ultimoMs;
     private long hechoVisto = Long.MIN_VALUE;
@@ -116,7 +123,7 @@ public final class Conciencia {
     private long ultimoDicho = Long.MIN_VALUE / 2;
     /** What the last thought was given (the prompt's state): what it may speak of. */
     private String ultimoEstado = "";
-    private final AtomicReference<Pensamiento> listo = new AtomicReference<>();
+    private final AtomicReference<Pendiente> listo = new AtomicReference<>();
 
     Conciencia() {
     }
@@ -126,9 +133,10 @@ public final class Conciencia {
     /** Called by {@link Voluntad#manda} every tick; does something once a second at most. Never throws. */
     void tick(ServerWorld world, VillagerEntityMCA villager, Voluntad will, @Nullable ProspectingTask task) {
         try {
-            Pensamiento p = listo.getAndSet(null);
-            if (p != null) {
-                aplicar(world, villager, will, task, p);
+            Pendiente p = listo.getAndSet(null);
+            if (p != null && p.generacion() == Voluntad.generacion(villager.getUuid()) && p.mundo().equals(world.getRegistryKey())
+                    && (p.vista() == null || p.vista().vigente(world, villager))) {
+                aplicar(world, villager, will, task, p.pensamiento());
             }
             if ((villager.age % 20) != 13) {
                 return;
@@ -213,7 +221,10 @@ public final class Conciencia {
         String villagerName = villager.getName().getString();
         boolean es = cerca == null ? will.spanish() : idioma(cerca, will);
         String sistema = sistema(villagerName, playerName, es);
-        String estado = estado(world, villager, will, task, cerca, pasado);
+        VistaSituada vista = Vistazo.captar(villager, Cerebros.anyCanLook(minds));
+        String estado = estado(world, villager, will, task, cerca, pasado, vista);
+        int generacion = Voluntad.generacion(villager.getUuid());
+        RegistryKey<World> mundo = world.getRegistryKey();
         // the permit is taken only after everything that could fail here: one bad snapshot must not stop every mind
         if (!PENSANDO.compareAndSet(false, true)) {
             return;
@@ -224,7 +235,7 @@ public final class Conciencia {
             HILO.execute(() -> {
                 try {
                     Cerebros.Reply reply = Cerebros.ask(minds, m -> sistema, List.of(), estado, playerName, villagerName, null,
-                            System.currentTimeMillis() + PLAZO_MS);
+                            System.currentTimeMillis() + PLAZO_MS, vista == null ? null : vista.imagen());
                     Pensamiento p = reply == null ? null : leer(reply.content(), reply.mind() + " en " + reply.millis() + " ms", pasado);
                     if (p == null) {
                         fallos = Math.min(fallos + 1, 4);
@@ -232,11 +243,11 @@ public final class Conciencia {
                         MCA.LOGGER.info("[Tropeles] {} quiso pensar pero ninguna mente respondió; piensa solo un rato", villagerName);
                         String local = pasado.isEmpty() ? null : pensarLocal(villager, null, pasado);
                         if (local != null) {
-                            listo.set(new Pensamiento(local, "", "", "", "", "", "mente local", pasado, ""));
+                            listo.set(new Pendiente(new Pensamiento(local, "", "", "", "", "", "mente local", pasado, ""), generacion, mundo, null));
                         }
                     } else {
                         fallos = 0;
-                        listo.set(p);
+                        listo.set(new Pendiente(p, generacion, mundo, vista));
                     }
                 } catch (RuntimeException e) {
                     MCA.LOGGER.warn("[Tropeles] {} no pudo pensar: {}", villagerName, e.toString());
@@ -256,7 +267,8 @@ public final class Conciencia {
         return "Eres la voz interior de " + villager + ", alguien que vive por su cuenta en este mundo como un jugador más: consigue "
                 + "herramientas, madera y comida, mina, vuelve a casa, guarda sus cosas. No eres un asistente. Piensas en primera persona, "
                 + "con sentido común, solo con lo que te dan abajo: nunca inventes lugares, cosas ni motivos. Aprende de lo que te pasó "
-                + "(atascos, caminos, hambre, peleas) para hacerlo mejor la próxima vez.\n"
+                + "(atascos, caminos, hambre, peleas) para hacerlo mejor la próxima vez. La muestra de tus ojos es del momento de la decisión. "
+                + "Distingue la vista de un recuerdo y usa los identificadores de bloque de la muestra cuando la imagen sea ambigua.\n"
                 + "Responde SOLO con un objeto JSON, nada más: {\"pienso\": \"\", \"leccion\": \"\", \"quiero\": \"\", \"porque\": \"\", \"dice\": \"\", \"cita\": \"\"}\n"
                 + "- pienso: lo que piensas ahora, en español, máximo 25 palabras.\n"
                 + "- leccion: algo nuevo que aprendiste de lo que te pasó y te servirá después, en español y corto; \"\" si no hay nada nuevo "
@@ -272,9 +284,9 @@ public final class Conciencia {
                 + (es ? "español (casual, como un jugador chileno)" : "English") + ".";
     }
 
-    /** Everything it knows of itself right now, short: about 2000 characters at most. */
+    /** The present state, with a bounded visual sample and the older facts it can cite. */
     private static String estado(ServerWorld world, VillagerEntityMCA villager, Voluntad will, @Nullable ProspectingTask task,
-                                 @Nullable ServerPlayerEntity cerca, String pasado) {
+                                 @Nullable ServerPlayerEntity cerca, String pasado, @Nullable VistaSituada vista) {
         long now = world.getTime();
         JsonObject o = new JsonObject();
         o.addProperty("yo", villager.getName().getString());
@@ -307,6 +319,9 @@ public final class Conciencia {
         }
         if (!pasado.isEmpty()) {
             o.addProperty("acaba de pasar", clip(pasado, 240));
+        }
+        if (vista != null) {
+            o.addProperty("vista en directo", vista.paraModelo());
         }
         Ahora ahora = Ahora.get(villager);
         if (ahora != null) {

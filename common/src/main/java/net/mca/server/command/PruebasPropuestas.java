@@ -10,6 +10,7 @@ import net.mca.entity.ai.mente.Voluntad;
 import net.mca.entity.ai.obra.CambioCasa;
 import net.mca.entity.ai.obra.CatalogoPlanos;
 import net.mca.entity.ai.obra.Constructor;
+import net.mca.entity.ai.obra.EdicionPlano;
 import net.mca.entity.ai.obra.ModelosCasa;
 import net.mca.entity.ai.obra.Obra;
 import net.mca.entity.ai.obra.ObrasMundo;
@@ -43,14 +44,19 @@ import java.util.function.Function;
  */
 final class PruebasPropuestas {
     static final List<String> NOMBRES = List.of("propuestas-palabras", "propuestas-crear", "propuestas-editar", "propuestas-aprobar",
-            "propuestas-cancelar", "propuestas-balcon", "propuestas-guardado", "propuestas-preparar");
-    private static final List<String> EN_ARENA = List.of("propuestas-crear", "propuestas-editar", "propuestas-aprobar", "propuestas-cancelar", "propuestas-balcon");
+            "propuestas-cancelar", "propuestas-balcon", "propuestas-voxeles", "propuestas-reparar", "propuestas-guardado", "propuestas-preparar");
+    private static final List<String> EN_ARENA = List.of("propuestas-crear", "propuestas-editar", "propuestas-aprobar", "propuestas-cancelar", "propuestas-balcon",
+            "propuestas-voxeles", "propuestas-reparar");
 
     private static final BlockPos O = new BlockPos(33000, 100, 33000);
     private static final UUID REINICIO = UUID.fromString("c03b0000-0000-4000-8000-00000000c03b");
     private static final UUID SIN_PARCELA = UUID.fromString("c03b0000-0000-4000-8000-00000000c03c");
+    private static final UUID A_MEDIDA = UUID.fromString("c03b0000-0000-4000-8000-00000000c03d");
     private static final UUID JUGADOR = UUID.fromString("c03b0000-0000-4000-8000-0000000b3a1a");
     private static final BlockPos ORIGEN_REINICIO = new BlockPos(33200, 100, 33200);
+    private static final String ARCO = "reset;fill 1 0 1 5 0 5 cobblestone;line 1 1 1 1 4 1 stone_bricks;"
+            + "line 5 1 1 5 4 1 stone_bricks;line 1 4 1 5 4 1 stone_bricks;shell 1 1 4 2 4 5 bricks;"
+            + "set 3 3 1 brick_stairs[facing=east,half=top];entry 3 1 1";
 
     private PruebasPropuestas() {
     }
@@ -75,6 +81,8 @@ final class PruebasPropuestas {
             caso("propuestas-aprobar", () -> aprobar(x));
             caso("propuestas-cancelar", () -> cancelar(x));
             caso("propuestas-balcon", () -> balcon(x));
+            caso("propuestas-voxeles", () -> voxeles(x));
+            caso("propuestas-reparar", () -> reparar(x));
         } catch (RuntimeException e) {
             for (String n : EN_ARENA) {
                 Pruebas.check(n, false, "no se pudo armar la arena: " + e);
@@ -354,6 +362,100 @@ final class PruebasPropuestas {
         exige(back.caducar(100L + Propuestas.CADUCA + 1).size() == 1 && back.de(constructor) == null, "No caducó al día sin respuesta");
     }
 
+    private static void voxeles(Arena a) {
+        Voluntad.cancelarObra(a.v2, a.tercero, true);
+        String[] patch = {ARCO};
+        int[] llamadas = {0};
+        OpenAIChatAI chat = new OpenAIChatAI() {
+            @Override
+            protected Cerebros.Reply askMinds(List<Cerebros.Mind> minds, Function<Cerebros.Mind, String> system,
+                                             List<Pair<String, String>> history, String msg, String playerName, String villagerName,
+                                             UUID villager, long deadline, String image) {
+                String context = system.apply(new Cerebros.Mind("prueba", "", "", "", true, false, java.util.Map.of(), null));
+                exige(context.contains(EdicionPlano.COMANDO), "El chat no ofreció la edición de bloques");
+                exige(context.contains(llamadas[0]++ == 0 ? "No pending draft" : "minecraft:brick_stairs"), "El modelo no recibió el plano actual");
+                var reply = new com.google.gson.JsonObject();
+                reply.addProperty("message", "Ya está construida.");
+                reply.addProperty("optionalCommand", EdicionPlano.COMANDO);
+                reply.addProperty("argument", patch[0]);
+                return new Cerebros.Reply("prueba", reply.toString(), 0, false);
+            }
+        };
+        String respuesta = chat.answer(a.tercero, a.v2, "Hazme una casa con un arco de ladrillo y una torre asimétrica.").orElse("");
+        Propuestas.Propuesta p = a.propuesta(a.v2);
+        exige(p != null && p.aMedida() && p.pendienteSitio() && a.obra(a.v2) == null && respuesta.contains("marcador"),
+                "La orden creativa no generó la propuesta: " + respuesta);
+        String hash = p.plano().hash();
+        BlockPos suelo = O.north(18).down();
+        marcar(a, a.tercero, p, suelo);
+        exige(p.plano().hash().equals(hash) && p.vista().centro().down().equals(suelo), "Marcar la parcela sustituyó el plano");
+        EdicionPlano.Base anterior = Voluntad.contextoPlano(a.v2, a.tercero, false);
+        patch[0] = "set 3 3 1 stone_brick_stairs[facing=west,half=top];set 4 4 1 birch_log[axis=x]";
+        respuesta = chat.answer(a.tercero, a.v2, "Gira el escalón del arco y ponle un tronco de abedul horizontal al lado.").orElse("");
+        Plano editado = p.plano();
+        exige(!editado.hash().equals(hash) && respuesta.contains("revisión") && !respuesta.contains("Ya está construida."),
+                "El modelo no actualizó la revisión: " + respuesta);
+        exige(editado.piezas.stream().anyMatch(c -> c.rel().equals(new BlockPos(4, 4, 1)) && c.state().isOf(Blocks.BIRCH_LOG)
+                && c.state().get(net.minecraft.state.property.Properties.AXIS) == Direction.Axis.X), "Perdió el bloque exacto o su eje");
+        EdicionPlano.Base vigente = Voluntad.contextoPlano(a.v2, a.tercero, false);
+        Voluntad.editarBloques(a.v2, a.tercero, vigente, "set 1 4 1 bricks;set 2 1 1 tnt", true);
+        Voluntad.editarBloques(a.v2, a.tercero, anterior, "set 1 4 1 bricks", true);
+        Voluntad.editarBloques(a.v2, a.otro, vigente, "set 1 4 1 bricks", true);
+        exige(p.plano() == editado && a.obra(a.v2) == null, "Un parche inválido, viejo o ajeno cambió el borrador");
+        var copia = Propuestas.leer(Propuestas.get(a.world).writeNbt(new NbtCompound())).de(a.v2.getUuid());
+        exige(copia != null && copia.plano().hash().equals(editado.hash()) && copia.aMedida(), "No guardó la geometría editada");
+        Voluntad.respuestaPropuesta(a.v2, a.tercero, "sí", true);
+        Obra o = a.obra(a.v2);
+        exige(o != null && o.plano() == editado && o.centro().down().equals(suelo), "No aprobó el plano visible");
+    }
+
+    private static void reparar(Arena a) {
+        Voluntad.cancelarObra(a.v2, a.tercero, true);
+        EdicionPlano.Base inicial = Voluntad.contextoPlano(a.v2, a.tercero, false);
+        Voluntad.editarBloques(a.v2, a.tercero, inicial, ARCO, true);
+        Propuestas.Propuesta p = a.propuesta(a.v2);
+        exige(p != null && p.aMedida(), "No preparó el borrador para la reparación");
+        Plano[] antes = {p.plano()};
+        int[] llamadas = {0};
+        int[] modo = {0};
+        String invalido = "set 1 4 1 tnt";
+        OpenAIChatAI chat = new OpenAIChatAI() {
+            @Override
+            protected Cerebros.Reply askMinds(List<Cerebros.Mind> minds, Function<Cerebros.Mind, String> system,
+                                             List<Pair<String, String>> history, String msg, String playerName, String villagerName,
+                                             UUID villager, long deadline, String image) {
+                boolean reparando = llamadas[0]++ % 2 == 1;
+                exige(p.plano() == antes[0], "El intento rechazado ya alteró la revisión");
+                if (reparando) {
+                    exige(msg.contains("compilerError") && msg.contains("operation 1") && msg.contains(invalido),
+                            "El modelo no recibió el programa y el error del compilador");
+                    if (modo[0] == 2) {
+                        Voluntad.editarBloques(a.v2, a.tercero, Voluntad.contextoPlano(a.v2, a.tercero, false),
+                                "set 1 4 1 blue_concrete", true);
+                    }
+                }
+                var reply = new com.google.gson.JsonObject();
+                reply.addProperty("optionalCommand", EdicionPlano.COMANDO);
+                reply.addProperty("argument", reparando && modo[0] != 1 ? "set 1 4 1 white_concrete" : invalido);
+                return new Cerebros.Reply("prueba", reply.toString(), 0, false);
+            }
+        };
+        String respuesta = chat.answer(a.tercero, a.v2, "Cambia el bloque superior izquierdo del arco por hormigón blanco.").orElse("");
+        exige(llamadas[0] == 2 && p.plano().revision == antes[0].revision + 1 && respuesta.contains("revisión")
+                && p.plano().piezas.stream().anyMatch(c -> c.rel().equals(new BlockPos(1, 4, 1)) && c.state().isOf(Blocks.WHITE_CONCRETE)),
+                "La reparación no publicó exactamente una revisión: " + respuesta);
+        antes[0] = p.plano();
+        modo[0] = 1;
+        respuesta = chat.answer(a.tercero, a.v2, "Vuelve a cambiar ese bloque del arco.").orElse("");
+        exige(llamadas[0] == 4 && p.plano() == antes[0] && respuesta.contains("no forma un plano"),
+                "Una reparación inválida cambió el plano o se repitió sin límite: " + respuesta);
+        modo[0] = 2;
+        respuesta = chat.answer(a.tercero, a.v2, "Prueba otro bloque en esa esquina del arco.").orElse("");
+        exige(llamadas[0] == 6 && respuesta.contains("plano cambió") && p.plano().revision == antes[0].revision + 1
+                && p.plano().piezas.stream().anyMatch(c -> c.rel().equals(new BlockPos(1, 4, 1)) && c.state().isOf(Blocks.BLUE_CONCRETE))
+                && a.obra(a.v2) == null, "La reparación sobrescribió una edición más nueva: " + respuesta);
+    }
+
     private static void preparar(ServerWorld world) {
         Propuestas ps = Propuestas.get(world);
         exige(ps.de(REINICIO) == null, "La prueba requiere un primer proceso sin propuesta anterior");
@@ -366,6 +468,11 @@ final class PruebasPropuestas {
                 "Jugador de prueba", balcon.borrador(), BlockPos.ORIGIN, Direction.NORTH, world.getTime());
         pendiente.pedirSitio(balcon.borrador(), world.getTime());
         ps.poner(pendiente);
+        CatalogoPlanos.Borrador base = CatalogoPlanos.Borrador.de(ModelosCasa.Modelo.DOS_PISOS, Plano.Madera.ROBLE);
+        Propuestas.Propuesta propia = new Propuestas.Propuesta("reinicio-voxeles", A_MEDIDA, "Constructor de prueba", JUGADOR,
+                "Jugador de prueba", base, ORIGEN_REINICIO, Direction.NORTH, world.getTime());
+        propia.cambiarPlano(EdicionPlano.aplicar(base.plano(), base.madera(), ARCO), ORIGEN_REINICIO, Direction.NORTH, world.getTime());
+        ps.poner(propia);
         exige(ps.de(REINICIO) != null, "No guardó la propuesta para reiniciar");
     }
 
@@ -382,6 +489,11 @@ final class PruebasPropuestas {
         exige(pendiente != null && pendiente.pendienteSitio() && pendiente.vista().id.startsWith(Propuestas.PARCELA)
                 && pendiente.borrador().balcon() == CambioCasa.Lado.FRENTE && ObrasMundo.get(world).de(SIN_PARCELA) == null,
                 "Perdió el balcón o la espera de parcela al reiniciar");
+        Propuestas.Propuesta propia = ps.de(A_MEDIDA);
+        Plano arco = EdicionPlano.aplicar(Plano.casa(Plano.Madera.ROBLE), Plano.Madera.ROBLE, ARCO);
+        exige(propia != null && propia.aMedida() && propia.plano().piezas.equals(arco.piezas) && propia.origen().equals(ORIGEN_REINICIO),
+                "Perdió el arco de bloques o su parcela al reiniciar");
+        ps.quitar(propia);
         ps.quitar(pendiente);
         ps.quitar(p);
     }

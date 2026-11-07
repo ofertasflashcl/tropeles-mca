@@ -18,6 +18,8 @@ import net.mca.entity.ai.body.Mina;
 import net.mca.entity.ai.body.Mining;
 import net.mca.entity.ai.body.Motor;
 import net.mca.entity.ai.body.Progreso;
+import net.mca.entity.ai.body.RescateAgua;
+import net.mca.entity.ai.body.SondeoSalida;
 import net.mca.entity.ai.mente.Atasco;
 import net.mca.entity.ai.mente.Recuerdos;
 import net.mca.entity.ai.mente.Voluntad;
@@ -413,6 +415,10 @@ public class ProspectingTask extends AbstractChoreTask {
     /** Looking around for food, or for a spot to start a mine: where it looked already and which way it went. */
     private final Explorar explorar = new Explorar();
     private final Cueva cueva = new Cueva();
+    private final RescateAgua rescateAgua = new RescateAgua();
+    @Nullable
+    private SondeoSalida sondeoSalida;
+    private boolean iniciarSondeo;
     @Nullable
     private BlockPos ultimaMiraCueva;
     private long mirarCuevaDesde;
@@ -514,6 +520,25 @@ public class ProspectingTask extends AbstractChoreTask {
      */
     public static void callHome(VillagerEntityMCA villager, boolean hungry) {
         CALLED.merge(villager, hungry, Boolean::logicalOr);
+    }
+
+    public static boolean puedeBuscarSalida(VillagerEntityMCA v) {
+        return v.getWorld() instanceof ServerWorld world && v.getVillagerBrain().getCurrentJob() == Chore.PROSPECT
+                && !v.isSleeping() && !(Mining.onSurface(world, Mining.pies(v)) && Mining.openGround(world, Mining.pies(v)));
+    }
+
+    public static boolean buscarSalida(VillagerEntityMCA v, Direction rumbo) {
+        if (!puedeBuscarSalida(v) || !(v.getWorld() instanceof ServerWorld world)) {
+            return false;
+        }
+        ProspectingTask task = of(v);
+        Voluntad.nuevaGeneracion(v.getUuid());
+        CALLED.remove(v);
+        BACK.remove(v);
+        DECIDED.remove(v);
+        task.sondeoSalida = new SondeoSalida(world, v, rumbo);
+        task.iniciarSondeo = true;
+        return true;
     }
 
     /** The miners at work right now, so the chat can ask one how its trip is going. */
@@ -876,7 +901,8 @@ public class ProspectingTask extends AbstractChoreTask {
      */
     private void work(ServerWorld world, VillagerEntityMCA villager, boolean look) {
         comidaDe(villager);
-        if (!Voluntad.conectado(villager) && net.mca.entity.ai.mente.Interrupcion.pausado(villager) && !motor.midStep(villager)) {
+        if (!Voluntad.conectado(villager) && net.mca.entity.ai.mente.Interrupcion.pausado(villager) && !motor.midStep(villager)
+                && !rescateAgua.activo() && !RescateAgua.necesitaAire(villager)) {
             // stopped with "¡para!": the hands and legs wait with it, the mine and the plan stay as they were
             Motor.standStill(villager);
             return;
@@ -885,6 +911,12 @@ public class ProspectingTask extends AbstractChoreTask {
         // every step it takes is remembered, whoever drives the body
         remember(world, villager);
         Atasco atasco = Voluntad.of(villager).atasco();
+        // Breathing outranks errands and an unfinished mining step. In deep water the gear routine may already
+        // have changed SEEK to HOME_UP; that phase change must not disable the rescue or steal its next tick.
+        if ((rescateAgua.activo() || RescateAgua.necesitaAire(villager)) && rescatarAgua(world, villager, now)) {
+            metabolism(world, villager);
+            return;
+        }
         if (!motor.midStep(villager) && Voluntad.of(villager).manda(world, villager, this)) {
             metabolism(world, villager);
             return;
@@ -907,11 +939,21 @@ public class ProspectingTask extends AbstractChoreTask {
             }
         }
         recordTrail(world, villager);
+        BlockPos destinoExploracion = explorar.waypoint();
+        boolean aguaEnExploracion = villager.isTouchingWater() && (cueva.activa() || sondeoSalida != null
+                || destinoExploracion != null && (Agua.trapped(world, villager) || atasco.origen() != null)
+                || villager.isSubmergedInWater() && (phase == Phase.SEEK || phase == Phase.SURFACE_WORK));
+        if (!midStep && aguaEnExploracion && rescatarAgua(world, villager, now)) {
+            return;
+        }
         if (now >= nextSave) {
             nextSave = now + SAVE_TICKS;
             saveMine(world, villager);
         }
         if (!midStep && threat(world, villager)) {
+            return;
+        }
+        if (sondeoSalida != null && !troubled() && sondear(world, villager)) {
             return;
         }
         if (!midStep && (phase == Phase.SEEK || phase == Phase.SURFACE_WORK) && ++decideTicks >= 20) {
@@ -956,6 +998,18 @@ public class ProspectingTask extends AbstractChoreTask {
             case REST -> rest(world, villager);
             case SLEEP -> sleep(world, villager);
         }
+    }
+
+    private boolean rescatarAgua(ServerWorld world, VillagerEntityMCA villager, long now) {
+        if (!rescateAgua.tick(world, villager, motor)) return false;
+        cueva.cerrar(now);
+        BlockPos destino = explorar.waypoint();
+        if (destino != null) {
+            explorar.fail(destino, now);
+            explorar.reset();
+        }
+        plan.clear();
+        return true;
     }
 
     // ------------------------------------------------------------------ what the checks and the chat may ask
@@ -1629,6 +1683,7 @@ public class ProspectingTask extends AbstractChoreTask {
     private void orders(ServerWorld world, VillagerEntityMCA villager) {
         Boolean called = CALLED.remove(villager);
         if (called != null) {
+            sondeoSalida = null;
             boolean hungry = called;
             switch (phase) {
                 case SEEK, SURFACE_WORK, RETURN -> {
@@ -1675,6 +1730,44 @@ public class ProspectingTask extends AbstractChoreTask {
             MCA.LOGGER.info("[Tropeles] {} vuelve a la mina por orden del chat", name());
             beginReturn(world, villager);
         }
+    }
+
+    private boolean sondear(ServerWorld world, VillagerEntityMCA v) {
+        SondeoSalida sondeo = sondeoSalida;
+        if (!sondeo.vigente(world, v)) {
+            sondeoSalida = null;
+            return false;
+        }
+        if (iniciarSondeo) {
+            if (motor.midStep(v)) {
+                return false;
+            }
+            iniciarSondeo = false;
+            motor.reset(world, v);
+            cueva.cerrar(world.getTime());
+            plan.clear();
+            ore = null;
+            endVia();
+            resetWatch();
+        }
+        SondeoSalida.Estado estado = sondeo.tick(world, v, motor);
+        if (estado == SondeoSalida.Estado.BUSCANDO) {
+            return true;
+        }
+        sondeoSalida = null;
+        motor.reset(world, v);
+        BlockPos pies = Mining.pies(v);
+        if (estado == SondeoSalida.Estado.AFUERA) {
+            Recuerdos.sitio(v, "salida alternativa", pies);
+            Recuerdos.anotar(v, "camino", "salí por el lado que me indicaron", pies);
+            Voluntad.contar(v, "Encontré la salida por ese lado. Ya estoy afuera.", "I found a way out on that side. I'm outside.");
+            leave(world, v, Trip.CALLED);
+        } else {
+            Recuerdos.anotar(v, "camino", "miré por el lado que me indicaron y no encontré una subida seca completa", pies);
+            Voluntad.contar(v, "Miré por ese lado. No encontré una salida seca hasta la superficie.",
+                    "I checked that side. I didn't find a dry way up to the surface.");
+        }
+        return true;
     }
 
     // ------------------------------------------------------------------ the body

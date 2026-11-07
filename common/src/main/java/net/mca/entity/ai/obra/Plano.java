@@ -58,7 +58,8 @@ public final class Plano {
         MESA("mesa de crafteo", "crafting table", false),
         COFRE("cofre", "chest", false),
         /** A cell that must end up empty: a room, the attic, the way to the door. */
-        AIRE("aire", "air", false);
+        AIRE("aire", "air", false),
+        MATERIAL("bloque de diseño", "design block", true);
 
         public final String es;
         public final String en;
@@ -278,6 +279,7 @@ public final class Plano {
             case MESA -> s.isOf(Blocks.CRAFTING_TABLE);
             case COFRE -> s.isOf(Blocks.CHEST);
             case AIRE -> s.isAir();
+            case MATERIAL -> EdicionPlano.material(s);
         };
     }
 
@@ -485,6 +487,9 @@ public final class Plano {
             case MESA -> actual.isOf(Blocks.CRAFTING_TABLE);
             case COFRE -> mismo(planned, actual, Properties.HORIZONTAL_FACING);
             case AIRE -> actual.isAir();
+            case MATERIAL -> actual.getFluidState().isEmpty() && mismo(planned, actual, Properties.AXIS)
+                    && mismo(planned, actual, Properties.HORIZONTAL_FACING) && mismo(planned, actual, Properties.BLOCK_HALF)
+                    && mismo(planned, actual, Properties.SLAB_TYPE);
         };
     }
 
@@ -516,6 +521,7 @@ public final class Plano {
             case ANTORCHA -> stack.isOf(Items.TORCH);
             case MESA -> stack.isOf(Items.CRAFTING_TABLE);
             case COFRE -> stack.isOf(Items.CHEST);
+            case MATERIAL -> block != null && EdicionPlano.material(block.getDefaultState());
             default -> false;
         };
     }
@@ -545,7 +551,7 @@ public final class Plano {
             case ESCALON -> con(con(con(s, planned, Properties.HORIZONTAL_FACING), planned, Properties.BLOCK_HALF), planned, Properties.STAIR_SHAPE);
             case PUERTA -> con(con(s, planned, DoorBlock.FACING), planned, DoorBlock.HINGE).with(DoorBlock.HALF, DoubleBlockHalf.LOWER)
                     .with(DoorBlock.OPEN, false).with(DoorBlock.POWERED, false);
-            case VIDRIO, ANTORCHA -> planned;
+            case VIDRIO, ANTORCHA, MATERIAL -> planned;
             case COFRE -> con(s, planned, Properties.HORIZONTAL_FACING);
             default -> s;
         };
@@ -567,7 +573,7 @@ public final class Plano {
             case ANTORCHA -> Items.TORCH;
             case MESA -> Items.CRAFTING_TABLE;
             case COFRE -> Items.CHEST;
-            case AIRE -> Items.AIR;
+            case AIRE, MATERIAL -> Items.AIR;
         };
     }
 }

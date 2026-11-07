@@ -76,6 +76,16 @@ public final class MenteLocal {
 
     /** A house, as said in "constrúyeme una casa" (never "vuelve a tu casa": that is going home). */
     private static final String CASA = "casa|casita|casota|hogar|cabana|refugio|house|home|hut|cabin";
+    private static final Pattern BUSCA_SUBIDA = Pattern.compile("\\b(sube|subete|sal|salte|trepa|"
+            + "(intenta|trata de|puedes|podrias|prueba a) (subir|salir|trepar)|"
+            + "(busca|prueba|revisa) (otra |una |la )?(subida|salida)|"
+            + "climb|go (back )?up|go out|(find|try|look for) (an? |another |the )?(way up|way out|exit))\\b");
+    private static final Pattern NIEGA_SUBIDA = Pattern.compile("\\b(no (subas|salgas|trepes|intentes|busques)|do not|don'?t|never)\\b");
+    private static final Map<String, Pattern> LADOS_SALIDA = Map.of(
+            "behind", Pattern.compile("\\b(detras|atras|espalda|tras de ti|behind|backward|backwards|back)\\b"),
+            "left", Pattern.compile("\\b(izquierda|left)\\b"),
+            "right", Pattern.compile("\\b(derecha|right)\\b"),
+            "ahead", Pattern.compile("\\b(delante|adelante|frente|ahead|forward)\\b"));
 
     /**
      * Orders, most specific first: "no me sigas" must win over "sigueme", and "sal de la mina" or "deja de minar
@@ -281,7 +291,10 @@ public final class MenteLocal {
                     + "cuanto te falta|que te falta( para la casa)?|que (mas )?necesitas( para la casa)?|como vas con la casa|"
                     + "how'?s the house( going)?|how is the house( going)?|how much (is )?left|what do you need( for the house)?|how far along"),
             order("doing", "que (estas haciendo|haces|andas haciendo)|en que andas|en que estas|what are you doing|what('re| are) you up to"),
-            order("bag", "que (tienes|llevas|traes|cargas)|tu inventario|tu mochila|que hay en tu mochila|what do you have|what are you carrying|your inventory|your bag"),
+            order("focus", "(mira|revisa|inspecciona|examina|identifica|comprueba) (ese|este|aquel|el|de nuevo ese) bloque|"
+                    + "que bloque (es (ese|este)|ves|tienes (delante|enfrente))|que tienes (delante|enfrente)|"
+                    + "(look at|inspect|check|identify) (this|that|the) block|what block (is (this|that)|do you see)|what('s| is) in front of you"),
+            order("bag", "^que (tienes|llevas|traes|cargas)( en (la|tu) (mochila|bolsa|inventario))?$|tu inventario|tu mochila|^what do you have$|what are you carrying|your inventory|your bag"),
             // what it hears, and how light it is where it stands ({@link Ahora})
             order("hear", "que (oyes|escuchas|estas (oyendo|escuchando))|(oyes|escuchas|oiste|escuchaste) (algo|eso|un ruido|ruidos|pasos)|"
                     + "hay (algun )?ruido|what (do you|can you) hear|do you hear|did you hear|hear anything|any (noise|sound)s?"),
@@ -548,6 +561,11 @@ public final class MenteLocal {
     public static Intent read(String text) {
         String t = clean(text);
         boolean spanish = spanish(text);
+        String lado = ladoSalida(t);
+        if (lado != null && (BUSCA_SUBIDA.matcher(t).find() || NIEGA_SUBIDA.matcher(t).find())) {
+            return NIEGA_SUBIDA.matcher(t).find() ? new Intent(null, "", null, spanish)
+                    : new Intent("seek-exit", lado, null, spanish);
+        }
         // a bare "para", "alto" or "stop" is an order to stop whatever it is doing
         if (t.matches("(para|alto|stop|basta|halt|ya basta|para ya)")) {
             return new Intent("stop", "", null, spanish);
@@ -597,6 +615,21 @@ public final class MenteLocal {
             return new Intent("sorry", "", null, spanish);
         }
         return new Intent(null, "", null, spanish);
+    }
+
+    @Nullable
+    public static String ladoSalida(String words) {
+        String t = clean(words);
+        String lado = null;
+        for (var entry : LADOS_SALIDA.entrySet()) {
+            if (entry.getValue().matcher(t).find()) {
+                if (lado != null) {
+                    return null;
+                }
+                lado = entry.getKey();
+            }
+        }
+        return lado;
     }
 
     /**
@@ -695,6 +728,9 @@ public final class MenteLocal {
             case "where" -> where(villager, es);
             case "coords" -> coords(villager, es);
             case "see" -> see(villager, es);
+            case "focus" -> focus(villager, es);
+            case "design" -> es ? "No logré dibujar ese cambio. Dime qué parte quieres ajustar y lo intento de nuevo."
+                    : "I couldn't draw that change. Tell me which part you want to adjust and I'll try again.";
             case "hear" -> hear(villager, es);
             case "light" -> light(villager, es);
             case "name" -> es ? "Me llamo " + villager.getName().getString() + "." : "I'm " + villager.getName().getString() + ".";
@@ -748,6 +784,9 @@ public final class MenteLocal {
                 return es ? vuelta.es() : vuelta.en();
             }
             return es ? "Mm, déjame pensarlo." : "Hm, let me think about it.";
+        }
+        if ("seek-exit".equals(command)) {
+            return outcome == null ? es ? "Ahora no puedo buscar esa subida." : "I can't look for that way up right now." : outcome;
         }
         if (outcome == null && "come-up".equals(command)) {
             // only a miner climbs out of a mine
@@ -1161,6 +1200,18 @@ public final class MenteLocal {
             }
         }
         return sightings(villager, es);
+    }
+
+    private static String focus(VillagerEntityMCA villager, boolean es) {
+        var world = villager.getWorld();
+        Retina.Focus focus = Retina.focus(world, villager, Retina.memory(villager), world.getTime());
+        if (focus == null || focus.state() == null || focus.pos() == null) {
+            return es ? "No distingo ningún bloque justo delante." : "I can't make out a block directly in front of me.";
+        }
+        String name = focus.state().getBlock().getName().getString();
+        BlockPos pos = focus.pos();
+        String at = pos.getX() + " " + pos.getY() + " " + pos.getZ();
+        return es ? "Veo " + name + " en " + at + "." : "I see " + name + " at " + at + ".";
     }
 
     /** What it hears: the beings it hears and does not see (where, coming closer or not), or that all is quiet ({@link Ahora}). */

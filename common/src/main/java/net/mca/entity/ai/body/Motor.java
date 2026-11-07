@@ -639,6 +639,9 @@ public final class Motor {
                 price.clear();
                 for (Direction d : Direction.Type.HORIZONTAL) {
                     BlockPos side = cell.offset(d);
+                    if (!world.isChunkLoaded(side)) {
+                        continue;
+                    }
                     if (standCell(world, side) || rung(world, side)) {
                         next.add(side);
                         price.add(1.0);

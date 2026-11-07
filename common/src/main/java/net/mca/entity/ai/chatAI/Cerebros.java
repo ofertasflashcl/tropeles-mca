@@ -196,8 +196,13 @@ public final class Cerebros {
     @Nullable
     private static Reply askNow(List<Mind> minds, Function<Mind, String> system, List<Pair<String, String>> history, String msg,
                                 String playerName, String villagerName, @Nullable UUID villager, long deadline, @Nullable String image) {
+        if (image != null) {
+            minds = new ArrayList<>(minds);
+            minds.sort(java.util.Comparator.comparing(mind -> !canLook(mind)));
+        }
         long start = System.currentTimeMillis();
         long localEnd = Math.max(deadline, start + Math.max(0L, Config.getInstance().tropelesChatLocalBudgetMs));
+        Reply fallback = null;
         for (int i = 0; i < minds.size(); i++) {
             Mind mind = minds.get(i);
             long end = mind.local() ? localEnd : deadline;
@@ -219,18 +224,31 @@ public final class Cerebros {
             Reply reply = once(mind, system.apply(mind), history, msg, playerName, villagerName, left,
                     image != null && canLook(mind) ? image : null).reply();
             if (reply != null) {
+                if (image != null && !reply.saw() && minds.subList(i + 1, minds.size()).stream().anyMatch(Cerebros::canLook)) {
+                    if (fallback == null) {
+                        fallback = reply;
+                    }
+                    continue;
+                }
                 if (villager != null) {
                     LAST.put(villager, mind.name());
                 }
                 return reply;
             }
         }
-        return null;
+        if (fallback != null && villager != null) {
+            LAST.put(villager, fallback.mind());
+        }
+        return fallback;
     }
 
     /** Whether a mind may be shown a picture: one that speaks the OpenAI format (not MCA's own) and never turned one down. */
     public static boolean canLook(Mind mind) {
-        return !mind.inHouse() && !BLIND.contains(mind.name());
+        return !mind.inHouse() && !BLIND.contains(visionKey(mind));
+    }
+
+    private static String visionKey(Mind mind) {
+        return mind.name() + " " + mind.url() + " " + mind.model();
     }
 
     /** Whether any of these minds may be shown a picture, so it is worth taking one. */
@@ -301,7 +319,9 @@ public final class Cerebros {
         if (image != null && !http.late() && http.code() != 429
                 && (http.code() / 100 == 4 || http.code() == 500 || http.code() / 100 == 2)) {
             // it cannot look at pictures (or not like this): the words alone, now, and never a picture again
-            BLIND.add(mind.name());
+            if (http.code() / 100 == 4) {
+                BLIND.add(visionKey(mind));
+            }
             String why = http.code() / 100 == 2 ? "respuesta vacía" : error(http);
             MCA.LOGGER.info("[Tropeles] la mente {} no acepta fotos ({}): se le pregunta solo con palabras", mind.name(), why);
             long left = budgetMs - (System.currentTimeMillis() - start);

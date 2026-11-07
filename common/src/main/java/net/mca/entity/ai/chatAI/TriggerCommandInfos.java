@@ -9,6 +9,7 @@ import net.mca.entity.ai.brain.tasks.chore.ProspectingTask;
 import net.mca.entity.ai.mente.Encargo;
 import net.mca.entity.ai.mente.Voluntad;
 import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.GlobalPos;
 import org.jetbrains.annotations.Nullable;
 
@@ -89,6 +90,15 @@ public class TriggerCommandInfos {
                         return "You stopped digging and are climbing out of the mine toward home.";
                     },
                     (p, v) -> v.getVillagerBrain().getCurrentJob() == Chore.PROSPECT),
+            new TriggerCommandInfo("seek-exit", "Turn and search for a real dry way up in the direction the player asked. "
+                    + "Use this instead of come-up when they specify a side. You do not know whether the route works until you try.",
+                    "behind, left, right or ahead, relative to your facing in the visual sample",
+                    (p, v, lado) -> salidaDirigida(p, v, lado, Direction.fromRotation(v.getHeadYaw())),
+                    (p, v) -> ProspectingTask.puedeBuscarSalida(v)),
+            new TriggerCommandInfo("inspect-view", "Look at a specific block in your current visual sample when the player asks you to inspect it.",
+                    "the listed reference, such as b1; never coordinates or a block name",
+                    (p, v, ignored) -> spanish(v) ? "Necesito una vista reciente para comprobarlo." : "I need a fresh view to check that.",
+                    (p, v) -> true),
             new TriggerCommandInfo("eat-break", "Stop digging, climb out to find food and eat, then go back to mining",
                     null,
                     (p, v, ignored) -> {
@@ -157,6 +167,12 @@ public class TriggerCommandInfos {
                             + "\"mejor una cabaña\", \"de abeto\", \"balcón a la derecha\", \"sin balcón\", \"mueve la casa\"",
                     (p, v, how) -> Voluntad.editarCasa(v, p, how == null ? "" : how, spanish(v)),
                     (p, v) -> Voluntad.conectado(v) && Voluntad.tienePropuesta(v)),
+            new TriggerCommandInfo(net.mca.entity.ai.obra.EdicionPlano.COMANDO,
+                    "Draft any structure requested, or edit exact blocks on their unapproved plan. Applies only to the preview. Use it for shapes, wings, arches, rooms, "
+                            + "materials or positions the simpler edit-house cannot express. Only use it for a real construction/edit request, not questions or suggestions they rejected.",
+                    net.mca.entity.ai.obra.EdicionPlano.LENGUAJE,
+                    (p, v, ignored) -> "You need the current draft context to edit its blocks.",
+                    (p, v) -> Voluntad.contextoPlano(v, p, false) != null),
             new TriggerCommandInfo("cancel-house", "Give up the house you are building for good (what is already built stays), or drop the one you "
                     + "proposed; to only pause it, that is stop-working",
                     null,
@@ -263,6 +279,34 @@ public class TriggerCommandInfos {
         if (Voluntad.conectado(villager) && Voluntad.of(villager).modo() != Voluntad.Modo.LIBRE) {
             Voluntad.libre(villager, player, spanish(villager));
         }
+    }
+
+    public static String salidaDirigida(ServerPlayerEntity player, VillagerEntityMCA v, String words, Direction frente) {
+        boolean es = spanish(v);
+        String lado = MenteLocal.ladoSalida(words);
+        if (lado == null) {
+            return es ? "¿Por detrás, a la izquierda, a la derecha o al frente?" : "Behind me, left, right or ahead?";
+        }
+        if (!ProspectingTask.puedeBuscarSalida(v)) {
+            return es ? "Ahora no estoy en posición de buscar una salida de la mina." : "I'm not in a position to look for a way out of the mine.";
+        }
+        Direction rumbo = switch (lado) {
+            case "behind" -> frente.getOpposite();
+            case "left" -> frente.rotateYCounterclockwise();
+            case "right" -> frente.rotateYClockwise();
+            default -> frente;
+        };
+        ownLife(v, player);
+        if (!ProspectingTask.buscarSalida(v, rumbo)) {
+            return es ? "No pude empezar a buscar esa subida." : "I couldn't start looking for that way up.";
+        }
+        String donde = switch (lado) {
+            case "behind" -> es ? "por detrás" : "behind me";
+            case "left" -> es ? "a mi izquierda" : "to my left";
+            case "right" -> es ? "a mi derecha" : "to my right";
+            default -> es ? "al frente" : "ahead";
+        };
+        return es ? "Voy a mirar " + donde + " y buscar por dónde subir." : "I'll look " + donde + " for a way up.";
     }
 
     /** The language the villager last heard ({@link Voluntad#oyo}, told by the chat right before the order runs). */

@@ -57,6 +57,7 @@ import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Predicate;
@@ -170,6 +171,8 @@ public final class Constructor {
     private long avisoLena;
     private long avisoPiedra;
     private long avisoArena;
+    private long avisoMaterial;
+    private long proximoMaterial;
     private long sinArbolesHasta;
     private int hito;
     private boolean faltanAndamios;
@@ -420,6 +423,9 @@ public final class Constructor {
         }
         if (!fuego.existe() && Taller.contar(villager.getInventory(), s -> s.isOf(Items.FURNACE)) > 0 && necesitaHorno(villager, l, fuego)
                 && ponerJunto(world, villager, false)) {
+            return Fin.SIGUE;
+        }
+        if (l.f(Plano.Rol.MATERIAL) > 0 && fabricarMaterial(world, villager, l, now)) {
             return Fin.SIGUE;
         }
         // 3. what it has to go and get
@@ -1315,6 +1321,9 @@ public final class Constructor {
 
     /** Supply hints must follow the frozen blueprint, even if the old wood field was changed afterwards. */
     private Plano.Madera maderaObjetivo() {
+        if (EdicionPlano.ID.equals(obra.plano().id)) {
+            return obra.madera;
+        }
         for (Plano.Pieza p : obra.plano().piezas) {
             Plano.Madera m = Plano.Madera.de(p.state().getBlock());
             if (m != null) {
@@ -1375,7 +1384,60 @@ public final class Constructor {
         return s.isIn(ItemTags.LOGS) || s.isIn(ItemTags.PLANKS) || Taller.PIEDRA.test(s) || Taller.ARENA.test(s) || Taller.VIDRIO.test(s)
                 || Taller.CARBON.test(s) || Taller.PALOS.test(s) || s.isOf(Items.GLASS_PANE) || s.isOf(Items.TORCH) || s.isOf(Items.CRAFTING_TABLE)
                 || s.isOf(Items.CHEST) || s.isOf(Items.FURNACE) || s.isOf(Items.DIRT) || Plano.acepta(Plano.Rol.ESCALON, s)
-                || Plano.acepta(Plano.Rol.PUERTA, s) || Plano.acepta(Plano.Rol.BASE, s);
+                || Plano.acepta(Plano.Rol.PUERTA, s) || Plano.acepta(Plano.Rol.BASE, s) || Plano.acepta(Plano.Rol.MATERIAL, s);
+    }
+
+    private static Map<Item, Integer> materialesPendientes(Lectura l, SimpleInventory inv) {
+        Map<Item, Integer> falta = new LinkedHashMap<>();
+        for (Obra.Celda c : l.pendientes) {
+            if (c.rol() == Plano.Rol.MATERIAL) {
+                falta.merge(Plano.item(c.rol(), c.state()), 1, Integer::sum);
+            }
+        }
+        falta.replaceAll((item, n) -> n - inv.count(item));
+        falta.values().removeIf(n -> n <= 0);
+        return falta;
+    }
+
+    /** Tries the world's recipes for the exact additional materials, keeping blocks assigned to the plan. */
+    private boolean fabricarMaterial(ServerWorld world, VillagerEntityMCA v, Lectura l, long now) {
+        if (now < proximoMaterial) return false;
+        proximoMaterial = now + 40;
+        Map<Item, Integer> falta = materialesPendientes(l, v.getInventory());
+        if (falta.isEmpty()) return false;
+        Map<Item, Integer> reservados = new LinkedHashMap<>();
+        for (Obra.Celda c : l.pendientes) {
+            reservados.merge(Plano.item(c.rol(), c.state()), 1, Integer::sum);
+        }
+        Reserva reserva = Reserva.normal();
+        for (var e : reservados.entrySet()) {
+            reserva = reserva.guarda(s -> s.isOf(e.getKey()), e.getValue());
+        }
+        boolean mesa = Ejecutor.mesaCerca(world, v);
+        for (Item item : falta.keySet().stream().limit(3).toList()) {
+            Ejecutor.Resultado r = Ejecutor.hacer(world, v, item, 1, mesa, reserva);
+            if (r.ok()) {
+                v.swingHand(Hand.MAIN_HAND);
+                avance(now);
+                return true;
+            }
+            if (r.tipo() == Ejecutor.Tipo.SIN_MESA) {
+                Objetivo at = mesaParaTrabajar(world, v);
+                if (at != null && ir(world, v, at, false)
+                        || at == null && v.getInventory().count(Items.CRAFTING_TABLE) > 0 && ponerJunto(world, v, true)) return true;
+            }
+        }
+        if (now >= avisoMaterial) {
+            avisoMaterial = now + 2400;
+            String nombres = nombresMateriales(falta);
+            Voluntad.contar(v, "Para completar el diseño me falta " + nombres + ".", "To finish the design I still need " + nombres + ".");
+        }
+        return false;
+    }
+
+    private static String nombresMateriales(Map<Item, Integer> materiales) {
+        return materiales.entrySet().stream().limit(4).map(e -> e.getValue() + " × " + e.getKey().getName().getString())
+                .collect(java.util.stream.Collectors.joining(", "));
     }
 
     /** What it makes by hand now, queued for {@link #mano}; true when there is something. */
@@ -2298,6 +2360,8 @@ public final class Constructor {
         if (n.antorchas > 0 && Taller.contar(inv, Taller.CARBON) == 0 && n.carbonPorHacer > 0) {
             needs.add(es ? "carbón para " + n.antorchas + " antorchas (o lo hago en el horno con troncos)" : "coal for " + n.antorchas + " torches (or I make charcoal from logs)");
         }
+        Map<Item, Integer> extra = materialesPendientes(l, inv);
+        if (!extra.isEmpty()) needs.add(nombresMateriales(extra));
         if (needs.isEmpty()) {
             return es ? "Tengo todo lo que necesito." : "I have everything I need.";
         }
@@ -2328,7 +2392,12 @@ public final class Constructor {
         int stone = plano.materiales.getOrDefault(Plano.Rol.BASE, 0);
         int panes = plano.materiales.getOrDefault(Plano.Rol.VIDRIO, 0);
         int sand = 6 * ceil(panes, 16);
-        return es ? "de base unos " + logs + " troncos, " + stone + " de piedra y " + sand + " de arena; herramientas y combustible aparte"
+        String base = es ? "de base unos " + logs + " troncos, " + stone + " de piedra y " + sand + " de arena; herramientas y combustible aparte"
                 : "a baseline of about " + logs + " logs, " + stone + " stone and " + sand + " sand; tools and fuel separately";
+        Map<Item, Integer> extra = new LinkedHashMap<>();
+        for (Plano.Pieza p : plano.piezas) {
+            if (p.rol() == Plano.Rol.MATERIAL) extra.merge(Plano.item(p.rol(), p.state()), 1, Integer::sum);
+        }
+        return extra.isEmpty() ? base : base + ". " + (es ? "Bloques adicionales: " : "Additional blocks: ") + nombresMateriales(extra);
     }
 }

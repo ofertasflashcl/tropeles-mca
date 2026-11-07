@@ -9,8 +9,12 @@ import net.mca.entity.VillagerEntityMCA;
 import net.mca.entity.ai.Chore;
 import net.mca.entity.ai.body.Cofres;
 import net.mca.entity.ai.chatAI.modules.*;
+import net.mca.entity.ai.mente.Voluntad;
+import net.mca.entity.ai.obra.EdicionPlano;
+import net.mca.entity.ai.sense.VistaSituada;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.Pair;
 import net.minecraft.util.math.BlockPos;
 import org.apache.commons.io.IOUtils;
@@ -72,7 +76,7 @@ public class OpenAIChatAI implements ChatAIStrategy {
             Map.entry("edit-plan", "edit-house"), Map.entry("change-roof", "edit-house"), Map.entry("add-window", "edit-house"),
             Map.entry("add-balcony", "edit-house"), Map.entry("move-balcony", "edit-house")
     );
-    private static final Set<String> HOUSE_ACTIONS = Set.of("build-house", "edit-house", "cancel-house");
+    private static final Set<String> DIRECT_REPLIES = Set.of("build-house", "edit-house", "cancel-house", "seek-exit", "inspect-view", EdicionPlano.COMANDO);
 
     public static String translate(String phrase) {
         return phrase.replace("_", " ").toLowerCase(Locale.ROOT).replace("mca.", "");
@@ -90,7 +94,7 @@ public class OpenAIChatAI implements ChatAIStrategy {
      */
     private record Prepared(String playerName, String villagerName, List<Pair<String, String>> history,
                             MenteLocal.Intent intent, @Nullable String outcome, boolean refused, boolean done, String open,
-                            String inHouse, List<Cerebros.Mind> minds, String local, @Nullable String image,
+                            String inHouse, List<Cerebros.Mind> minds, String local, @Nullable VistaSituada vista, @Nullable EdicionPlano.Base plano,
                             @Nullable Boolean goesBack, @Nullable BlockPos pos, @Nullable net.mca.entity.ai.nucleo.Anclaje anclaje,
                             Map<String, String> actions) {
     }
@@ -177,7 +181,7 @@ public class OpenAIChatAI implements ChatAIStrategy {
         }
 
         String line = null;
-        if (prep.intent().order() && HOUSE_ACTIONS.contains(prep.intent().command())) {
+        if (prep.intent().order() && DIRECT_REPLIES.contains(prep.intent().command())) {
             line = prep.local();
         } else if (prep.intent().order() && !prep.refused() && !prep.done()) {
             // an order it could not carry out, or was already doing: its own words say exactly why, and no mind
@@ -185,11 +189,13 @@ public class OpenAIChatAI implements ChatAIStrategy {
             MCA.LOGGER.info("[Tropeles] {} no pudo con la orden '{}': contesta su propia mente", prep.villagerName(), prep.intent().command());
         } else {
             try {
+                String imagen = prep.vista() == null ? null : prep.vista().imagen();
                 Cerebros.Reply reply = askMinds(prep.minds(), mind -> mind.inHouse() ? prep.inHouse() : prep.open(),
-                        prep.history(), msg, prep.playerName(), prep.villagerName(), villager.getUuid(), deadline, prep.image());
+                        prep.history(), msg, prep.playerName(), prep.villagerName(), villager.getUuid(), deadline, imagen);
                 if (reply != null) {
                     StructuredResponse said = structured(reply.content(), prep.villagerName());
-                    said = repairAction(server, villager, prep, msg, said, lease, deadline);
+                    said = repairAction(server, villager, prep, msg, said, lease, deadline, imagen);
+                    said = repairBlueprint(server, player, villager, prep, msg, said, lease, deadline, imagen);
                     line = speak(server, player, villager, prep, said, lease);
                     MCA.LOGGER.info("[Tropeles] {} pensó con {} en {} ms (orden '{}'){}", prep.villagerName(), reply.mind(), reply.millis(),
                             said.optionalCommand(), reply.saw() ? ", mirando la foto de lo que ve" : "");
@@ -228,7 +234,7 @@ public class OpenAIChatAI implements ChatAIStrategy {
 
     /** A small, bounded second pass when the storyteller omitted the action. No effects occur in this pass. */
     private StructuredResponse repairAction(MinecraftServer server, VillagerEntityMCA villager, Prepared prep, String msg,
-                                            StructuredResponse said, ActionTurn lease, long deadline) {
+                                            StructuredResponse said, ActionTurn lease, long deadline, @Nullable String imagen) {
         if (prep.intent().order() || prep.refused() || prep.actions().isEmpty()
                 || !command(said.optionalCommand()).isEmpty()
                 || said.message() != null && MenteLocal.promise(said.message()) != null) return said;
@@ -241,12 +247,14 @@ public class OpenAIChatAI implements ChatAIStrategy {
                 + "Choose exactly one command from the list below, or an empty command for conversation, questions, "
                 + "hypothetical/future plans, negated requests or a refusal in your previous reply. "
                 + "Never invent a command. The argument must be a string.\n"
-                + prep.actions().entrySet().stream().map(e -> e.getKey() + ": " + e.getValue()).collect(java.util.stream.Collectors.joining("\n"));
+                + prep.actions().entrySet().stream().map(e -> e.getKey() + ": " + e.getValue()).collect(java.util.stream.Collectors.joining("\n"))
+                + (prep.plano() == null ? "" : "\n" + prep.plano().descripcion())
+                + (prep.vista() == null ? "" : prep.vista().paraModelo());
         JsonObject data = new JsonObject();
         data.addProperty("playerMessage", msg);
         data.addProperty("previousReply", said.message());
         Cerebros.Reply repair = askMinds(prep.minds(), mind -> prompt, List.of(), data.toString(),
-                prep.playerName(), prep.villagerName(), villager.getUuid(), deadline, null);
+                prep.playerName(), prep.villagerName(), villager.getUuid(), deadline, imagen);
         StructuredResponse choice = repair == null ? null : actionChoice(repair.content(), prep.actions().keySet());
         if (choice == null) {
             MCA.LOGGER.info("[Tropeles] {} no obtuvo una decisión de acción válida; contesta su propia mente", prep.villagerName());
@@ -258,6 +266,32 @@ public class OpenAIChatAI implements ChatAIStrategy {
             return new StructuredResponse(null, choice.optionalCommand(), choice.argument());
         }
         return said;
+    }
+
+    /** One bounded compiler-feedback pass. Neither the failed program nor the dry run writes any blocks or revisions. */
+    private StructuredResponse repairBlueprint(MinecraftServer server, ServerPlayerEntity player, VillagerEntityMCA villager,
+                                               Prepared prep, String msg, StructuredResponse said, ActionTurn lease,
+                                               long deadline, @Nullable String imagen) {
+        if (!EdicionPlano.COMANDO.equals(command(said.optionalCommand())) || prep.plano() == null
+                || !prep.actions().containsKey(EdicionPlano.COMANDO) || System.currentTimeMillis() + 1_000 >= deadline) return said;
+        EdicionPlano.Validacion revision = onServer(server, lease, () -> {
+            if (!CommandPolicy.check(player, villager, EdicionPlano.COMANDO, CommandPolicy.Source.MODEL).allowed()) return null;
+            return Voluntad.validarBloques(villager, player, prep.plano(), said.argument());
+        });
+        if (revision == null || !revision.vigente() || revision.error() == null || System.currentTimeMillis() >= deadline) return said;
+        String prompt = "Repair the proposed block edit using the compiler's exact error and the current draft below. "
+                + "Nothing from the rejected program was applied. Preserve the player's request and unrelated cells. "
+                + "Return ONLY JSON {\"optionalCommand\":\"design-blueprint\",\"argument\":\"complete corrected program\"}. "
+                + "The argument must be a string, at most " + EdicionPlano.MAX_ARGUMENTO + " characters.\n"
+                + EdicionPlano.LENGUAJE + "\n" + prep.plano().descripcion();
+        JsonObject data = new JsonObject();
+        data.addProperty("playerMessage", msg);
+        data.addProperty("rejectedProgram", said.argument());
+        data.addProperty("compilerError", revision.error());
+        Cerebros.Reply repair = askMinds(prep.minds(), mind -> prompt, List.of(), data.toString(),
+                prep.playerName(), prep.villagerName(), villager.getUuid(), deadline, imagen);
+        StructuredResponse choice = repair == null ? null : actionChoice(repair.content(), Set.of(EdicionPlano.COMANDO));
+        return choice != null && EdicionPlano.COMANDO.equals(choice.optionalCommand()) ? choice : said;
     }
 
     /** The action-only reply is stricter than free speech: no prose, aliases, nested values or unlisted actions. */
@@ -275,7 +309,8 @@ public class OpenAIChatAI implements ChatAIStrategy {
             }
             String chosen = o.get("optionalCommand").getAsString().trim();
             String argument = o.get("argument").getAsString().trim();
-            if ((!chosen.isEmpty() && !allowed.contains(chosen)) || argument.length() > 256) return null;
+            int maxArgument = EdicionPlano.COMANDO.equals(chosen) ? EdicionPlano.MAX_ARGUMENTO : 256;
+            if ((!chosen.isEmpty() && !allowed.contains(chosen)) || argument.length() > maxArgument) return null;
             return new StructuredResponse(null, chosen, argument);
         } catch (RuntimeException invalid) {
             return null;
@@ -352,14 +387,14 @@ public class OpenAIChatAI implements ChatAIStrategy {
         String chosen = command;
         Acted acted = onServer(server, lease, () -> {
             if (!lease.claimAction()) return null;
-            try { return act(player, villager, chosen, said.argument(), es); }
+            try { return act(player, villager, chosen, said.argument(), es, prep.vista(), prep.plano()); }
             finally { lease.acknowledgeAction(); }
         });
         if (acted == null) {
-            return HOUSE_ACTIONS.contains(chosen) ? prep.local() : message;
+            return DIRECT_REPLIES.contains(chosen) ? prep.local() : message;
         }
         if (acted.failLine() != null) {
-            return acted.failLine(); // it could not: say so, never what the model hoped
+            return acted.failLine(); // the body has an exact result to report
         }
         if (acted.goesBack() != null) {
             // it chose to weigh going back before it knew what it would decide: its words count only when they
@@ -368,7 +403,7 @@ public class OpenAIChatAI implements ChatAIStrategy {
             boolean fits = message != null && agrees(message, acted.goesBack()) && !contradicts(message, acted.goesBack());
             return fits ? message : onServer(server, lease, () -> MenteLocal.answer(player, villager, weighed, acted.how(), null, null, false));
         }
-        if (message != null && !HOUSE_ACTIONS.contains(chosen) && !("alert".equals(chosen) && !message.contains("?"))) {
+        if (message != null && !DIRECT_REPLIES.contains(chosen) && !("alert".equals(chosen) && !message.contains("?"))) {
             String words = MenteLocal.promise(message);
             if (words == null || sameOrder(words, chosen)) {
                 return message;
@@ -524,6 +559,17 @@ public class OpenAIChatAI implements ChatAIStrategy {
         // a connected villager's will hears it first: an alert is still being talked about, and it answers in this language
         net.mca.entity.ai.mente.Voluntad.oyo(villager, player, es);
         MenteLocal.Intent intent = resolve(new MenteLocal.Intent(read.command(), read.argument(), read.question(), es), villager, player, msg);
+        String words = MenteLocal.withoutName(msg, villagerName);
+        EdicionPlano.Base plano = !offline && CommandPolicy.check(player, villager, EdicionPlano.COMANDO, CommandPolicy.Source.MODEL).allowed()
+                ? Voluntad.contextoPlano(villager, player, false) : null;
+        if (plano != null && esDiseno(intent, villager, words)) {
+            intent = new MenteLocal.Intent(null, "", "design", es);
+        }
+        if (plano != null && !intent.order() && (intent.question() == null || "design".equals(intent.question()))) {
+            plano = Voluntad.contextoPlano(villager, player, true);
+        } else {
+            plano = null;
+        }
         boolean refused = false;
         boolean done = false;
         String outcome = null;
@@ -611,6 +657,9 @@ public class OpenAIChatAI implements ChatAIStrategy {
             PlayerModule.apply(input, villager, player);
             return input;
         });
+        List<Cerebros.Mind> minds = Cerebros.chain(playerName);
+        boolean enContexto = !intent.order() && (Vistazo.aboutSight(intent) || intent.question() == null && Voluntad.conectado(villager));
+        VistaSituada vista = !offline && enContexto ? Vistazo.captar(villager, Cerebros.anyCanLook(minds)) : null;
         StringBuilder world = new StringBuilder();
         module(world, "aldea", () -> {
             List<String> input = new LinkedList<>();
@@ -631,6 +680,12 @@ public class OpenAIChatAI implements ChatAIStrategy {
             world.append("$player is right here with you, ").append(Math.max(1, (int) villager.distanceTo(player))).append(" blocks away. ");
         }
         world.append(SIGHT);
+        if (vista != null) {
+            world.append(vista.paraModelo());
+        }
+        if (plano != null) {
+            world.append("\nBlueprint editor context (local coordinates, not world blocks): ").append(plano.descripcion()).append('\n');
+        }
         String context = ("\nWho you are: " + who + "\nWhere you are and what you see: " + world)
                 .replace("$player", playerName).replace("$villager", villagerName);
 
@@ -649,9 +704,13 @@ public class OpenAIChatAI implements ChatAIStrategy {
             orders.append("You have already done what ").append(playerName).append(" just asked. ").append(outcome)
                     .append(" Tell them in your own words, matching what really happened. Use no command.\n");
         }
+        final boolean editorDisponible = plano != null;
         List<TriggerCommandInfo> valid = intent.order() || refused ? List.of() : TriggerCommandInfos.triggerCommands.stream()
                 .filter(c -> CommandPolicy.check(player, villager, c.command, CommandPolicy.Source.MODEL).allowed())
                 .filter(c -> c.isActive == null || c.isActive.test(player, villager))
+                .filter(c -> !"inspect-view".equals(c.command) || vista != null && vista.tieneBloques())
+                .filter(c -> !"seek-exit".equals(c.command) || vista != null)
+                .filter(c -> !EdicionPlano.COMANDO.equals(c.command) || editorDisponible)
                 .toList();
         orders.append("Reply with exactly one JSON object and nothing else: {\"message\": \"what you say\", \"optionalCommand\": \"\", \"argument\": \"\"}\n");
         if (!valid.isEmpty()) {
@@ -695,15 +754,12 @@ public class OpenAIChatAI implements ChatAIStrategy {
                 + "You only know what you have seen, carry and done yourself: never invent items, places or deeds, and when you "
                 + "do not know something, say so. Never invent reasons or feelings for what you did: when asked why, give the real reasons "
                 + "from your decisions and thoughts below, or say you are not sure. Keep to what was said before in this conversation.";
-        List<Cerebros.Mind> minds = Cerebros.chain(playerName);
-        // a question about what it sees: a picture of its view for the minds that can look at one
-        String image = !offline && Vistazo.aboutSight(intent) && Cerebros.anyCanLook(minds) ? Vistazo.foto(villager) : null;
         String open = persona + "\n" + context + speech + orders;
 
         // "¿dónde estás?": the answer will hold the exact numbers, whoever says it
         BlockPos pos = !intent.order() && ("where".equals(intent.question()) || "coords".equals(intent.question())) ? villager.getBlockPos() : null;
         return new Prepared(playerName, villagerName, history, intent, outcome, refused, done, open, inHouse.toString(),
-                minds, local, image, goesBack, pos, net.mca.entity.ai.nucleo.Anclaje.de(villager, player, open + "\n" + inHouse + "\n" + msg + "\n"
+                minds, local, vista, plano, goesBack, pos, net.mca.entity.ai.nucleo.Anclaje.de(villager, player, open + "\n" + inHouse + "\n" + msg + "\n"
                         + local + "\n" + history.stream().map(h -> h.getLeft() + "\n" + h.getRight()).collect(java.util.stream.Collectors.joining("\n"))),
                 valid.stream().collect(java.util.stream.Collectors.toUnmodifiableMap(c -> c.command,
                         c -> c.description + (c.argument == null ? "" : " (argument: " + c.argument + ")"))));
@@ -716,6 +772,14 @@ public class OpenAIChatAI implements ChatAIStrategy {
     private static final String SIGHT = "\nWhen you talk about your surroundings, mention only what is listed above, with its direction "
             + "as given (left, right, ahead, behind: in Spanish izquierda, derecha, delante, detrás) and its rough distance. "
             + "If asked about something not listed, say honestly that you do not see any from here. ";
+
+    private static boolean esDiseno(MenteLocal.Intent intent, VillagerEntityMCA villager, String words) {
+        if ("build-house".equals(intent.command())) {
+            return !EdicionPlano.esCasaSimple(words) && !Voluntad.pideMoverParcela(words);
+        }
+        return "edit-house".equals(intent.command()) && !Voluntad.pideMoverParcela(words)
+                && (Voluntad.planoAMedida(villager) || !EdicionPlano.esCambioSimple(words));
+    }
 
     /** Adds what one module knows; a module that fails is logged and left out, the rest still count. */
     private static void module(StringBuilder into, String name, Supplier<List<String>> module) {
@@ -759,12 +823,29 @@ public class OpenAIChatAI implements ChatAIStrategy {
      * Carries out an order a language model chose. Not done with no reason to give means it was already doing
      * it (or it is not possible right now); a reason is the villager's own words for why not.
      */
-    private static Acted act(ServerPlayerEntity player, VillagerEntityMCA villager, String name, String argument, boolean spanish) {
+    private static Acted act(ServerPlayerEntity player, VillagerEntityMCA villager, String name, String argument, boolean spanish,
+                             @Nullable VistaSituada vista, @Nullable EdicionPlano.Base plano) {
         try {
             CommandPolicy.Decision permission = CommandPolicy.check(player, villager, name, CommandPolicy.Source.MODEL);
             if (!permission.allowed()) {
                 CommandPolicy.report(villager, name, permission);
                 return new Acted(false, permission.line(spanish), null, null, permission.outcome());
+            }
+            if (EdicionPlano.COMANDO.equals(name)) {
+                String result = Voluntad.editarBloques(villager, player, plano, argument, spanish);
+                return new Acted(true, result, null, null, null);
+            }
+            if ("inspect-view".equals(name) && villager.getWorld() instanceof ServerWorld world) {
+                String result = vista == null ? (spanish ? "Necesito mirar otra vez." : "I need a fresh look.")
+                        : vista.inspeccionar(world, villager, argument, spanish);
+                return new Acted(true, result, null, null, null);
+            }
+            if ("seek-exit".equals(name) && villager.getWorld() instanceof ServerWorld world) {
+                String result = vista == null || !vista.vigente(world, villager)
+                        ? (spanish ? "Ya cambié de sitio. Dime de nuevo por qué lado quieres que mire."
+                        : "I've changed position. Tell me again which side to check.")
+                        : TriggerCommandInfos.salidaDirigida(player, villager, argument, vista.frente());
+                return new Acted(true, result, null, null, null);
             }
             if (name.equals("give-item")) {
                 Acciones.Given given = Acciones.hand(player, villager, argument);

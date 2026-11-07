@@ -84,6 +84,14 @@ public final class Cueva {
         Retina.memory(v).doing(regreso ? "volviendo de la cueva al túnel" : "explorando la cueva", now);
         if (caminando()) {
             BlockPos destino = paso.get(1);
+            if (!motor.midStep(v) && !seguro(world, destino)) {
+                motor.reset(world, v);
+                paso = List.of();
+                if (retrocede || !camino.peekLast().equals(Mining.pies(v))) {
+                    cerrar(now);
+                }
+                return true;
+            }
             Motor.Result r = motor.walkPath(world, v, paso);
             if (r == Motor.Result.RUNNING) {
                 return true;

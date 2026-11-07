@@ -82,11 +82,7 @@ public final class PlanoCodec {
             NbtCompound props = c.getCompound("propiedades");
             for (String key : props.getKeys()) {
                 exigir(props, key, NbtElement.STRING_TYPE);
-                Property<?> prop = state.getBlock().getStateManager().getProperty(key);
-                if (prop == null) {
-                    throw new IllegalArgumentException("Unknown blueprint property: " + key);
-                }
-                state = aplicar(state, prop, props.getString(key));
+                state = propiedad(state, key, props.getString(key));
             }
             piezas.add(new Plano.Pieza(pos(c, "pos"), state, Plano.Rol.valueOf(c.getString("rol"))));
         }
@@ -96,6 +92,14 @@ public final class PlanoCodec {
             throw new IllegalArgumentException("Blueprint snapshot hash mismatch");
         }
         return plano;
+    }
+
+    static BlockState propiedad(BlockState state, String key, String value) {
+        Property<?> prop = state.getBlock().getStateManager().getProperty(key);
+        if (prop == null) {
+            throw new IllegalArgumentException("Unknown blueprint property: " + key);
+        }
+        return aplicar(state, prop, value);
     }
 
     private static <T extends Comparable<T>> BlockState aplicar(BlockState state, Property<T> property, String value) {

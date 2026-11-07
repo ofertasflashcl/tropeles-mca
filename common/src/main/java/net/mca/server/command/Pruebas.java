@@ -94,6 +94,7 @@ public final class Pruebas {
                 case "catalogo" -> PruebasCatalogo.run(world, which);
                 case "propuestas", "propuestas-reinicio" -> PruebasPropuestas.run(world, which);
                 case "cueva-autonoma", "pan-autonomo", "cocina-autonoma", "seguir-sin-spam" -> PruebasVidaViva.run(world, which);
+                case "vista-accion", "subida-detras", "agua-exploracion", "agua-respiradero", "agua-profunda" -> PruebasVistaCerebro.run(world, which);
                 case "construccion" -> PruebasConstruccion.run(world);
                 case "autonomia", "autonomia-reinicio" -> PruebasAutonomia.run(world, which);
                 case "ia-solo-promesa" -> start(new IaRed(world, true));
