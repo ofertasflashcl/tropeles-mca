@@ -80,3 +80,14 @@ Sol toma el ciclo en `sol/obra-viva-autonomia`, sobre la compilación de Claude 
 | Marcador de parcela, edición del balcón y vista previa durante el chat | Sol | `obra/`, `mente/Voluntad.java`, `chatAI/`, `item/MarcadorParcela.java`, render y recursos del marcador |
 | Provisiones, defensa, exploración y conducta al seguir | Sol | `body/`, `brain/tasks/FollowTask.java`, `ProspectingTask.java`, pruebas y manifiestos |
 | Revisión de la entrega | Claude | Revisar el flujo en Forge cliente y reproducir los escenarios de la bitácora sobre el JAR del PR |
+
+## Vista y edición libre · continuación del PR #13
+
+Benja autorizó continuar el trabajo interrumpido sobre `sol/vista-con-intencion`. Alcance, pruebas y revisión en [SOL-VISTA-Y-EDICION.md](SOL-VISTA-Y-EDICION.md).
+
+| Qué | Quién | Archivos reservados | Estado |
+|---|---|---|---|
+| Vista situada, hallazgos y órdenes de salida | Sol | `sense/VistaSituada.java`, `sense/VisualMemory.java`, `body/SondeoSalida.java`, `mente/Conciencia.java`, entrada de chat y pruebas | en PR #13 |
+| Recuperación durante exploración, respiraderos y agua profunda | Sol | `body/RescateAgua.java`, integración en `ProspectingTask.java`, pruebas y registro de CI | en PR #13 |
+| Generación de geometría, edición por bloques y reparación de programas inválidos | Sol | `obra/EdicionPlano.java`, contratos de `Plano`/`Propuestas`/`Constructor`, `mente/Voluntad.java`, entrada de chat y pruebas | en PR #13 |
+| Render de propuestas, modelos gratuitos reales y partida natural | Claude y Benja | Revisión del JAR y de los casos de la hoja de entrega | pendiente de validación en cliente |
