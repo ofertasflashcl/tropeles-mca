@@ -36,7 +36,7 @@ final class PruebasVistaCerebro {
             case "vista-accion" -> Pruebas.start(new Vista(world));
             case "subida-detras" -> Pruebas.start(new Subida(world));
             case "agua-exploracion" -> Pruebas.start(new Agua(world));
-            case "agua-tunel" -> Pruebas.start(new AguaTunel(world));
+            case "agua-respiradero" -> Pruebas.start(new AguaTunel(world));
             default -> throw new IllegalArgumentException(which);
         }
     }
@@ -253,7 +253,7 @@ final class PruebasVistaCerebro {
         private final RescateAgua rescate = new RescateAgua();
 
         AguaTunel(ServerWorld world) {
-            super("agua-tunel", world, 380);
+            super("agua-respiradero", world, 380);
             Pruebas.load(world, o, 20);
             Pruebas.fill(world, o.add(-5, -1, -4), o.add(9, 3, 4), Blocks.STONE.getDefaultState());
             Pruebas.fill(world, o.add(-5, 4, -4), o.add(9, 8, 4), Blocks.AIR.getDefaultState());

@@ -73,7 +73,7 @@ mca-prueba seguir-sin-spam
 mca-prueba vista-accion
 mca-prueba subida-detras
 mca-prueba agua-exploracion
-mca-prueba agua-tunel
+mca-prueba agua-respiradero
 await-checks 320
 mca-prueba resumen
 sleep 2
