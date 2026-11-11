@@ -148,6 +148,14 @@ final class PruebasAprendizaje {
                 exige(fuente.getKeys().equals(Set.of("version", "ABIERTA_SUBIR")), "Se exportó información adicional");
             }
             if (etapa == 1) {
+                NbtCompound aspecto = new NbtCompound();
+                v.writeCustomDataToNbt(aspecto);
+                exige(!aspecto.contains("tropelesAprendizaje"), "El editor recibió los resultados vividos");
+                NbtCompound simulado = new NbtCompound();
+                simulado.putInt("version", 42);
+                aspecto.put("tropelesAprendizaje", simulado);
+                v.readCustomDataFromNbt(aspecto);
+                exige(v.getAprendizaje().guardar().equals(fuente), "El editor pudo modificar la experiencia");
                 v.setAiDisabled(true);
                 v.setInvulnerable(true); // stays on this dry ledge for the second process
             } else {

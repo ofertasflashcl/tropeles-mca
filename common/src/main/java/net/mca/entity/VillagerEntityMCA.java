@@ -108,6 +108,7 @@ public class VillagerEntityMCA extends VillagerEntity implements VillagerLike<Vi
     private static final CDataParameter<Float> INFECTION_PROGRESS = CParameter.create("infectionProgress", 0.0f);
     private static final CDataParameter<Integer> GROWTH_AMOUNT = CParameter.create("growthAmount", -AgeState.getMaxAge());
     private static final CDataManager<VillagerEntityMCA> DATA = createTrackedData(VillagerEntityMCA.class).build();
+    private static final String APRENDIZAJE_NBT = "tropelesAprendizaje";
 
     public final ConversationManager conversationManager = new ConversationManager(this);
     private final VillagerBrain<VillagerEntityMCA> mcaBrain = new VillagerBrain<>(this);
@@ -1444,13 +1445,29 @@ public class VillagerEntityMCA extends VillagerEntity implements VillagerLike<Vi
         return mob;
     }
 
+    /** Full entity save. The cosmetic editor only exchanges custom data and cannot supply experience. */
+    @Override
+    public NbtCompound writeNbt(NbtCompound nbt) {
+        NbtCompound datos = super.writeNbt(nbt);
+        NbtCompound experiencias = aprendizaje.guardar();
+        if (!experiencias.isEmpty()) {
+            datos.put(APRENDIZAJE_NBT, experiencias);
+        }
+        return datos;
+    }
+
+    @Override
+    public void readNbt(NbtCompound nbt) {
+        super.readNbt(nbt);
+        aprendizaje.cargar(nbt.getCompound(APRENDIZAJE_NBT));
+    }
+
     @Override
     public void readCustomDataFromNbt(NbtCompound nbt) {
         super.readCustomDataFromNbt(nbt);
         getTypeDataManager().load(this, nbt);
         relations.readFromNbt(nbt);
         longTermMemory.readFromNbt(nbt);
-        aprendizaje.cargar(nbt.getCompound("tropelesAprendizaje"));
 
         playerModel = PlayerModel.VALUES[nbt.getInt("playerModel")];
 
@@ -1482,10 +1499,6 @@ public class VillagerEntityMCA extends VillagerEntity implements VillagerLike<Vi
         getTypeDataManager().save(this, nbt);
         relations.writeToNbt(nbt);
         longTermMemory.writeToNbt(nbt);
-        NbtCompound experiencias = aprendizaje.guardar();
-        if (!experiencias.isEmpty()) {
-            nbt.put("tropelesAprendizaje", experiencias);
-        }
         nbt.putInt("DespawnDelay", this.despawnDelay);
         nbt.putBoolean("InteractedWith", this.interactedWith);
         InventoryUtils.saveToNBT(inventory, nbt);
