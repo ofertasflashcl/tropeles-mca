@@ -91,3 +91,7 @@ Benja autorizó continuar el trabajo interrumpido sobre `sol/vista-con-intencion
 | Recuperación durante exploración, respiraderos y agua profunda | Sol | `body/RescateAgua.java`, integración en `ProspectingTask.java`, pruebas y registro de CI | en PR #13 |
 | Generación de geometría, edición por bloques y reparación de programas inválidos | Sol | `obra/EdicionPlano.java`, contratos de `Plano`/`Propuestas`/`Constructor`, `mente/Voluntad.java`, entrada de chat y pruebas | en PR #13 |
 | Render de propuestas, modelos gratuitos reales y partida natural | Claude y Benja | Revisión del JAR y de los casos de la hoja de entrega | pendiente de validación en cliente |
+
+## Aprendizaje situado
+
+Base `sol/vista-con-intencion` (PR #13). Sol toma la memoria de resultados, el rescate y sus pruebas, los anclajes de dirección en chat y las formas del editor. Los cambios van en `sol/aprendizaje-situado`. Claude puede revisar la rama y reproducir los casos en cliente con el mismo JAR.

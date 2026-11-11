@@ -5,6 +5,11 @@ import net.mca.entity.ai.body.Hands;
 import net.mca.entity.ai.body.Mining;
 import net.mca.entity.ai.mente.Recuerdos;
 import net.minecraft.block.BlockState;
+import net.minecraft.block.DoorBlock;
+import net.minecraft.block.LadderBlock;
+import net.minecraft.block.SlabBlock;
+import net.minecraft.block.StairsBlock;
+import net.minecraft.block.TrapdoorBlock;
 import net.minecraft.fluid.FluidState;
 import net.minecraft.registry.Registries;
 import net.minecraft.registry.RegistryKey;
@@ -47,6 +52,9 @@ public final class VistaSituada {
     private final List<Bloque> bloques;
     private final List<String> cuerpos;
     private final boolean rayosConAgua;
+    private final boolean sumergido;
+    private final int aire;
+    private final int aireMaximo;
     @Nullable
     private final int[] rgb;
 
@@ -59,6 +67,9 @@ public final class VistaSituada {
         this.bloques = List.copyOf(bloques);
         this.cuerpos = List.copyOf(cuerpos);
         this.rayosConAgua = rayosConAgua;
+        sumergido = v.isSubmergedInWater();
+        aire = v.getAir();
+        aireMaximo = v.getMaxAir();
         this.rgb = rgb;
     }
 
@@ -80,7 +91,7 @@ public final class VistaSituada {
                 rgb[i] = color(world, p);
             }
             agua |= p.water();
-            if (p.pos() != null && p.state() != null && p.distance() <= ALCANCE_INSPECCION && world.isChunkLoaded(p.pos())) {
+            if (p.pos() != null && p.state() != null && p.face() != null && p.distance() <= ALCANCE_INSPECCION && world.isChunkLoaded(p.pos())) {
                 Bloque b = new Bloque(p.pos().toImmutable(), p.state(), p.face(), i % Retina.WIDTH, i / Retina.WIDTH, p.distance());
                 distintos.merge(b.pos(), b, (a, next) -> a.distancia() <= next.distancia() ? a : next);
             }
@@ -104,7 +115,10 @@ public final class VistaSituada {
     }
 
     private static int relevancia(BlockState s) {
-        return s.getFluidState().isEmpty() && !Mining.isOre(s) && !s.hasBlockEntity() ? 1 : 0;
+        if (!s.getFluidState().isEmpty() || Mining.isOre(s) || s.hasBlockEntity()) return 0;
+        var bloque = s.getBlock();
+        return bloque instanceof StairsBlock || bloque instanceof SlabBlock || bloque instanceof LadderBlock
+                || bloque instanceof DoorBlock || bloque instanceof TrapdoorBlock ? 1 : 2;
     }
 
     private static int color(ServerWorld world, Retina.Pixel p) {
@@ -155,10 +169,14 @@ public final class VistaSituada {
                 .append("The optional image is a color and depth sketch of these same rays. Exact block IDs come from the list below. ")
                 .append("A pixel that is dark or occluded does not identify anything. Inspect only a listed b reference. ")
                 .append(rayosConAgua ? "Some rays crossed water. " : "");
+        if (sumergido) {
+            out.append("Your head was underwater with ").append(aire).append('/').append(aireMaximo).append(" air. ");
+        }
         for (int i = 0; i < bloques.size(); i++) {
             Bloque b = bloques.get(i);
             out.append("\nb").append(i + 1).append(" = ").append(b.id()).append(" at ").append(b.pos().toShortString())
-                    .append(" face ").append(b.cara().asString()).append(" pixel ").append(b.x()).append(',').append(b.y())
+                    .append(" face ").append(b.cara().asString()).append(" distance ").append(Math.round(b.distancia() * 10) / 10.0)
+                    .append(" blocks, pixel ").append(b.x()).append(',').append(b.y())
                     .append(" of ").append(Retina.WIDTH).append('x').append(Retina.HEIGHT);
             if (!b.estado().getProperties().isEmpty()) {
                 String state = b.estado().toString();

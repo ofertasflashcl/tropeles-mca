@@ -81,11 +81,15 @@ public final class MenteLocal {
             + "(busca|prueba|revisa) (otra |una |la )?(subida|salida)|"
             + "climb|go (back )?up|go out|(find|try|look for) (an? |another |the )?(way up|way out|exit))\\b");
     private static final Pattern NIEGA_SUBIDA = Pattern.compile("\\b(no (subas|salgas|trepes|intentes|busques)|do not|don'?t|never)\\b");
+    private static final Pattern CORRIGE_SUBIDA = Pattern.compile("^(mejor|en cambio|instead|actually)[ ]+(por|a|to|on|behind|ahead|left|right)\\b.*$");
+    private static final Pattern LADO_DEL_JUGADOR = Pattern.compile("\\b(player (behind|left|right|ahead)|"
+            + "(detras|atras|delante|enfrente|izquierda|derecha|al frente) de mi|detras mio|a mi (izquierda|derecha|espalda)|"
+            + "behind me|in front of me|my (left|right|back))\\b");
     private static final Map<String, Pattern> LADOS_SALIDA = Map.of(
             "behind", Pattern.compile("\\b(detras|atras|espalda|tras de ti|behind|backward|backwards|back)\\b"),
             "left", Pattern.compile("\\b(izquierda|left)\\b"),
             "right", Pattern.compile("\\b(derecha|right)\\b"),
-            "ahead", Pattern.compile("\\b(delante|adelante|frente|ahead|forward)\\b"));
+            "ahead", Pattern.compile("\\b(delante|adelante|enfrente|frente|front|ahead|forward)\\b"));
 
     /**
      * Orders, most specific first: "no me sigas" must win over "sigueme", and "sal de la mina" or "deja de minar
@@ -252,6 +256,7 @@ public final class MenteLocal {
 
     private static final List<Map.Entry<String, Pattern>> QUESTIONS = List.of(
             order("bye", "adios|chao|chau|nos vemos|hasta luego|hasta pronto|hasta manana|bye|goodbye|good bye|see you|see ya"),
+            order("learned", "que aprendiste|que has aprendido|what did you learn|what have you learned"),
             // what it remembers ({@link Recuerdos}): before "¿dónde hay cofres?" and "¿qué haces?"
             order("told", "que te (dije|pedi|conte|mande|ordene)|(recuerdas|te acuerdas( de)?) (lo )?que te (dije|pedi)|"
                     + "what did i (say|tell you|ask( you)?)|do you remember what i (said|told you|asked)"),
@@ -564,7 +569,10 @@ public final class MenteLocal {
         String lado = ladoSalida(t);
         if (lado != null && (BUSCA_SUBIDA.matcher(t).find() || NIEGA_SUBIDA.matcher(t).find())) {
             return NIEGA_SUBIDA.matcher(t).find() ? new Intent(null, "", null, spanish)
-                    : new Intent("seek-exit", lado, null, spanish);
+                    : new Intent("seek-exit", argumentoSalida(t, lado), null, spanish);
+        }
+        if (lado != null && CORRIGE_SUBIDA.matcher(t).matches()) {
+            return new Intent(null, argumentoSalida(t, lado), "corregir-salida", spanish);
         }
         // a bare "para", "alto" or "stop" is an order to stop whatever it is doing
         if (t.matches("(para|alto|stop|basta|halt|ya basta|para ya)")) {
@@ -630,6 +638,14 @@ public final class MenteLocal {
             }
         }
         return lado;
+    }
+
+    static boolean ladoDelJugador(String words) {
+        return LADO_DEL_JUGADOR.matcher(clean(words)).find();
+    }
+
+    private static String argumentoSalida(String text, String lado) {
+        return ladoDelJugador(text) ? "player-" + lado : lado;
     }
 
     /**
@@ -720,6 +736,11 @@ public final class MenteLocal {
             case "why" -> why(villager, es);
             case "doing" -> doing(villager, es);
             case "did" -> did(villager, es);
+            case "learned" -> {
+                String hechos = villager.getAprendizaje().paraModelo(es);
+                yield hechos.isEmpty() ? es ? "Todavía no tengo experiencias de esas maniobras o encargos."
+                        : "I haven't practiced those moves or errands yet." : hechos + ".";
+            }
             case "overhead" -> overhead(villager, es);
             case "climbed" -> climbed(villager, es);
             case "told" -> told(villager, player, es);

@@ -73,6 +73,7 @@ planos	planos-legacy
 planos	planos-snapshot
 planos	planos-inmutables
 planos	planos-validacion
+planos	planos-formas
 planos	planos-codec
 planos	planos-anclas
 planos	planos-cuarentena
@@ -115,6 +116,9 @@ cocina-autonoma	cocina-autonoma
 seguir-sin-spam	seguir-sin-spam
 vista-accion	vista-accion
 subida-detras	subida-detras
+subida-jugador	subida-jugador
 agua-exploracion	agua-exploracion
 agua-respiradero	agua-respiradero
 agua-profunda	agua-profunda
+aprendizaje	aprendizaje-memoria
+aprendizaje	aprendizaje-traslado

@@ -92,8 +92,8 @@ public class TriggerCommandInfos {
                     (p, v) -> v.getVillagerBrain().getCurrentJob() == Chore.PROSPECT),
             new TriggerCommandInfo("seek-exit", "Turn and search for a real dry way up in the direction the player asked. "
                     + "Use this instead of come-up when they specify a side. You do not know whether the route works until you try.",
-                    "behind, left, right or ahead, relative to your facing in the visual sample",
-                    (p, v, lado) -> salidaDirigida(p, v, lado, Direction.fromRotation(v.getHeadYaw())),
+                    "behind, left, right or ahead relative to your facing in the visual sample. Prefix with player- only if they refer to their own side.",
+                    (p, v, lado) -> salidaDirigida(p, v, lado, Direction.fromRotation(v.getHeadYaw()), p.getHorizontalFacing()).linea(),
                     (p, v) -> ProspectingTask.puedeBuscarSalida(v)),
             new TriggerCommandInfo("inspect-view", "Look at a specific block in your current visual sample when the player asks you to inspect it.",
                     "the listed reference, such as b1; never coordinates or a block name",
@@ -281,15 +281,21 @@ public class TriggerCommandInfos {
         }
     }
 
-    public static String salidaDirigida(ServerPlayerEntity player, VillagerEntityMCA v, String words, Direction frente) {
+    record Salida(boolean iniciada, String linea) {
+    }
+
+    static Salida salidaDirigida(ServerPlayerEntity player, VillagerEntityMCA v, String words,
+                               Direction frenteAldeano, Direction frenteJugador) {
         boolean es = spanish(v);
         String lado = MenteLocal.ladoSalida(words);
         if (lado == null) {
-            return es ? "¿Por detrás, a la izquierda, a la derecha o al frente?" : "Behind me, left, right or ahead?";
+            return new Salida(false, es ? "¿Por detrás, a la izquierda, a la derecha o al frente?" : "Behind me, left, right or ahead?");
         }
         if (!ProspectingTask.puedeBuscarSalida(v)) {
-            return es ? "Ahora no estoy en posición de buscar una salida de la mina." : "I'm not in a position to look for a way out of the mine.";
+            return new Salida(false, es ? "Ahora no estoy en posición de buscar una salida de la mina." : "I'm not in a position to look for a way out of the mine.");
         }
+        boolean ladoJugador = MenteLocal.ladoDelJugador(words);
+        Direction frente = ladoJugador ? frenteJugador : frenteAldeano;
         Direction rumbo = switch (lado) {
             case "behind" -> frente.getOpposite();
             case "left" -> frente.rotateYCounterclockwise();
@@ -298,15 +304,15 @@ public class TriggerCommandInfos {
         };
         ownLife(v, player);
         if (!ProspectingTask.buscarSalida(v, rumbo)) {
-            return es ? "No pude empezar a buscar esa subida." : "I couldn't start looking for that way up.";
+            return new Salida(false, es ? "No pude empezar a buscar esa subida." : "I couldn't start looking for that way up.");
         }
         String donde = switch (lado) {
-            case "behind" -> es ? "por detrás" : "behind me";
-            case "left" -> es ? "a mi izquierda" : "to my left";
-            case "right" -> es ? "a mi derecha" : "to my right";
-            default -> es ? "al frente" : "ahead";
+            case "behind" -> es ? ladoJugador ? "por detrás de ti" : "por detrás" : ladoJugador ? "behind you" : "behind me";
+            case "left" -> es ? ladoJugador ? "a tu izquierda" : "a mi izquierda" : ladoJugador ? "to your left" : "to my left";
+            case "right" -> es ? ladoJugador ? "a tu derecha" : "a mi derecha" : ladoJugador ? "to your right" : "to my right";
+            default -> es ? ladoJugador ? "hacia donde miras" : "al frente" : ladoJugador ? "ahead of you" : "ahead";
         };
-        return es ? "Voy a mirar " + donde + " y buscar por dónde subir." : "I'll look " + donde + " for a way up.";
+        return new Salida(true, es ? "Voy a mirar " + donde + " y buscar por dónde subir." : "I'll look " + donde + " for a way up.");
     }
 
     /** The language the villager last heard ({@link Voluntad#oyo}, told by the chat right before the order runs). */

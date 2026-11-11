@@ -764,6 +764,10 @@ public final class Nucleo {
         long now = world.getTime();
         Mente m = de(world, v);
         StringBuilder sb = new StringBuilder();
+        String experiencia = v.getAprendizaje().paraModelo(false);
+        if (!experiencia.isEmpty()) {
+            sb.append("Recent verified attempts (historical, not current routes): ").append(experiencia).append(". ");
+        }
         List<Episodio> eps = m.recordar(now, player.getUuid(), null, 8);
         eps.removeIf(e -> e.saliencia < 0.2F);
         if (!eps.isEmpty()) {
