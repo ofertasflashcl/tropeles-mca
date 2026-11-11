@@ -181,7 +181,7 @@ public class OpenAIChatAI implements ChatAIStrategy {
         }
 
         String line = null;
-        if (prep.intent().order() && DIRECT_REPLIES.contains(prep.intent().command())) {
+        if ("learned".equals(prep.intent().question()) || prep.intent().order() && DIRECT_REPLIES.contains(prep.intent().command())) {
             line = prep.local();
         } else if (prep.intent().order() && !prep.refused() && !prep.done()) {
             // an order it could not carry out, or was already doing: its own words say exactly why, and no mind
@@ -387,7 +387,7 @@ public class OpenAIChatAI implements ChatAIStrategy {
         String chosen = command;
         Acted acted = onServer(server, lease, () -> {
             if (!lease.claimAction()) return null;
-            try { return act(player, villager, chosen, said.argument(), es, prep.vista(), prep.plano()); }
+            try { return act(player, villager, chosen, said.argument(), es, prep.vista(), prep.plano(), lease); }
             finally { lease.acknowledgeAction(); }
         });
         if (acted == null) {
@@ -603,6 +603,11 @@ public class OpenAIChatAI implements ChatAIStrategy {
                         };
                         done = stored != Cofres.Store.NONE;
                     }
+                } else if ("seek-exit".equals(intent.command())) {
+                    TriggerCommandInfos.Salida salida = TriggerCommandInfos.salidaDirigida(player, villager, intent.argument(),
+                            lease.frenteAldeano(), lease.frenteJugador());
+                    outcome = salida.linea();
+                    done = salida.iniciada();
                 } else {
                     Optional<TriggerCommandInfo> command = TriggerCommandInfos.findCommand(intent.command(), player, villager);
                     if (command.isPresent()) {
@@ -799,6 +804,9 @@ public class OpenAIChatAI implements ChatAIStrategy {
      * mining but somewhere below the player is "come up here, to me".
      */
     private static MenteLocal.Intent resolve(MenteLocal.Intent intent, VillagerEntityMCA villager, ServerPlayerEntity player, String msg) {
+        if ("corregir-salida".equals(intent.question()) && ProspectingTask.buscandoSalida(villager)) {
+            return new MenteLocal.Intent("seek-exit", intent.argument(), null, intent.spanish());
+        }
         boolean connected = net.mca.entity.ai.mente.Voluntad.conectado(villager);
         if (connected && !intent.order() && net.mca.entity.ai.mente.Voluntad.of(villager).modo() == net.mca.entity.ai.mente.Voluntad.Modo.ALERTA
                 && MenteLocal.calma(msg)) {
@@ -824,7 +832,7 @@ public class OpenAIChatAI implements ChatAIStrategy {
      * it (or it is not possible right now); a reason is the villager's own words for why not.
      */
     private static Acted act(ServerPlayerEntity player, VillagerEntityMCA villager, String name, String argument, boolean spanish,
-                             @Nullable VistaSituada vista, @Nullable EdicionPlano.Base plano) {
+                             @Nullable VistaSituada vista, @Nullable EdicionPlano.Base plano, ActionTurn lease) {
         try {
             CommandPolicy.Decision permission = CommandPolicy.check(player, villager, name, CommandPolicy.Source.MODEL);
             if (!permission.allowed()) {
@@ -841,11 +849,12 @@ public class OpenAIChatAI implements ChatAIStrategy {
                 return new Acted(true, result, null, null, null);
             }
             if ("seek-exit".equals(name) && villager.getWorld() instanceof ServerWorld world) {
-                String result = vista == null || !vista.vigente(world, villager)
-                        ? (spanish ? "Ya cambié de sitio. Dime de nuevo por qué lado quieres que mire."
-                        : "I've changed position. Tell me again which side to check.")
-                        : TriggerCommandInfos.salidaDirigida(player, villager, argument, vista.frente());
-                return new Acted(true, result, null, null, null);
+                if (vista == null || !vista.vigente(world, villager)) {
+                    return new Acted(false, spanish ? "Ya cambié de sitio. Dime de nuevo por qué lado quieres que mire."
+                            : "I've changed position. Tell me again which side to check.", null, null, null);
+                }
+                TriggerCommandInfos.Salida salida = TriggerCommandInfos.salidaDirigida(player, villager, argument, vista.frente(), lease.frenteJugador());
+                return new Acted(salida.iniciada(), salida.linea(), null, null, null);
             }
             if (name.equals("give-item")) {
                 Acciones.Given given = Acciones.hand(player, villager, argument);

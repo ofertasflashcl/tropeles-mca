@@ -527,6 +527,13 @@ public class ProspectingTask extends AbstractChoreTask {
                 && !v.isSleeping() && !(Mining.onSurface(world, Mining.pies(v)) && Mining.openGround(world, Mining.pies(v)));
     }
 
+    public static boolean buscandoSalida(VillagerEntityMCA v) {
+        var ref = OF_VILLAGER.get(v.getUuid());
+        ProspectingTask task = ref == null ? null : ref.get();
+        return task != null && task.sondeoSalida != null && v.getWorld() instanceof ServerWorld world
+                && task.sondeoSalida.vigente(world, v);
+    }
+
     public static boolean buscarSalida(VillagerEntityMCA v, Direction rumbo) {
         if (!puedeBuscarSalida(v) || !(v.getWorld() instanceof ServerWorld world)) {
             return false;

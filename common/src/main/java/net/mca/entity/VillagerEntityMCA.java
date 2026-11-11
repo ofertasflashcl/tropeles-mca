@@ -8,6 +8,7 @@ import net.mca.cobalt.network.NetworkHandler;
 import net.mca.entity.ai.*;
 import net.mca.entity.ai.brain.VillagerBrain;
 import net.mca.entity.ai.brain.VillagerTasksMCA;
+import net.mca.entity.ai.mente.Aprendizaje;
 import net.mca.entity.ai.pathfinder.VillagerNavigation;
 import net.mca.entity.ai.relationship.*;
 import net.mca.entity.interaction.VillagerCommandHandler;
@@ -120,6 +121,7 @@ public class VillagerEntityMCA extends VillagerEntity implements VillagerLike<Vi
     private final VillagerCommandHandler interactions = new VillagerCommandHandler(this);
     private final UpdatableInventory inventory = new UpdatableInventory(27);
     private final net.mca.entity.ai.sense.VisualMemory visualMemory = new net.mca.entity.ai.sense.VisualMemory();
+    private final Aprendizaje aprendizaje = new Aprendizaje();
     private final VillagerDimensions.Mutable dimensions = new VillagerDimensions.Mutable(AgeState.UNASSIGNED);
 
     private GameProfile gameProfile;
@@ -236,6 +238,10 @@ public class VillagerEntityMCA extends VillagerEntity implements VillagerLike<Vi
     /** What this villager's eyes have seen, see {@link net.mca.entity.ai.sense.Retina}. */
     public net.mca.entity.ai.sense.VisualMemory getVisualMemory() {
         return visualMemory;
+    }
+
+    public Aprendizaje getAprendizaje() {
+        return aprendizaje;
     }
 
     @Override
@@ -1444,6 +1450,7 @@ public class VillagerEntityMCA extends VillagerEntity implements VillagerLike<Vi
         getTypeDataManager().load(this, nbt);
         relations.readFromNbt(nbt);
         longTermMemory.readFromNbt(nbt);
+        aprendizaje.cargar(nbt.getCompound("tropelesAprendizaje"));
 
         playerModel = PlayerModel.VALUES[nbt.getInt("playerModel")];
 
@@ -1475,6 +1482,10 @@ public class VillagerEntityMCA extends VillagerEntity implements VillagerLike<Vi
         getTypeDataManager().save(this, nbt);
         relations.writeToNbt(nbt);
         longTermMemory.writeToNbt(nbt);
+        NbtCompound experiencias = aprendizaje.guardar();
+        if (!experiencias.isEmpty()) {
+            nbt.put("tropelesAprendizaje", experiencias);
+        }
         nbt.putInt("DespawnDelay", this.despawnDelay);
         nbt.putBoolean("InteractedWith", this.interactedWith);
         InventoryUtils.saveToNBT(inventory, nbt);

@@ -37,6 +37,7 @@ final class PruebasVistaCerebro {
         switch (which) {
             case "vista-accion" -> Pruebas.start(new Vista(world));
             case "subida-detras" -> Pruebas.start(new Subida(world));
+            case "subida-jugador" -> Pruebas.start(new Subida(world, true));
             case "agua-exploracion" -> Pruebas.start(new Agua(world));
             case "agua-respiradero" -> Pruebas.start(new AguaTunel(world));
             case "agua-profunda" -> Pruebas.start(new AguaProfunda(world));
@@ -135,20 +136,29 @@ final class PruebasVistaCerebro {
     }
 
     private static final class Subida extends Pruebas.Scenario {
-        private final BlockPos o = new BlockPos(34120, 96, 33000);
+        private final BlockPos o;
         private final VillagerEntityMCA v;
         private final ServerPlayerEntity p;
+        private final Direction rumbo;
+        private final boolean corregida;
         private boolean miroDetras;
         private int roturas;
         private String respuesta = "";
 
         Subida(ServerWorld world) {
-            super("subida-detras", world, 550);
+            this(world, false);
+        }
+
+        Subida(ServerWorld world, boolean corregida) {
+            super(corregida ? "subida-jugador" : "subida-detras", world, 550);
+            this.corregida = corregida;
+            rumbo = corregida ? Direction.EAST : Direction.WEST;
+            o = new BlockPos(corregida ? 34560 : 34120, 96, 33000);
             Pruebas.load(world, o, 24);
             Pruebas.fill(world, o.add(-13, -6, -8), o.add(13, 3, 8), Blocks.STONE.getDefaultState());
             Pruebas.fill(world, o.add(-13, 4, -8), o.add(13, 10, 8), Blocks.AIR.getDefaultState());
             for (int k = 0; k <= 4; k++) {
-                BlockPos celda = o.west(k).up(k);
+                BlockPos celda = o.offset(rumbo, k).up(k);
                 Pruebas.fill(world, celda, celda.up(2), Blocks.AIR.getDefaultState());
                 world.setBlockState(celda.north(), Blocks.GLOWSTONE.getDefaultState(), 3);
                 if (k < 4) {
@@ -157,7 +167,7 @@ final class PruebasVistaCerebro {
             }
             v = Pruebas.villager(world, o, Direction.EAST, "Luz Subida");
             v.getBrain().forget(MemoryModuleTypeMCA.STAYING.get());
-            p = Pruebas.fakePlayer(world, "Subida_CI", Vec3d.ofBottomCenter(o.west(7).up(4)));
+            p = Pruebas.fakePlayer(world, corregida ? "Subida_Jugador" : "Subida_CI", Vec3d.ofBottomCenter(o.offset(rumbo, 7).up(4)));
             v.getVillagerBrain().assignJob(Chore.PROSPECT, p);
             v.setAiDisabled(true);
             Toques.escuchar(v, (pos, colocado, now) -> {
@@ -175,22 +185,31 @@ final class PruebasVistaCerebro {
                 Config.getInstance().villagerChatAIUseTools = true;
                 Cerebros.OFFLINE.set(true);
                 try {
-                    respuesta = new OpenAIChatAI().answer(p, v, "Intenta subir por detrás de ti.").orElse("");
+                    OpenAIChatAI chat = new OpenAIChatAI();
+                    respuesta = chat.answer(p, v, "Intenta subir por detrás de ti.").orElse("");
+                    if (corregida) {
+                        p.setYaw(Direction.WEST.asRotation());
+                        respuesta = chat.answer(p, v, "Mejor por detrás de mí.").orElse("");
+                        p.setYaw(Direction.EAST.asRotation()); // the correction used the pose when spoken
+                    }
                 } finally {
                     Cerebros.OFFLINE.remove();
                     Config.getInstance().villagerChatAIUseTools = herramientas;
                 }
                 v.setAiDisabled(false);
             }
-            miroDetras |= Direction.fromRotation(v.getHeadYaw()) == Direction.WEST;
+            miroDetras |= Direction.fromRotation(v.getHeadYaw()) == rumbo;
             BlockPos salida = Recuerdos.of(world, v).sitio("salida alternativa");
             if (salida == null) {
                 return null;
             }
             boolean ordenClara = !MenteLocal.read("¿Hay salida por detrás?").order()
-                    && !MenteLocal.read("No subas por detrás.").order();
-            boolean ok = ordenClara && respuesta.contains("detrás") && miroDetras && roturas == 0 && salida.getX() < o.getX() && salida.getY() >= o.getY() + 4;
-            Pruebas.check(name, ok, "giró y subió por detrás en " + ticks + " ticks; " + state());
+                    && !MenteLocal.read("No subas por detrás.").order()
+                    && "player-behind".equals(MenteLocal.read("Climb behind me").argument());
+            String referencia = corregida ? "detrás de ti" : "detrás";
+            boolean ok = ordenClara && respuesta.contains(referencia) && miroDetras && roturas == 0
+                    && (salida.getX() - o.getX()) * rumbo.getOffsetX() > 0 && salida.getY() >= o.getY() + 4;
+            Pruebas.check(name, ok, "subió por detrás de " + (corregida ? "quien dio la corrección" : "sí") + " en " + ticks + " ticks; " + state());
             return ok;
         }
 

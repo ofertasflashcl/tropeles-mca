@@ -1,6 +1,7 @@
 package net.mca.server.command;
 
 import net.mca.entity.ai.obra.Obra;
+import net.mca.entity.ai.obra.EdicionPlano;
 import net.mca.entity.ai.obra.ObrasMundo;
 import net.mca.entity.ai.obra.Plano;
 import net.mca.entity.ai.obra.PlanoCodec;
@@ -35,6 +36,7 @@ final class PruebasPlanos {
         caso("planos-snapshot", PruebasPlanos::snapshot);
         caso("planos-inmutables", PruebasPlanos::inmutables);
         caso("planos-validacion", PruebasPlanos::validacion);
+        caso("planos-formas", PruebasPlanos::formas);
         caso("planos-codec", PruebasPlanos::codec);
         caso("planos-anclas", PruebasPlanos::anclas);
         caso("planos-cuarentena", PruebasPlanos::cuarentena);
@@ -163,6 +165,22 @@ final class PruebasPlanos {
         List<Plano.Pieza> entry = piezas();
         entry.removeIf(p -> p.rel().equals(new BlockPos(2, 2, -1)));
         rechaza(() -> crear(entry));
+    }
+
+    private static void formas() {
+        Plano.Madera madera = Plano.Madera.ROBLE;
+        Plano base = Plano.casa(madera);
+        Plano p = EdicionPlano.aplicar(base, madera, "reset;fill -4 0 -3 4 0 3 stone_bricks;entry 0 1 -3;"
+                + "arch -3 1 -2 3 5 -2 bricks;ellipse -2 0 2 2 4 2 blue_stained_glass");
+        exige(p.piezas.stream().anyMatch(c -> c.rel().equals(new BlockPos(0, 5, -2)) && c.state().isOf(Blocks.BRICKS)), "Falta la corona");
+        exige(p.piezas.stream().noneMatch(c -> c.rel().equals(new BlockPos(0, 1, -2))), "El arco tapó el paso");
+        Plano cambiado = EdicionPlano.aplicar(p, madera, "replace -2 0 2 2 4 2 blue_stained_glass cyan_stained_glass");
+        exige(p.piezas.size() == cambiado.piezas.size() && cambiado.piezas.stream().noneMatch(c -> c.state().isOf(Blocks.BLUE_STAINED_GLASS))
+                && cambiado.piezas.stream().filter(c -> !c.state().isOf(Blocks.CYAN_STAINED_GLASS)).allMatch(p.piezas::contains),
+                "La sustitución cambió celdas ajenas al vidrio");
+        rechaza(() -> EdicionPlano.aplicar(p, madera, "arch -2 2 1 2 2 3 bricks"));
+        rechaza(() -> EdicionPlano.aplicar(p, madera, "ellipse -2 1 2 2 5 3 bricks"));
+        rechaza(() -> EdicionPlano.aplicar(p, madera, "replace -1 0 0 1 0 0 red_wool cyan_stained_glass"));
     }
 
     private static void codec() {

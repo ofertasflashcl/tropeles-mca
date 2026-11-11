@@ -36,6 +36,9 @@ public final class EdicionPlano {
             Separate operations by semicolons. Use local integer x y z, with -Z front, +X east, floor y=0.
             set x y z block[state]; fill x y z x2 y2 z2 block[state] (inclusive); shell x y z x2 y2 z2 block[state] (six faces);
             line x y z x2 y2 z2 block[state]; omit x y z (stop specifying this cell); entry x y z (reserve feet/head air);
+            ellipse x y z x2 y2 z2 block[state] (filled oval in one plane); arch x y z x2 y2 z2 block[state]
+            (connected upper arch in a vertical plane, endpoints at the lower Y, leave the opening untouched).
+            replace x y z x2 y2 z2 oldBlock[state] newBlock[state] (only already specified cells with the exact old state).
             optional reset as the first operation (empty canvas, keep the center). To explicitly clear a cell use set x y z air.
             Blocks: cobblestone, stone, stone_bricks, bricks, glass, glass_pane, torch, wall_torch, crafting_table, chest,
             wood logs/planks/stairs/doors, stone stairs/slabs, wool, concrete and terracotta. Use real Minecraft IDs
@@ -124,6 +127,18 @@ public final class EdicionPlano {
                         }
                         tocadas += region(piezas, pos(t, 1), pos(t, 4), estado, madera, t[0]);
                     }
+                    case "ellipse", "arch" -> {
+                        longitud(t, 8);
+                        BlockState estado = estado(t[7]);
+                        if (estado.getBlock() instanceof DoorBlock) {
+                            throw new IllegalArgumentException("use set for a door");
+                        }
+                        tocadas += ovalo(piezas, pos(t, 1), pos(t, 4), estado, madera, t[0].equals("arch"));
+                    }
+                    case "replace" -> {
+                        longitud(t, 9);
+                        tocadas += sustituir(piezas, pos(t, 1), pos(t, 4), estado(t[7]), estado(t[8]), madera);
+                    }
                     default -> throw new IllegalArgumentException("unknown operation");
                 }
                 if (tocadas > MAX_CELDAS_EDITADAS || piezas.size() > Plano.MAX_PIEZAS) {
@@ -210,6 +225,67 @@ public final class EdicionPlano {
 
     private static int entre(int a, int b, double t) {
         return (int) Math.round(a + (b - a) * t);
+    }
+
+    private static int ovalo(Map<BlockPos, Plano.Pieza> piezas, BlockPos a, BlockPos b, BlockState estado, Plano.Madera madera,
+                             boolean arco) {
+        int dx = Math.abs(a.getX() - b.getX());
+        int dy = Math.abs(a.getY() - b.getY());
+        int dz = Math.abs(a.getZ() - b.getZ());
+        if ((dx == 0 ? 1 : 0) + (dy == 0 ? 1 : 0) + (dz == 0 ? 1 : 0) != 1 || arco && dy == 0) {
+            throw new IllegalArgumentException(arco ? "the arch needs a vertical plane" : "the ellipse needs one plane");
+        }
+        Direction ejeU = dx == 0 ? Direction.SOUTH : Direction.EAST;
+        Direction ejeV = dy == 0 ? Direction.SOUTH : Direction.UP;
+        int ancho = dx == 0 ? dz : dx;
+        int alto = dy == 0 ? dz : dy;
+        if (ancho < 2 || alto < 2 || (ancho + 1) * (alto + 1) > Plano.MAX_PIEZAS) {
+            throw new IllegalArgumentException("the oval needs at least 3 by 3 cells within the cell budget");
+        }
+        BlockPos origen = new BlockPos(Math.min(a.getX(), b.getX()), Math.min(a.getY(), b.getY()), Math.min(a.getZ(), b.getZ()));
+        for (int u = 0; u <= ancho; u++) {
+            BlockPos columna = origen.offset(ejeU, u);
+            if (arco) {
+                int cima = corona(u, ancho, alto);
+                int anterior = corona(Math.max(0, u - 1), ancho, alto);
+                int siguiente = corona(Math.min(ancho, u + 1), ancho, alto);
+                for (int v = Math.min(cima, Math.min(anterior, siguiente)); v <= cima; v++) {
+                    poner(piezas, columna.offset(ejeV, v), estado, madera);
+                }
+            } else {
+                double x = 2.0 * u / ancho - 1.0;
+                for (int v = 0; v <= alto; v++) {
+                    double y = 2.0 * v / alto - 1.0;
+                    if (x * x + y * y <= 1.0) poner(piezas, columna.offset(ejeV, v), estado, madera);
+                }
+            }
+        }
+        return (ancho + 1) * (alto + 1);
+    }
+
+    private static int corona(int u, int ancho, int alto) {
+        double x = 2.0 * u / ancho - 1.0;
+        return (int) Math.round(alto * Math.sqrt(1.0 - x * x));
+    }
+
+    private static int sustituir(Map<BlockPos, Plano.Pieza> piezas, BlockPos a, BlockPos b, BlockState viejo, BlockState nuevo,
+                                 Plano.Madera madera) {
+        if (viejo.getBlock() instanceof DoorBlock || nuevo.getBlock() instanceof DoorBlock) {
+            throw new IllegalArgumentException("edit the lower door half with set or omit");
+        }
+        int volumen = (Math.abs(a.getX() - b.getX()) + 1) * (Math.abs(a.getY() - b.getY()) + 1) * (Math.abs(a.getZ() - b.getZ()) + 1);
+        if (volumen > Plano.MAX_PIEZAS) throw new IllegalArgumentException("region is too large");
+        rol(nuevo, madera);
+        int sustituidas = 0;
+        for (BlockPos at : BlockPos.iterate(a, b)) {
+            Plano.Pieza anterior = piezas.get(at);
+            if (anterior != null && anterior.state().equals(viejo)) {
+                poner(piezas, at.toImmutable(), nuevo, madera);
+                sustituidas++;
+            }
+        }
+        if (sustituidas == 0) throw new IllegalArgumentException("no matching block state in the selected region");
+        return volumen;
     }
 
     private static void quitar(Map<BlockPos, Plano.Pieza> piezas, BlockPos at) {

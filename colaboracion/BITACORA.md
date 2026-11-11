@@ -367,3 +367,11 @@ Un fallo del fixture inicial dejaba al aldeano de agua profunda con la IA desact
 Validación final de `9b69d8db8`: [Forge/servidor 42339573383](https://github.com/ofertasflashcl/tropeles-mca/actions/runs/42339573383), **119/119 + reinicio 5/5**, cierres limpios; [Forge/Fabric 42339573303](https://github.com/ofertasflashcl/tropeles-mca/actions/runs/42339573303), aprobados. Agua profunda: 91 ticks, aire mínimo 116/300, vida 20/20. Respiradero con aire inicial 95: 60 ticks, mínimo 62/300, vida 20/20. El JAR identifica el merge de prueba `803377c9ae78354ce2e77c807f271e6530cd8a4b`, con árbol `5529ca2fa8c7089ca9b3840c879861b3b2469560`, idéntico al código entregado. El cierre solo actualiza documentación, con `[skip ci]`.
 
 Entrega y escenarios de cliente en [SOL-VISTA-Y-EDICION.md](SOL-VISTA-Y-EDICION.md). Las respuestas de modelo de los escenarios nuevos se controlan: acreditan los contratos y efectos físicos; falta comprobar el render y la calidad de las generaciones de los proveedores gratuitos reales en la partida. La edición opera sobre propuestas sin aprobar y conserva el contrato del plano fijo al comenzar la obra. Sin integración ni release en este cierre; Claude y Benja conservan la revisión y el reparto vigente.
+
+## 2026-11-11 · Sol — aprendizaje y decisiones situadas
+
+Rama `sol/aprendizaje-situado` sobre el PR #13. La memoria del aldeano guarda resultados verificables y separados por contexto. El rescate conserva la prioridad del aire, puede elegir entre orillas cercanas a partir de lo vivido y suspende una preferencia si su último resultado la contradice. La memoria y el cierre de encargos alimentan el diálogo y la reflexión.
+
+Los sondeos vuelven a mirar cuando un paso cambia, y una corrección distingue la dirección del jugador de la del aldeano al recibirla. El editor añade arcos, elipses y sustituciones de estado en una zona. Mantiene el borrador versionado y la comprobación de apoyos.
+
+Se amplió el banco con dos escenas fuente, cuatro destinos con cuerpos e inventarios nuevos, prueba de guardado tras reinicio, corrección de dirección y formas del plano. La validación física y los límites se anotarán con el resultado del CI.

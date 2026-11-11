@@ -304,6 +304,10 @@ public final class Conciencia {
         BlockPos feet = villager.getBlockPos();
         o.addProperty("estoy en", feet.getX() + " " + feet.getY() + " " + feet.getZ());
         o.addProperty("mochila", mochila(villager));
+        String experiencia = villager.getAprendizaje().paraModelo(true);
+        if (!experiencia.isEmpty()) {
+            o.addProperty("resultados vividos", experiencia);
+        }
         String wanted = ProspectingTask.wanted(villager);
         if (wanted != null) {
             o.addProperty("me pidieron buscar", wanted);

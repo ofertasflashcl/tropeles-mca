@@ -1783,6 +1783,7 @@ public final class Voluntad {
         MCA.LOGGER.info("[Tropeles] {} termina el encargo de {} ({}, {}): {}", villager.getName().getString(), n, e.tipo.palabra, fin, hay ? whatEs : "nada");
         Encargo.Resultado r = Encargo.Resultado.de(fin, hay);
         e.anotar(villager, r, why[0], got);
+        villager.getAprendizaje().finEncargo(e, r, fin, hay);
         // only an errand that brought something real is an errand kept ({@code encargo} in its memory is a good deed)
         Recuerdos.anotar(villager, r.cumplido() ? "encargo" : "encargo-sin", (r.cumplido() ? "terminé lo que me pidió " : "dejé sin hacer lo que me pidió ")
                 + n + " (" + e.tipo.palabra + ", " + r.name().toLowerCase(java.util.Locale.ROOT) + "): " + why[0]

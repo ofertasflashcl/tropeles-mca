@@ -24,6 +24,8 @@ public final class SondeoSalida {
     private static final int RADIO = 18;
     private static final int BUSQUEDA = 384;
     private static final int PLAZO = 360;
+    private static final int OJEADAS = 4;
+    private static final long EDAD_VISTA = 100;
     private final Direction rumbo;
     private final RegistryKey<World> mundo;
     private final int generacion;
@@ -57,14 +59,24 @@ public final class SondeoSalida {
             return Estado.SIN_PASO;
         }
         vista.doing("buscando una salida hacia " + rumbo.asString(), now);
+        Recuerdos recuerdos = Recuerdos.of(world, v);
         if (!via.isEmpty()) {
-            if (!motor.midStep(v) && via.stream().anyMatch(at -> !seco(world, at))) {
-                motor.reset(world, v);
-                via = List.of();
-                return Estado.BUSCANDO;
+            if (!motor.midStep(v)) {
+                BlockPos mojado = via.stream().filter(at -> !seco(world, at)).findFirst().orElse(null);
+                if (mojado != null) {
+                    recuerdos.cerrar(mojado, now + EDAD_VISTA);
+                    motor.reset(world, v);
+                    via = List.of();
+                    return Estado.BUSCANDO;
+                }
             }
+            List<BlockPos> andando = motor.walkingPath();
+            int siguiente = motor.walkingIndex();
             Motor.Result r = motor.walkPath(world, v, via);
             if (r == Motor.Result.ARRIVED || r == Motor.Result.BLOCKED) {
+                if (r == Motor.Result.BLOCKED && andando != null && siguiente > 0 && siguiente < andando.size()) {
+                    recuerdos.cerrarPaso(andando.get(siguiente - 1), andando.get(siguiente), now + EDAD_VISTA);
+                }
                 via = List.of();
                 miradas = 0;
             }
@@ -73,21 +85,25 @@ public final class SondeoSalida {
         if (!v.isOnGround()) {
             return Estado.BUSCANDO;
         }
-        if (miradas >= 2 || tramos >= 8) {
+        if (miradas >= OJEADAS || tramos >= 8) {
             return Estado.SIN_PASO;
         }
         Motor.standStill(v);
         v.getBrain().forget(net.minecraft.entity.ai.brain.MemoryModuleType.WALK_TARGET);
         Vec3d direccion = Vec3d.of(rumbo.getVector());
-        Hands.aim(v, v.getEyePos().add(direccion.multiply(5)).add(0, miradas++ == 0 ? -1.6 : 1.9, 0));
+        Vec3d flanco = Vec3d.of(rumbo.rotateYClockwise().getVector());
+        int mirada = miradas++;
+        double altura = mirada == 0 ? -1.6 : mirada == 1 ? 1.9 : 0.5;
+        double lado = mirada < 2 ? 0 : mirada == 2 ? -3 : 3;
+        Hands.aim(v, v.getEyePos().add(direccion.multiply(5)).add(flanco.multiply(lado)).add(0, altura, 0));
         Retina.lookAll(world, v);
 
-        Recuerdos recuerdos = Recuerdos.of(world, v);
-        List<BlockPos> destinos = vista.blocks(b -> b.face == Direction.UP && now - b.lastSeen <= 100
+        List<BlockPos> destinos = vista.blocks(b -> b.face == Direction.UP && now - b.lastSeen <= EDAD_VISTA
                         && b.pos.isWithinDistance(origen, RADIO) && b.state.getFluidState().isEmpty())
                 .stream().map(b -> b.pos.up())
                 .filter(at -> at.isWithinDistance(origen, RADIO) && hacia(at) > 0 && at.getY() >= pies.getY()
-                        && !at.equals(pies) && !probados.contains(at) && seco(world, at) && Motor.standCell(world, at))
+                        && !at.equals(pies) && !probados.contains(at) && !recuerdos.cerrado(at, now) && seco(world, at)
+                        && Motor.standCell(world, at))
                 .sorted(Comparator.<BlockPos>comparingInt(at -> afuera(world, at) ? 0 : at.getY() > pies.getY() ? 1 : 2)
                         .thenComparingDouble(at -> at.getSquaredDistance(pies)))
                 .limit(4).toList();
@@ -95,8 +111,9 @@ public final class SondeoSalida {
             probados.add(meta);
             var camino = new Motor.WalkSearch(pies, meta, 0).advance(world, BUSQUEDA,
                     at -> at.isWithinDistance(origen, RADIO) && hacia(at) >= 0
-                            && (recuerdos.recuerda(at) || vista.stateAt(at.down()) != null),
-                    (a, b) -> seco(world, b) && b.getY() >= a.getY() - 1 && !recuerdos.pasoCerrado(a, b, now));
+                            && (recuerdos.recuerda(at) || vista.saw(at.down(), now - EDAD_VISTA)),
+                    (a, b) -> seco(world, b) && b.getY() >= a.getY() - 1
+                            && !recuerdos.cerrado(b, now) && !recuerdos.pasoCerrado(a, b, now));
             if (camino.status() == Motor.WalkStatus.FOUND && camino.path().size() >= 2) {
                 via = camino.path();
                 tramos++;

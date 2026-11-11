@@ -72,9 +72,11 @@ mca-prueba cocina-autonoma
 mca-prueba seguir-sin-spam
 mca-prueba vista-accion
 mca-prueba subida-detras
+mca-prueba subida-jugador
 mca-prueba agua-exploracion
 mca-prueba agua-respiradero
 mca-prueba agua-profunda
+mca-prueba aprendizaje
 await-checks 320
 mca-prueba resumen
 sleep 2

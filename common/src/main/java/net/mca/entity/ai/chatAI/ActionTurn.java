@@ -6,6 +6,7 @@ import net.mca.entity.ai.mente.Voluntad;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
+import net.minecraft.util.math.Direction;
 
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -20,6 +21,8 @@ public final class ActionTurn {
     private final VillagerEntityMCA villager;
     private final UUID villagerId;
     private final UUID playerId;
+    private final Direction frenteAldeano;
+    private final Direction frenteJugador;
     private final long expires;
     private final AtomicBoolean finished = new AtomicBoolean();
     private final AtomicBoolean acted = new AtomicBoolean();
@@ -33,6 +36,8 @@ public final class ActionTurn {
         this.playerWorld = player.getServerWorld();
         this.villagerId = villager.getUuid();
         this.playerId = player.getUuid();
+        this.frenteAldeano = Direction.fromRotation(villager.getHeadYaw());
+        this.frenteJugador = player.getHorizontalFacing();
         this.generation = Voluntad.generacion(villagerId);
         this.expires = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(Math.max(0, remainingMs));
     }
@@ -64,6 +69,14 @@ public final class ActionTurn {
     /** Exactly one physical command may be attempted by this request, including local/model retries. */
     public boolean claimAction() {
         return valid() && acted.compareAndSet(false, true);
+    }
+
+    Direction frenteAldeano() {
+        return frenteAldeano;
+    }
+
+    Direction frenteJugador() {
+        return frenteJugador;
     }
 
     /** Its own synchronous command may change generation; an unrelated later change must still invalidate it. */
