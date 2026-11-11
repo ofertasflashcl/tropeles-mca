@@ -8,6 +8,7 @@ import net.mca.MCA;
 import net.mca.entity.VillagerEntityMCA;
 import net.mca.entity.ai.Chore;
 import net.mca.entity.ai.body.Cofres;
+import net.mca.entity.ai.brain.tasks.chore.ProspectingTask;
 import net.mca.entity.ai.chatAI.modules.*;
 import net.mca.entity.ai.mente.Voluntad;
 import net.mca.entity.ai.obra.EdicionPlano;
