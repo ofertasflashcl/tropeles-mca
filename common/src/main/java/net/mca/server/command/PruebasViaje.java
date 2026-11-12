@@ -45,6 +45,7 @@ final class PruebasViaje {
         private boolean salto;
         private double anterior;
         private boolean guardar;
+        private int inicio;
 
         Viaje(ServerWorld world) {
             super("viaje-companero", world, 420);
@@ -60,7 +61,11 @@ final class PruebasViaje {
 
         @Override
         Boolean step() {
-            if (ticks == 10) {
+            if (inicio == 0) {
+                if (world.getEntity(v.getUuid()) != v) {
+                    return null;
+                }
+                inicio = ticks;
                 p.setOnGround(true);
                 Voluntad.seguir(v, p, true);
                 ActionTurn anteriorAlAcuerdo = ActionTurn.capture(p, v, 10_000);
@@ -83,15 +88,15 @@ final class PruebasViaje {
                 Voluntad.seguir(v, p, true);
                 anterior = v.getX();
                 v.setAiDisabled(false);
-            } else if (ticks < 65) {
-                p.setPosition(PUNTO.getX() + 0.5 + (ticks - 10) * 0.17, PUNTO.getY(), PUNTO.getZ() + 0.5);
-            } else if (ticks == 65) {
+            } else if (ticks - inicio < 55) {
+                p.setPosition(PUNTO.getX() + 0.5 + (ticks - inicio) * 0.17, PUNTO.getY(), PUNTO.getZ() + 0.5);
+            } else if (ticks - inicio == 55) {
                 acompano = v.getX() > PUNTO.getX() + 2;
                 p.setPosition(ORIGEN.getX() + 62.5, ORIGEN.getY(), ORIGEN.getZ() + 0.5);
             }
             salto |= Math.abs(v.getX() - anterior) > 3 || v.getX() >= ORIGEN.getX() + 32;
             anterior = v.getX();
-            if (ticks < 130 || !v.getBlockPos().isWithinDistance(PUNTO, 1.5)
+            if (ticks - inicio < 120 || !v.getBlockPos().isWithinDistance(PUNTO, 1.5)
                     || !Retina.memory(v).doing().contains("punto de reunión")) {
                 return null;
             }
