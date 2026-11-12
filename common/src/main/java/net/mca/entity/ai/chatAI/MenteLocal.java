@@ -749,8 +749,8 @@ public final class MenteLocal {
             return placeOf(villager, q.substring(6), es);
         }
         return switch (q) {
-            case "referencia-salida" -> es ? "¿Te refieres al lado que queda detrás de ti o detrás de mí?"
-                    : "Do you mean the side behind you or behind me?";
+            case "referencia-salida" -> es ? "¿Quieres que tome la dirección desde donde miras tú o desde donde miro yo?"
+                    : "Should I use the direction you're facing or the one I'm facing?";
             case "thinking" -> thinking(villager, es);
             case "why" -> why(villager, es);
             case "doing" -> doing(villager, es);

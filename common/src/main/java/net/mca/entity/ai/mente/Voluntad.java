@@ -557,9 +557,7 @@ public final class Voluntad {
             return w.negarse(villager, player, "follow-player", g, Pedido.SEGUIR);
         }
         w.change(villager, Modo.SIGUIENDO, player, null, player.getName().getString() + " me pidió que lo siga" + (g.es() == null ? "" : " (" + g.porque() + ")"));
-        if (player.getWorld() == villager.getWorld() && player.squaredDistanceTo(villager) <= 64) {
-            w.face(villager, player);
-        }
+        w.llamadoCerca(villager, player);
         if (g.es() != null) {
             w.dicho("follow-player", g.es(), g.en());
         }
@@ -592,13 +590,18 @@ public final class Voluntad {
             return es ? "Ponte cerca y donde pueda verte para que recuerde el sitio." : "Stand nearby where I can see you so I can remember the spot.";
         }
         BlockPos pies = Mining.pies(player);
+        BlockPos anterior = villager.getPuntoEncuentro().para(world, player.getUuid());
         if (!player.isOnGround() || !villager.getPuntoEncuentro().marcar(world, player.getUuid(), pies)) {
             return es ? "Necesitamos un lugar con piso firme y seco." : "We need a spot with firm, dry footing.";
         }
-        nuevaGeneracion(villager.getUuid());
+        Voluntad w = of(villager);
+        if (anterior != null && !anterior.equals(pies) && anterior.equals(w.espera) && w.modo == Modo.ESPERANDO
+                && player.getUuid().equals(w.quien)) {
+            w.change(villager, Modo.ESPERANDO, player, pies.toImmutable(), "cambió el punto de reunión");
+            Motor.standStill(villager);
+        }
         Recuerdos.anotar(villager, "viaje", "acordé reunirme aquí con " + player.getName().getString(), pies);
-        return es ? "Si nos separamos, nos juntamos aquí, en " + pies.toShortString() + "."
-                : "If we get separated, we'll meet here at " + pies.toShortString() + ".";
+        return es ? "Si nos separamos, nos juntamos aquí." : "If we get separated, we'll meet here.";
     }
 
     public static String volverAlEncuentro(VillagerEntityMCA villager, PlayerEntity player, boolean es) {
@@ -660,6 +663,9 @@ public final class Voluntad {
             oyo(villager, player, spanish);
         }
         Modo back = w.resume(villager, player == null ? "pasó la alerta" : player.getName().getString() + " me dijo que no era nada");
+        if (back == Modo.SIGUIENDO && player != null && player.getUuid().equals(w.quien)) {
+            w.llamadoCerca(villager, player);
+        }
         return "It was nothing: you stand up and carry on " + switch (back) {
             case SIGUIENDO -> "following " + w.quienNombre;
             case ESPERANDO -> "waiting where you were";
@@ -784,6 +790,13 @@ public final class Voluntad {
         hablar(world, villager, player, PREGUNTAS_SEGUIR_ES[i], PREGUNTAS_SEGUIR_EN[i]);
         preguntasSeguir++;
         proximaPregunta = now + INTERVALO_PREGUNTA;
+    }
+
+    private void llamadoCerca(VillagerEntityMCA villager, PlayerEntity player) {
+        if (villager.getWorld() instanceof ServerWorld world && player.getWorld() == world && player.squaredDistanceTo(villager) <= 64) {
+            face(villager, player);
+            follow.llamado(world, villager, player);
+        }
     }
 
     /** At the side of the one it got things for: it hands them over (asked to bring them) or offers them. */

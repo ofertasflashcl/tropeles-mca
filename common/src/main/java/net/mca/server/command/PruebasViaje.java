@@ -48,9 +48,9 @@ final class PruebasViaje {
 
         Viaje(ServerWorld world) {
             super("viaje-companero", world, 420);
-            Pruebas.load(world, ORIGEN, 70);
-            Pruebas.fill(world, ORIGEN.add(-3, -1, -4), ORIGEN.add(64, -1, 4), Blocks.STONE.getDefaultState());
-            Pruebas.fill(world, ORIGEN.add(-3, 0, -4), ORIGEN.add(64, 4, 4), Blocks.AIR.getDefaultState());
+            Pruebas.load(world, ORIGEN, 24);
+            Pruebas.fill(world, ORIGEN.add(-3, -1, -4), ORIGEN.add(20, -1, 4), Blocks.STONE.getDefaultState());
+            Pruebas.fill(world, ORIGEN.add(-3, 0, -4), ORIGEN.add(20, 4, 4), Blocks.AIR.getDefaultState());
             v = Pruebas.villager(world, ORIGEN, Direction.EAST, ALDEANO);
             p = Pruebas.fakePlayer(world, JUGADOR, Vec3d.ofBottomCenter(PUNTO));
             v.getBrain().forget(MemoryModuleTypeMCA.STAYING.get());

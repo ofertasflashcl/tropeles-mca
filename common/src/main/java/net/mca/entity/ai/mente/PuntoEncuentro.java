@@ -19,6 +19,7 @@ public final class PuntoEncuentro {
     private Punto punto;
     @Nullable
     private NbtCompound versionFutura;
+    private int revision;
 
     private record Punto(UUID companero, Identifier dimension, BlockPos pies) {
     }
@@ -31,8 +32,16 @@ public final class PuntoEncuentro {
         if (versionFutura != null || !firme(world, pies)) {
             return false;
         }
-        punto = new Punto(companero, world.getRegistryKey().getValue(), pies.toImmutable());
+        Punto nuevo = new Punto(companero, world.getRegistryKey().getValue(), pies.toImmutable());
+        if (!nuevo.equals(punto)) {
+            punto = nuevo;
+            revision++;
+        }
         return true;
+    }
+
+    public int revision() {
+        return revision;
     }
 
     @Nullable
@@ -56,6 +65,7 @@ public final class PuntoEncuentro {
     }
 
     public void cargar(NbtCompound nbt) {
+        revision++;
         punto = null;
         versionFutura = nbt.getInt("version") > VERSION ? nbt.copy() : null;
         if (nbt.getInt("version") == VERSION && nbt.containsUuid("companero") && nbt.contains("pies", NbtElement.LONG_TYPE)) {

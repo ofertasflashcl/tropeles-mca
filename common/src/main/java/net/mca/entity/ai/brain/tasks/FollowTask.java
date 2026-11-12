@@ -78,6 +78,9 @@ public class FollowTask extends MultiTickTask<VillagerEntityMCA> {
     @Nullable
     private BlockPos ultimoVisto;
     private long vistoEn;
+    @Nullable
+    private BlockPos ultimoLlamado;
+    private long llamadoHasta;
     private boolean separado;
     @Nullable
     private BlockPos destinoBusqueda;
@@ -124,6 +127,7 @@ public class FollowTask extends MultiTickTask<VillagerEntityMCA> {
         warned = false;
         companero = null;
         ultimoVisto = null;
+        ultimoLlamado = null;
         separado = false;
         destinoBusqueda = null;
         proximaBusqueda = 0;
@@ -145,6 +149,20 @@ public class FollowTask extends MultiTickTask<VillagerEntityMCA> {
         return guard(world, villager, ward, conversar, esperando, true, encuentro);
     }
 
+    /** One nearby call to follow. The location belongs to that call and is never updated through a wall. */
+    public void llamado(ServerWorld world, VillagerEntityMCA villager, LivingEntity ward) {
+        prepararCompanero(world, villager, ward);
+        ultimoLlamado = Mining.pies(ward).toImmutable();
+        llamadoHasta = world.getTime() + 80;
+    }
+
+    private void prepararCompanero(ServerWorld world, VillagerEntityMCA villager, LivingEntity ward) {
+        if (!ward.getUuid().equals(companero)) {
+            release(world, villager);
+            companero = ward.getUuid();
+        }
+    }
+
     private boolean guard(ServerWorld world, VillagerEntityMCA villager, LivingEntity ward, boolean conversar, boolean esperando,
                           boolean situado, @Nullable BlockPos encuentro) {
         if (villager.getBrain().getOptionalMemory(MemoryModuleType.HURT_BY_ENTITY).filter(livingEntity -> livingEntity == ward).isPresent()) {
@@ -156,9 +174,8 @@ public class FollowTask extends MultiTickTask<VillagerEntityMCA> {
         }
 
         long now = world.getTime();
-        if (situado && !ward.getUuid().equals(companero)) {
-            release(world, villager);
-            companero = ward.getUuid();
+        if (situado) {
+            prepararCompanero(world, villager, ward);
         }
         boolean visible = !situado || Retina.canSee(world, villager, ward);
         if (situado && visible) {
@@ -169,6 +186,7 @@ public class FollowTask extends MultiTickTask<VillagerEntityMCA> {
             }
             BlockPos pies = Mining.pies(ward);
             if (ward.isOnGround() && PuntoEncuentro.firme(world, pies)) {
+                ultimoLlamado = null;
                 ultimoVisto = pies.toImmutable();
                 vistoEn = now;
             }
@@ -250,22 +268,25 @@ public class FollowTask extends MultiTickTask<VillagerEntityMCA> {
         }
         villager.setSprinting(false);
         villager.getBrain().forget(MemoryModuleType.WALK_TARGET);
+        boolean llamado = ultimoLlamado != null && now < llamadoHasta;
         boolean reciente = ultimoVisto != null && now - vistoEn <= SEARCH_LAST_SEEN;
-        BlockPos meta = reciente ? ultimoVisto : encuentro;
+        BlockPos meta = llamado ? ultimoLlamado : reciente ? ultimoVisto : encuentro;
         BlockPos pies = Mining.pies(villager);
         if (meta != null && !meta.isWithinDistance(pies, 1.5) && PuntoEncuentro.firme(world, meta)) {
             if (!meta.equals(destinoBusqueda) || now >= proximaBusqueda) {
                 destinoBusqueda = meta;
                 proximaBusqueda = now + 20;
                 Path path = villager.getNavigation().findPathTo(meta, 0);
-                if (path != null && path.reachesTarget()) {
+                if (path != null && (path.reachesTarget() || llamado && path.getEnd() != null
+                        && path.getEnd().getBlockPos().getSquaredDistance(meta) + 1 < pies.getSquaredDistance(meta))) {
                     villager.getNavigation().startMovingAlong(path, 0.9);
                 } else {
                     Motor.standStill(villager);
                 }
             }
             if (!villager.getNavigation().isIdle()) {
-                Retina.memory(villager).doing(reciente ? "buscando donde vio a su compañero" : "volviendo al punto de reunión", now);
+                Retina.memory(villager).doing(llamado ? "acercándose a donde lo llamaron"
+                        : reciente ? "buscando donde vio a su compañero" : "volviendo al punto de reunión", now);
                 return;
             }
         }

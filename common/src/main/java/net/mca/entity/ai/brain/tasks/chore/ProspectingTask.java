@@ -2528,7 +2528,7 @@ public class ProspectingTask extends AbstractChoreTask {
                     viaDe, via.size(), nuevos, feet.toShortString(), end == null ? "?" : end.toShortString());
             Voluntad.contar(villager, "Subo por donde ya pasé, no hace falta cavar otra escalera.",
                     "I'll go up the way I came, no need to dig another staircase.");
-            Recuerdos.anotar(villager, "camino", "subí por " + viaDe + ", " + via.size() + " pasos de " + feet.getX() + " " + feet.getY() + " "
+            Recuerdos.anotar(villager, "camino", "planeé subir por " + viaDe + ", " + via.size() + " pasos de " + feet.getX() + " " + feet.getY() + " "
                     + feet.getZ() + (end == null ? "" : " a " + end.getX() + " " + end.getY() + " " + end.getZ()), feet);
             return true;
         }
