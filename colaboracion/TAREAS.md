@@ -95,3 +95,7 @@ Benja autorizó continuar el trabajo interrumpido sobre `sol/vista-con-intencion
 ## Aprendizaje situado
 
 Base `sol/vista-con-intencion` (PR #13). Sol toma la memoria de resultados, el rescate y sus pruebas, los anclajes de dirección en chat y las formas del editor. Los cambios van en `sol/aprendizaje-situado`. Claude puede revisar la rama y reproducir los casos en cliente con el mismo JAR.
+
+## Viajes en equipo
+
+Sol trabaja sobre aprendizaje situado en `sol/viajes-en-equipo`. El [PR #15](https://github.com/ofertasflashcl/tropeles-mca/pull/15) contiene el seguimiento conectado, el acuerdo de reunión persistente, la corrección de rumbo por chat y las comprobaciones de percepción y regreso. La prueba en servidor y reinicio está aprobada. Queda disponible para revisión en cliente.

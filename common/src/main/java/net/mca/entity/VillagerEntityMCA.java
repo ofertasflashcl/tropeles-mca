@@ -9,6 +9,7 @@ import net.mca.entity.ai.*;
 import net.mca.entity.ai.brain.VillagerBrain;
 import net.mca.entity.ai.brain.VillagerTasksMCA;
 import net.mca.entity.ai.mente.Aprendizaje;
+import net.mca.entity.ai.mente.PuntoEncuentro;
 import net.mca.entity.ai.pathfinder.VillagerNavigation;
 import net.mca.entity.ai.relationship.*;
 import net.mca.entity.interaction.VillagerCommandHandler;
@@ -109,6 +110,7 @@ public class VillagerEntityMCA extends VillagerEntity implements VillagerLike<Vi
     private static final CDataParameter<Integer> GROWTH_AMOUNT = CParameter.create("growthAmount", -AgeState.getMaxAge());
     private static final CDataManager<VillagerEntityMCA> DATA = createTrackedData(VillagerEntityMCA.class).build();
     private static final String APRENDIZAJE_NBT = "tropelesAprendizaje";
+    private static final String ENCUENTRO_NBT = "tropelesEncuentro";
 
     public final ConversationManager conversationManager = new ConversationManager(this);
     private final VillagerBrain<VillagerEntityMCA> mcaBrain = new VillagerBrain<>(this);
@@ -123,6 +125,7 @@ public class VillagerEntityMCA extends VillagerEntity implements VillagerLike<Vi
     private final UpdatableInventory inventory = new UpdatableInventory(27);
     private final net.mca.entity.ai.sense.VisualMemory visualMemory = new net.mca.entity.ai.sense.VisualMemory();
     private final Aprendizaje aprendizaje = new Aprendizaje();
+    private final PuntoEncuentro puntoEncuentro = new PuntoEncuentro();
     private final VillagerDimensions.Mutable dimensions = new VillagerDimensions.Mutable(AgeState.UNASSIGNED);
 
     private GameProfile gameProfile;
@@ -243,6 +246,10 @@ public class VillagerEntityMCA extends VillagerEntity implements VillagerLike<Vi
 
     public Aprendizaje getAprendizaje() {
         return aprendizaje;
+    }
+
+    public PuntoEncuentro getPuntoEncuentro() {
+        return puntoEncuentro;
     }
 
     @Override
@@ -1453,6 +1460,10 @@ public class VillagerEntityMCA extends VillagerEntity implements VillagerLike<Vi
         if (!experiencias.isEmpty()) {
             datos.put(APRENDIZAJE_NBT, experiencias);
         }
+        NbtCompound encuentro = puntoEncuentro.guardar();
+        if (!encuentro.isEmpty()) {
+            datos.put(ENCUENTRO_NBT, encuentro);
+        }
         return datos;
     }
 
@@ -1460,6 +1471,7 @@ public class VillagerEntityMCA extends VillagerEntity implements VillagerLike<Vi
     public void readNbt(NbtCompound nbt) {
         super.readNbt(nbt);
         aprendizaje.cargar(nbt.getCompound(APRENDIZAJE_NBT));
+        puntoEncuentro.cargar(nbt.getCompound(ENCUENTRO_NBT));
     }
 
     @Override

@@ -42,6 +42,12 @@ public class TriggerCommandInfos {
                         return null;
                     },
                     (p, v) -> Voluntad.conectado(v) ? Voluntad.of(v).modo() != Voluntad.Modo.ESPERANDO : v.getVillagerBrain().getMoveState() != MoveState.STAY),
+            new TriggerCommandInfo("mark-meeting-point", "When explicitly asked to meet here, remember the visible player's dry footing as a meeting point",
+                    null, (p, v, ignored) -> Voluntad.acordarEncuentro(v, p, spanish(v)),
+                    (p, v) -> Voluntad.conectado(v)),
+            new TriggerCommandInfo("return-to-meeting-point", "Go to the previously agreed meeting point and wait there",
+                    null, (p, v, ignored) -> Voluntad.volverAlEncuentro(v, p, spanish(v)),
+                    (p, v) -> Voluntad.conectado(v)),
             new TriggerCommandInfo("move-freely", "Move freely when asked to leave, move, or done talking",
                     null,
                     (p, v, ignored) -> {

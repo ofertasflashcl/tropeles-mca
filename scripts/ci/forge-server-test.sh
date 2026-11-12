@@ -21,8 +21,22 @@ java @user_jvm_args.txt -XX:+PrintFlagsFinal -version 2>&1 | awk '/InitialHeapSi
 curl -fsSL -o mods/architectury-forge.jar "https://maven.architectury.dev/dev/architectury/architectury-forge/$ARCH/architectury-forge-$ARCH.jar"
 cp "$JAR" mods/
 echo "eula=true" > eula.txt
+# The CI world uses local replies and loopback HTTP fixtures. The live provider
+# smoke test is still available separately as /mca-prueba ia-red.
+mkdir -p config
+cat > config/mca.json <<'MCA_CONFIG'
+{
+  "version": 1,
+  "tropelesChatDefaults": 2,
+  "tropelesMinds": ["custom"],
+  "villagerChatAIEndpoint": "http://127.0.0.1:1/v1/chat/completions",
+  "enableOnlineTTS": false
+}
+MCA_CONFIG
+TROPELES_TEST_NETWORK='-Djava.net.useSystemProxies=false -Dhttp.proxyHost=127.0.0.1 -Dhttp.proxyPort=1 -Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort=1 -Dhttp.nonProxyHosts=localhost|127.*'
 cat > server.properties <<P
 online-mode=false
+server-ip=127.0.0.1
 level-type=minecraft\:flat
 spawn-protection=0
 max-tick-time=-1
@@ -33,7 +47,7 @@ run_phase() {
   rm -f in.fifo logs/latest.log
   mkfifo in.fifo
   exec 3<>in.fifo
-  timeout 1200 bash run.sh nogui < in.fifo > "console-$phase.log" 2>&1 &
+  JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:-} $TROPELES_TEST_NETWORK" timeout 1200 bash run.sh nogui < in.fifo > "console-$phase.log" 2>&1 &
   local server_pid=$!
   (
     local ready=false

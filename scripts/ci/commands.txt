@@ -33,7 +33,6 @@ mca-prueba arbol-alto
 mca-prueba vista-lejos
 mca-prueba conectar
 mca-prueba ia-local
-mca-prueba ia-red
 mca-prueba ia-solo-promesa
 mca-prueba hojas
 mca-prueba bucle
@@ -77,6 +76,7 @@ mca-prueba agua-exploracion
 mca-prueba agua-respiradero
 mca-prueba agua-profunda
 mca-prueba aprendizaje
+mca-prueba viaje-companero
 await-checks 320
 mca-prueba resumen
 sleep 2

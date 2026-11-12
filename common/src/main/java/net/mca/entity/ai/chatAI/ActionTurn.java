@@ -27,6 +27,7 @@ public final class ActionTurn {
     private final AtomicBoolean finished = new AtomicBoolean();
     private final AtomicBoolean acted = new AtomicBoolean();
     private volatile int generation;
+    private int meetingRevision;
 
     private ActionTurn(ServerPlayerEntity player, VillagerEntityMCA villager, long remainingMs) {
         this.server = player.getServer();
@@ -39,6 +40,7 @@ public final class ActionTurn {
         this.frenteAldeano = Direction.fromRotation(villager.getHeadYaw());
         this.frenteJugador = player.getHorizontalFacing();
         this.generation = Voluntad.generacion(villagerId);
+        this.meetingRevision = villager.getPuntoEncuentro().revision();
         this.expires = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(Math.max(0, remainingMs));
     }
 
@@ -62,6 +64,7 @@ public final class ActionTurn {
         else if (!player.getUuid().equals(playerId) || player.isRemoved() || !player.isAlive() || player.getServer() != server
                 || player.networkHandler != null && server.getPlayerManager().getPlayer(player.getUuid()) != player) why = "jugador desconectado";
         else if (Voluntad.generacion(villagerId) != generation) why = "intención cambió";
+        else if (villager.getPuntoEncuentro().revision() != meetingRevision) why = "punto de reunión cambió";
         if (why != null) cancel(why);
         return why == null;
     }
@@ -83,6 +86,7 @@ public final class ActionTurn {
     public void acknowledgeAction() {
         if (!server.isOnThread() || !acted.get()) throw new IllegalStateException("No server action to acknowledge");
         generation = Voluntad.generacion(villagerId);
+        meetingRevision = villager.getPuntoEncuentro().revision();
     }
 
     public boolean complete() {

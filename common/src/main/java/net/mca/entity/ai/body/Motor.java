@@ -546,6 +546,37 @@ public final class Motor {
         return ladderOrVine(world.getBlockState(feet)) && open(world, feet.up()) && !Mining.heat(world, feet);
     }
 
+    /** Inspect at most six upcoming cells. An unseen change is handled by the ordinary local walker. */
+    @Nullable
+    public static BlockPos bloqueoVisible(ServerWorld world, VillagerEntityMCA villager, Iterable<BlockPos> camino, boolean seco) {
+        BlockPos pies = Mining.pies(villager);
+        int n = 0;
+        for (BlockPos celda : camino) {
+            if (celda.equals(pies)) {
+                continue;
+            }
+            if (++n > 6) {
+                break;
+            }
+            if (!celda.isWithinDistance(pies, 8) || !world.isChunkLoaded(celda) || !world.isInBuildLimit(celda.up())) {
+                continue;
+            }
+            BlockPos cabeza = celda.up();
+            if ((!open(world, celda) || Mining.heat(world, celda) || seco && !world.getFluidState(celda).isEmpty())
+                    && Retina.observaCelda(world, villager, celda)) {
+                return celda;
+            }
+            if ((!open(world, cabeza) || Mining.heat(world, cabeza) || seco && !world.getFluidState(cabeza).isEmpty())
+                    && Retina.observaCelda(world, villager, cabeza)) {
+                return celda;
+            }
+            if (!rung(world, celda) && !Puertas.suelo(world, celda.down()) && Retina.observaCelda(world, villager, celda.down())) {
+                return celda;
+            }
+        }
+        return null;
+    }
+
     /**
      * The way from {@code start} to (within {@code within} blocks of) {@code goal} over what is already there, the way a
      * player walks it: level, up a one-high step (with room for the head on the jump), off a drop of at most

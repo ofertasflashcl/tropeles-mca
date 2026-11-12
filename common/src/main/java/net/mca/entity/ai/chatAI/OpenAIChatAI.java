@@ -77,7 +77,8 @@ public class OpenAIChatAI implements ChatAIStrategy {
             Map.entry("edit-plan", "edit-house"), Map.entry("change-roof", "edit-house"), Map.entry("add-window", "edit-house"),
             Map.entry("add-balcony", "edit-house"), Map.entry("move-balcony", "edit-house")
     );
-    private static final Set<String> DIRECT_REPLIES = Set.of("build-house", "edit-house", "cancel-house", "seek-exit", "inspect-view", EdicionPlano.COMANDO);
+    private static final Set<String> DIRECT_REPLIES = Set.of("build-house", "edit-house", "cancel-house", "seek-exit", "inspect-view",
+            "mark-meeting-point", "return-to-meeting-point", EdicionPlano.COMANDO);
 
     public static String translate(String phrase) {
         return phrase.replace("_", " ").toLowerCase(Locale.ROOT).replace("mca.", "");
@@ -182,7 +183,8 @@ public class OpenAIChatAI implements ChatAIStrategy {
         }
 
         String line = null;
-        if ("learned".equals(prep.intent().question()) || prep.intent().order() && DIRECT_REPLIES.contains(prep.intent().command())) {
+        if ("learned".equals(prep.intent().question()) || "referencia-salida".equals(prep.intent().question())
+                || prep.intent().order() && DIRECT_REPLIES.contains(prep.intent().command())) {
             line = prep.local();
         } else if (prep.intent().order() && !prep.refused() && !prep.done()) {
             // an order it could not carry out, or was already doing: its own words say exactly why, and no mind

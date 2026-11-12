@@ -4,6 +4,7 @@ mca-prueba planos-reinicio
 mca-prueba autonomia-reinicio
 mca-prueba propuestas-reinicio
 mca-prueba aprendizaje-reinicio
+mca-prueba viaje-reinicio
 await-checks 120
 mca-prueba resumen
 sleep 2
