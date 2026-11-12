@@ -9,6 +9,7 @@ import net.mca.entity.ai.VillagerEyes;
 import net.mca.entity.ai.body.CombatMind;
 import net.mca.entity.ai.body.Motor;
 import net.mca.entity.ai.body.Postura;
+import net.mca.entity.ai.mente.PuntoEncuentro;
 import net.mca.entity.ai.sense.Retina;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.attribute.EntityAttributes;
@@ -49,6 +50,7 @@ public class FollowTask extends MultiTickTask<VillagerEntityMCA> {
     private static final String SNEAK = "como su jugador";
     private static final int SHIFT_WINDOW = 60;
     private static final int SHIFT_COOLDOWN = 120;
+    private static final int SEARCH_LAST_SEEN = 60;
 
     private int stuckTicks;
     private int unreachableTicks;
@@ -71,6 +73,16 @@ public class FollowTask extends MultiTickTask<VillagerEntityMCA> {
     private long imitaHasta;
     private long proximaImitacion;
     private long preguntarHasta;
+    @Nullable
+    private UUID companero;
+    @Nullable
+    private BlockPos ultimoVisto;
+    private long vistoEn;
+    private boolean separado;
+    @Nullable
+    private BlockPos destinoBusqueda;
+    private long proximaBusqueda;
+    private long proximaMirada;
 
     public FollowTask() {
         super(ImmutableMap.of(
@@ -110,6 +122,12 @@ public class FollowTask extends MultiTickTask<VillagerEntityMCA> {
         stuckTicks = 0;
         unreachableTicks = 0;
         warned = false;
+        companero = null;
+        ultimoVisto = null;
+        separado = false;
+        destinoBusqueda = null;
+        proximaBusqueda = 0;
+        proximaMirada = 0;
     }
 
     @Override
@@ -118,11 +136,17 @@ public class FollowTask extends MultiTickTask<VillagerEntityMCA> {
     }
 
     public void guard(ServerWorld world, VillagerEntityMCA villager, LivingEntity ward) {
-        guard(world, villager, ward, false, false);
+        guard(world, villager, ward, false, false, false, null);
     }
 
     /** True while it can safely turn to its player and ask what they want. */
-    public boolean guard(ServerWorld world, VillagerEntityMCA villager, LivingEntity ward, boolean conversar, boolean esperando) {
+    public boolean guardCompanero(ServerWorld world, VillagerEntityMCA villager, LivingEntity ward, boolean conversar, boolean esperando,
+                                  @Nullable BlockPos encuentro) {
+        return guard(world, villager, ward, conversar, esperando, true, encuentro);
+    }
+
+    private boolean guard(ServerWorld world, VillagerEntityMCA villager, LivingEntity ward, boolean conversar, boolean esperando,
+                          boolean situado, @Nullable BlockPos encuentro) {
         if (villager.getBrain().getOptionalMemory(MemoryModuleType.HURT_BY_ENTITY).filter(livingEntity -> livingEntity == ward).isPresent()) {
             villager.getBrain().forget(MemoryModuleTypeMCA.PLAYER_FOLLOWING.get());
             return false;
@@ -132,11 +156,32 @@ public class FollowTask extends MultiTickTask<VillagerEntityMCA> {
         }
 
         long now = world.getTime();
-        double distance = villager.distanceTo(ward);
-        ritmo(ward, now);
-        gestos(villager, ward, distance, now);
+        if (situado && !ward.getUuid().equals(companero)) {
+            release(world, villager);
+            companero = ward.getUuid();
+        }
+        boolean visible = !situado || Retina.canSee(world, villager, ward);
+        if (situado && visible) {
+            if (separado) {
+                villager.getNavigation().stop();
+                separado = false;
+                destinoBusqueda = null;
+            }
+            BlockPos pies = Mining.pies(ward);
+            if (ward.isOnGround() && PuntoEncuentro.firme(world, pies)) {
+                ultimoVisto = pies.toImmutable();
+                vistoEn = now;
+            }
+        }
+        double distance = visible ? villager.distanceTo(ward) : Double.POSITIVE_INFINITY;
+        if (visible) {
+            ritmo(ward, now);
+            gestos(villager, ward, distance, now);
+        } else {
+            Postura.agachar(villager, SNEAK, false);
+        }
         // an archer covers more ground than a swordsman
-        LivingEntity threat = CombatMind.pickTarget(world, villager, ward, CombatMind.hasRanged(villager) ? 24 : 16);
+        LivingEntity threat = CombatMind.pickTarget(world, villager, visible ? ward : null, CombatMind.hasRanged(villager) ? 24 : 16);
         if (threat != null && threat.isAlive()) {
             if (!warned && ward instanceof PlayerEntity player) {
                 warned = true;
@@ -145,14 +190,18 @@ public class FollowTask extends MultiTickTask<VillagerEntityMCA> {
             motor.reset(world, villager);
             Postura.agachar(villager, SNEAK, false);
             villager.setSprinting(false);
-            CombatMind.fight(world, villager, ward, threat);
+            CombatMind.fight(world, villager, visible ? ward : null, threat);
             return false;
         }
         warned = false;
         CombatMind.disengage(villager);
 
+        if (!visible) {
+            buscarCompanero(world, villager, encuentro, now);
+            return false;
+        }
         if (conversar && (esperando || now < preguntarHasta) && distance < 5 && wardPace < 0.045
-                && villager.isOnGround() && !motor.midStep(villager) && Retina.canSee(world, villager, ward)) {
+                && villager.isOnGround() && !motor.midStep(villager)) {
             preguntarHasta = 0;
             Postura.agachar(villager, SNEAK, false);
             villager.getBrain().forget(MemoryModuleType.WALK_TARGET);
@@ -163,20 +212,72 @@ public class FollowTask extends MultiTickTask<VillagerEntityMCA> {
             return true;
         }
 
-        BlockPos lost = VillagerEyes.searchWhere(world, villager);
-        if (lost == null) {
-            lost = Threats.footstep(world, villager, ward instanceof PlayerEntity p ? p : null);
-        }
-        if (lost != null && lost.isWithinDistance(Mining.pies(ward), 16)) {
-            Retina.memory(villager).doing("buscando donde lo vio por última vez", world.getTime());
-            villager.moveTowards(lost, 1.0F, 1);
-            if ((villager.age & 3) == 0) {
-                villager.getNavigation().startMovingTo(lost.getX() + 0.5, lost.getY(), lost.getZ() + 0.5, 1.0);
+        if (!situado) {
+            BlockPos lost = VillagerEyes.searchWhere(world, villager);
+            if (lost == null) {
+                lost = Threats.footstep(world, villager, ward instanceof PlayerEntity p ? p : null);
             }
-            return false;
+            if (lost != null && lost.isWithinDistance(Mining.pies(ward), 16)) {
+                Retina.memory(villager).doing("buscando donde lo vio por última vez", now);
+                villager.moveTowards(lost, 1.0F, 1);
+                if ((villager.age & 3) == 0) {
+                    villager.getNavigation().startMovingTo(lost.getX() + 0.5, lost.getY(), lost.getZ() + 0.5, 1.0);
+                }
+                return false;
+            }
         }
-        follow(world, villager, ward);
+        follow(world, villager, ward, !situado);
         return false;
+    }
+
+    public boolean buscandoCompanero() {
+        return separado;
+    }
+
+    /** Lose sight at a corner, finish a step already in flight, then go by the last sighting and the agreed place. */
+    private void buscarCompanero(ServerWorld world, VillagerEntityMCA villager, @Nullable BlockPos encuentro, long now) {
+        if (motor.midStep(villager) && wardFeet != null) {
+            motor.step(world, villager, wardFeet, false, true);
+            return;
+        }
+        if (!separado) {
+            separado = true;
+            wardLast = null;
+            wardPace = 0;
+            unreachableTicks = 0;
+            motor.reset(world, villager);
+            Motor.standStill(villager);
+        }
+        villager.setSprinting(false);
+        villager.getBrain().forget(MemoryModuleType.WALK_TARGET);
+        boolean reciente = ultimoVisto != null && now - vistoEn <= SEARCH_LAST_SEEN;
+        BlockPos meta = reciente ? ultimoVisto : encuentro;
+        BlockPos pies = Mining.pies(villager);
+        if (meta != null && !meta.isWithinDistance(pies, 1.5) && PuntoEncuentro.firme(world, meta)) {
+            if (!meta.equals(destinoBusqueda) || now >= proximaBusqueda) {
+                destinoBusqueda = meta;
+                proximaBusqueda = now + 20;
+                Path path = villager.getNavigation().findPathTo(meta, 0);
+                if (path != null && path.reachesTarget()) {
+                    villager.getNavigation().startMovingAlong(path, 0.9);
+                } else {
+                    Motor.standStill(villager);
+                }
+            }
+            if (!villager.getNavigation().isIdle()) {
+                Retina.memory(villager).doing(reciente ? "buscando donde vio a su compañero" : "volviendo al punto de reunión", now);
+                return;
+            }
+        }
+        Motor.standStill(villager);
+        Retina.memory(villager).doing(meta != null && meta.equals(encuentro) && meta.isWithinDistance(pies, 1.5)
+                ? "esperando en el punto de reunión" : "mirando alrededor para encontrar a su compañero", now);
+        if (now >= proximaMirada) {
+            proximaMirada = now + 10;
+            double yaw = Math.toRadians(villager.getHeadYaw() + 90);
+            villager.getLookControl().lookAt(villager.getX() - 4 * Math.sin(yaw), villager.getEyeY(),
+                    villager.getZ() + 4 * Math.cos(yaw), 30.0F, 20.0F);
+        }
     }
 
     /** Their words answer the gesture and give any subsequent tapping a fresh window. */
@@ -215,9 +316,9 @@ public class FollowTask extends MultiTickTask<VillagerEntityMCA> {
         Postura.agachar(villager, SNEAK, abajo && now < imitaHasta);
     }
 
-    private void follow(ServerWorld world, VillagerEntityMCA villager, LivingEntity ward) {
+    private void follow(ServerWorld world, VillagerEntityMCA villager, LivingEntity ward, boolean teleport) {
         double distance = villager.distanceTo(ward);
-        if (distance > 40) {
+        if (teleport && distance > 40) {
             stuckTicks++;
             if (stuckTicks > 30) {
                 villager.requestTeleport(ward.getX(), ward.getY(), ward.getZ());

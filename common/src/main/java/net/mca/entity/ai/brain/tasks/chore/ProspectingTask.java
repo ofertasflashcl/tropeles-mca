@@ -2844,6 +2844,16 @@ public class ProspectingTask extends AbstractChoreTask {
      * when that gives up, the step machine cell by cell (still no digging, no blocks) before the way counts as shut.
      */
     private Motor.Result walkVia(ServerWorld world, VillagerEntityMCA villager, BlockPos goal) {
+        if ((phase == Phase.HOME_UP || phase == Phase.RETURN) && (villager.age % 6) == 0 && !motor.midStep(villager)) {
+            BlockPos bloqueo = Motor.bloqueoVisible(world, villager, via, false);
+            if (bloqueo != null) {
+                BlockPos pies = Mining.pies(villager);
+                Recuerdos.anotar(villager, "camino", "vi un bloqueo antes de llegar y reconsideré el regreso", bloqueo);
+                motor.reset(world, villager);
+                viaBlocked(world, villager, pies, bloqueo, world.getTime());
+                return Motor.Result.RUNNING;
+            }
+        }
         if (!viaPaso) {
             Motor.Result r = motor.walkPath(world, villager, viaLista);
             if (r == Motor.Result.BLOCKED) {

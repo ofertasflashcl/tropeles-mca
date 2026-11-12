@@ -35,6 +35,7 @@ public final class SondeoSalida {
     private List<BlockPos> via = List.of();
     private int miradas;
     private int tramos;
+    private long revisarDesde;
 
     public SondeoSalida(ServerWorld world, VillagerEntityMCA v, Direction rumbo) {
         this.rumbo = rumbo;
@@ -61,17 +62,29 @@ public final class SondeoSalida {
         vista.doing("buscando una salida hacia " + rumbo.asString(), now);
         Recuerdos recuerdos = Recuerdos.of(world, v);
         if (!via.isEmpty()) {
+            List<BlockPos> andando = motor.walkingPath();
+            int siguiente = motor.walkingIndex();
             if (!motor.midStep(v)) {
-                BlockPos mojado = via.stream().filter(at -> !seco(world, at)).findFirst().orElse(null);
-                if (mojado != null) {
-                    recuerdos.cerrar(mojado, now + EDAD_VISTA);
+                List<BlockPos> pendiente = andando != null && siguiente >= 0 && siguiente < andando.size()
+                        ? andando.subList(siguiente, andando.size()) : via;
+                BlockPos cortado = null;
+                if (now >= revisarDesde) {
+                    revisarDesde = now + 6;
+                    cortado = Motor.bloqueoVisible(world, v, pendiente, true);
+                }
+                BlockPos proximo = pendiente.get(0);
+                if (proximo.equals(pies) && pendiente.size() > 1) {
+                    proximo = pendiente.get(1);
+                }
+                if (cortado != null || !seco(world, proximo)) {
+                    recuerdos.cerrar(cortado != null ? cortado : proximo, now + EDAD_VISTA);
+                    probados.remove(via.get(via.size() - 1));
                     motor.reset(world, v);
                     via = List.of();
+                    miradas = 0;
                     return Estado.BUSCANDO;
                 }
             }
-            List<BlockPos> andando = motor.walkingPath();
-            int siguiente = motor.walkingIndex();
             Motor.Result r = motor.walkPath(world, v, via);
             if (r == Motor.Result.ARRIVED || r == Motor.Result.BLOCKED) {
                 if (r == Motor.Result.BLOCKED && andando != null && siguiente > 0 && siguiente < andando.size()) {

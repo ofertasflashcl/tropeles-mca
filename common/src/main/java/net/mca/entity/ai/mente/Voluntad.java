@@ -557,6 +557,9 @@ public final class Voluntad {
             return w.negarse(villager, player, "follow-player", g, Pedido.SEGUIR);
         }
         w.change(villager, Modo.SIGUIENDO, player, null, player.getName().getString() + " me pidió que lo siga" + (g.es() == null ? "" : " (" + g.porque() + ")"));
+        if (player.getWorld() == villager.getWorld() && player.squaredDistanceTo(villager) <= 64) {
+            w.face(villager, player);
+        }
         if (g.es() != null) {
             w.dicho("follow-player", g.es(), g.en());
         }
@@ -581,6 +584,38 @@ public final class Voluntad {
         }
         return "You stay right here and wait for " + player.getName().getString() + ", looking around and keeping yourself safe, until they call you "
                 + "or send you back to your own things." + (g.en() == null ? "" : " You do it grumbling: " + g.en());
+    }
+
+    public static String acordarEncuentro(VillagerEntityMCA villager, PlayerEntity player, boolean es) {
+        if (!(villager.getWorld() instanceof ServerWorld world) || player.getWorld() != world
+                || player.squaredDistanceTo(villager) > 64 || !Retina.canSee(world, villager, player)) {
+            return es ? "Ponte cerca y donde pueda verte para que recuerde el sitio." : "Stand nearby where I can see you so I can remember the spot.";
+        }
+        BlockPos pies = Mining.pies(player);
+        if (!player.isOnGround() || !villager.getPuntoEncuentro().marcar(world, player.getUuid(), pies)) {
+            return es ? "Necesitamos un lugar con piso firme y seco." : "We need a spot with firm, dry footing.";
+        }
+        nuevaGeneracion(villager.getUuid());
+        Recuerdos.anotar(villager, "viaje", "acordé reunirme aquí con " + player.getName().getString(), pies);
+        return es ? "Si nos separamos, nos juntamos aquí, en " + pies.toShortString() + "."
+                : "If we get separated, we'll meet here at " + pies.toShortString() + ".";
+    }
+
+    public static String volverAlEncuentro(VillagerEntityMCA villager, PlayerEntity player, boolean es) {
+        if (!(villager.getWorld() instanceof ServerWorld world)) {
+            return es ? "No puedo comprobar el punto de reunión." : "I can't check the meeting point.";
+        }
+        BlockPos punto = villager.getPuntoEncuentro().para(world, player.getUuid());
+        if (punto == null) {
+            return es ? "Primero acordemos un punto de reunión en este mundo." : "Let's agree on a meeting point in this world first.";
+        }
+        if (!PuntoEncuentro.firme(world, punto)) {
+            return es ? "Por ahora no puedo confirmar que el punto de reunión siga accesible."
+                    : "I can't confirm the meeting point is still accessible right now.";
+        }
+        Voluntad w = of(villager);
+        w.change(villager, Modo.ESPERANDO, player, punto, "acordamos volver al punto de reunión");
+        return es ? "Voy al punto de reunión. Allí te espero." : "I'm heading to the meeting point. I'll wait for you there.";
     }
 
     /** "Haz lo tuyo": back to its own life, where it left it. */
@@ -717,14 +752,15 @@ public final class Voluntad {
             return;
         }
         sinJugador = -1;
-        if (follow.guard(world, villager, player, entrega == null, preguntasSeguir > 0)) {
+        BlockPos encuentro = villager.getPuntoEncuentro().para(world, player.getUuid());
+        if (follow.guardCompanero(world, villager, player, entrega == null, preguntasSeguir > 0, encuentro)) {
             preguntarAlJugador(world, villager, player);
             return;
         }
         if (villager.squaredDistanceTo(player) >= 25) {
             preguntasSeguir = 0;
         }
-        if ((villager.age % 20) == 0) {
+        if (!follow.buscandoCompanero() && (villager.age % 20) == 0) {
             Companero.juntos(world, villager, player);
         }
         if (entrega != null && player.getUuid().equals(entrega.para()) && (villager.age % 5) == 0
@@ -1991,7 +2027,8 @@ public final class Voluntad {
      */
     private void followStuck(ServerWorld world, VillagerEntityMCA villager) {
         PlayerEntity player = player(world);
-        boolean near = player == null || villager.squaredDistanceTo(player) < 5.0 * 5.0 || villager.isSleeping() || CombatMind.busy(villager);
+        boolean near = player == null || follow.buscandoCompanero() || villager.squaredDistanceTo(player) < 5.0 * 5.0
+                || villager.isSleeping() || CombatMind.busy(villager);
         Atasco.Remedio r = atasco.tick(world, villager, near, pensando);
         switch (r) {
             case NINGUNO -> {
@@ -2051,6 +2088,11 @@ public final class Voluntad {
             return;
         }
         if (espera != null && Mining.pies(villager).getSquaredDistance(espera) > 2.5 * 2.5) {
+            if (quien != null && espera.equals(villager.getPuntoEncuentro().para(world, quien)) && !PuntoEncuentro.firme(world, espera)) {
+                Motor.standStill(villager);
+                Retina.memory(villager).doing("el punto de reunión cambió o no está cargado", now);
+                return;
+            }
             // pushed off its spot, or it stepped off it in a fight: back to where it was asked to wait
             if ((villager.age % 20) == 0) {
                 villager.getNavigation().startMovingTo(espera.getX() + 0.5, espera.getY(), espera.getZ() + 0.5, 0.8);

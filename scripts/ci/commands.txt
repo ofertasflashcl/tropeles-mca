@@ -77,6 +77,7 @@ mca-prueba agua-exploracion
 mca-prueba agua-respiradero
 mca-prueba agua-profunda
 mca-prueba aprendizaje
+mca-prueba viaje-companero
 await-checks 320
 mca-prueba resumen
 sleep 2

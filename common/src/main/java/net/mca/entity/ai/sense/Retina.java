@@ -494,6 +494,42 @@ public final class Retina {
         return inView(eye(viewer), forward, axes[0], axes[1], tanV * ASPECT, tanV, point);
     }
 
+    /** A deliberate, short look at one known cell, with the same occlusion and light rules as the eye. */
+    public static boolean observaCelda(World world, LivingEntity viewer, BlockPos pos) {
+        Vec3d from = eye(viewer);
+        Vec3d to = Vec3d.ofCenter(pos);
+        if (from.squaredDistanceTo(to) > 64 || !inView(viewer, to)) {
+            return false;
+        }
+        BlockPos origen = BlockPos.ofFloored(from);
+        int ultimoX = Math.max(origen.getX(), pos.getX()) >> 4;
+        int ultimoZ = Math.max(origen.getZ(), pos.getZ()) >> 4;
+        for (int x = Math.min(origen.getX(), pos.getX()) >> 4; x <= ultimoX; x++) {
+            for (int z = Math.min(origen.getZ(), pos.getZ()) >> 4; z <= ultimoZ; z++) {
+                if (!world.isChunkLoaded(x, z)) {
+                    return false;
+                }
+            }
+        }
+        boolean night = nightVision(viewer);
+        Sight sight = cast(world, from, to, viewer, null, 0, night);
+        BlockHitResult hit = sight.hit();
+        if (hit != null && !hit.getBlockPos().equals(pos)) {
+            return false;
+        }
+        BlockState state = world.getBlockState(pos);
+        int light = hit == null ? world.getLightLevel(pos) : lightAt(world, pos, hit.getSide(), state);
+        if (!perceives(light, sight.distance(), night)) {
+            return false;
+        }
+        if (hit != null) {
+            memory(viewer).see(pos, state, hit.getSide(), hit.getPos(), sight.distance(), light, world.getTime(), false, skyOn(world, pos, hit.getSide()));
+        } else if (state.isAir()) {
+            memory(viewer).empty(pos);
+        }
+        return true;
+    }
+
     private static boolean inView(Vec3d eye, Vec3d forward, Vec3d right, Vec3d up, double tanH, double tanV, Vec3d point) {
         Vec3d d = point.subtract(eye);
         double z = d.dotProduct(forward);

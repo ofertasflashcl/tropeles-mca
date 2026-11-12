@@ -81,7 +81,14 @@ public final class MenteLocal {
             + "(busca|prueba|revisa) (otra |una |la )?(subida|salida)|"
             + "climb|go (back )?up|go out|(find|try|look for) (an? |another |the )?(way up|way out|exit))\\b");
     private static final Pattern NIEGA_SUBIDA = Pattern.compile("\\b(no (subas|salgas|trepes|intentes|busques)|do not|don'?t|never)\\b");
-    private static final Pattern CORRIGE_SUBIDA = Pattern.compile("^(mejor|en cambio|instead|actually)[ ]+(por|a|to|on|behind|ahead|left|right)\\b.*$");
+    private static final Pattern CORRIGE_SUBIDA = Pattern.compile("^(?:(?:espera|wait) )?(mejor|en cambio|instead|actually) (por|a|to|on|behind|ahead|left|right)\\b.*$");
+    private static final Pattern SUBIDA_TERCERO = Pattern.compile("\\b((detras|atras|delante|izquierda|derecha) de (el|ella|ellos|ellas)|"
+            + "behind (him|her|them)|their (left|right|back))\\b");
+    private static final Pattern MARCAR_ENCUENTRO = Pattern.compile("^(nos (juntamos|vemos|reunimos) aqui|"
+            + "(marca|fija) (este lugar|aqui|este sitio) como (el )?punto de reunion|"
+            + "(let's )?meet (back )?here|set (our |the )?meeting point here)( por favor| please)?$");
+    private static final Pattern VOLVER_ENCUENTRO = Pattern.compile("^((vuelve|volvamos|regresa|regresemos|vamos) al punto de reunion|"
+            + "(go |head )?back to (our |the )?meeting point)( por favor| please)?$");
     private static final Pattern LADO_DEL_JUGADOR = Pattern.compile("\\b(player (behind|left|right|ahead)|"
             + "(detras|atras|delante|enfrente|izquierda|derecha|al frente) de mi|detras mio|a mi (izquierda|derecha|espalda)|"
             + "behind me|in front of me|my (left|right|back))\\b");
@@ -566,13 +573,23 @@ public final class MenteLocal {
     public static Intent read(String text) {
         String t = clean(text);
         boolean spanish = spanish(text);
+        if (MARCAR_ENCUENTRO.matcher(t).matches()) {
+            return new Intent("mark-meeting-point", "", null, spanish);
+        }
+        if (VOLVER_ENCUENTRO.matcher(t).matches()) {
+            return new Intent("return-to-meeting-point", "", null, spanish);
+        }
         String lado = ladoSalida(t);
         if (lado != null && (BUSCA_SUBIDA.matcher(t).find() || NIEGA_SUBIDA.matcher(t).find())) {
-            return NIEGA_SUBIDA.matcher(t).find() ? new Intent(null, "", null, spanish)
+            if (NIEGA_SUBIDA.matcher(t).find()) {
+                return new Intent(null, "", null, spanish);
+            }
+            return SUBIDA_TERCERO.matcher(t).find() ? new Intent(null, "", "referencia-salida", spanish)
                     : new Intent("seek-exit", argumentoSalida(t, lado), null, spanish);
         }
         if (lado != null && CORRIGE_SUBIDA.matcher(t).matches()) {
-            return new Intent(null, argumentoSalida(t, lado), "corregir-salida", spanish);
+            return SUBIDA_TERCERO.matcher(t).find() ? new Intent(null, "", "referencia-salida", spanish)
+                    : new Intent(null, argumentoSalida(t, lado), "corregir-salida", spanish);
         }
         // a bare "para", "alto" or "stop" is an order to stop whatever it is doing
         if (t.matches("(para|alto|stop|basta|halt|ya basta|para ya)")) {
@@ -732,6 +749,8 @@ public final class MenteLocal {
             return placeOf(villager, q.substring(6), es);
         }
         return switch (q) {
+            case "referencia-salida" -> es ? "¿Te refieres al lado que queda detrás de ti o detrás de mí?"
+                    : "Do you mean the side behind you or behind me?";
             case "thinking" -> thinking(villager, es);
             case "why" -> why(villager, es);
             case "doing" -> doing(villager, es);
@@ -808,6 +827,9 @@ public final class MenteLocal {
         }
         if ("seek-exit".equals(command)) {
             return outcome == null ? es ? "Ahora no puedo buscar esa subida." : "I can't look for that way up right now." : outcome;
+        }
+        if (outcome != null && ("mark-meeting-point".equals(command) || "return-to-meeting-point".equals(command))) {
+            return outcome;
         }
         if (outcome == null && "come-up".equals(command)) {
             // only a miner climbs out of a mine

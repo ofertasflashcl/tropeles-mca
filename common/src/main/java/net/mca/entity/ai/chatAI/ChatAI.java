@@ -4,6 +4,9 @@ import net.mca.Config;
 import net.mca.MCA;
 import net.mca.entity.VillagerEntityMCA;
 import net.mca.entity.ai.Chore;
+import net.mca.entity.ai.brain.tasks.chore.ProspectingTask;
+import net.mca.entity.ai.mente.Recuerdos;
+import net.mca.entity.ai.mente.Voluntad;
 import net.mca.server.ProspectorPresence;
 import net.mca.util.WorldUtils;
 import net.minecraft.entity.Entity;
@@ -18,6 +21,7 @@ import net.minecraft.util.Formatting;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.Box;
+import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.RaycastContext;
 import org.jetbrains.annotations.Nullable;
@@ -248,6 +252,11 @@ public class ChatAI {
                         villager.getWorld() != speaker.getWorld() || villager.distanceTo(speaker) > NEAR_RANGE));
                 return;
             }
+            if (ordenDeViaje(speaker, villager, msg)) {
+                currentConversations.put(speaker.getUuid(), new OpenConversation(villager.getUuid(), System.currentTimeMillis(),
+                        villager.getWorld() != speaker.getWorld() || villager.distanceTo(speaker) > NEAR_RANGE));
+                return;
+            }
             // its name, how they identify, the two of them, its hunger: a companion answers that at once, itself
             if (CommandPolicy.check(speaker, villager, "follow-player", CommandPolicy.Source.LOCAL).allowed()
                     && net.mca.entity.ai.mente.Companero.oir(speaker, villager, msg)) {
@@ -280,6 +289,41 @@ public class ChatAI {
         } catch (Throwable t) {
             MCA.LOGGER.error("[Tropeles] la charla de {} falló al empezar", speaker.getName().getString(), t);
         }
+    }
+
+    /** Explicit corrections and meeting agreements change the current plan before any queued model reply. */
+    private static boolean ordenDeViaje(ServerPlayerEntity speaker, VillagerEntityMCA villager, String msg) {
+        if (!Voluntad.conectado(villager)) {
+            return false;
+        }
+        String nombre = villager.getName().getString();
+        MenteLocal.Intent intent = MenteLocal.read(msg, nombre);
+        String action = "corregir-salida".equals(intent.question()) && ProspectingTask.buscandoSalida(villager)
+                ? "seek-exit" : intent.command();
+        if (action == null || !(action.equals("seek-exit") || action.equals("mark-meeting-point") || action.equals("return-to-meeting-point"))) {
+            return false;
+        }
+        boolean es = MenteLocal.speaksSpanish(msg, nombre, speaker.getUuid());
+        CommandPolicy.Decision permiso = CommandPolicy.check(speaker, villager, action, CommandPolicy.Source.LOCAL);
+        String linea;
+        if (!permiso.allowed()) {
+            CommandPolicy.report(villager, action, permiso);
+            linea = permiso.line(es);
+        } else if (villager.getVillagerBrain().getMemoriesForPlayer(speaker).getHearts() < -25) {
+            linea = es ? "Ahora no quiero hacer eso contigo." : "I don't want to do that with you right now.";
+        } else {
+            Voluntad.oyo(villager, speaker, es);
+            linea = switch (action) {
+                case "mark-meeting-point" -> Voluntad.acordarEncuentro(villager, speaker, es);
+                case "return-to-meeting-point" -> Voluntad.volverAlEncuentro(villager, speaker, es);
+                default -> TriggerCommandInfos.salidaDirigida(speaker, villager, intent.argument(),
+                        Direction.fromRotation(villager.getHeadYaw()), speaker.getHorizontalFacing()).linea();
+            };
+        }
+        OpenAIChatAI.remember(villager.getUuid(), speaker.getUuid(), msg, linea);
+        Recuerdos.anotar(villager, "orden", speaker.getName().getString() + " me pidió «" + msg + "». Respondí «" + linea + "»", villager.getBlockPos());
+        deliver(speaker, villager, linea);
+        return true;
     }
 
     /** Runs {@code job} after the villager's earlier messages, on the chat's own threads. */
