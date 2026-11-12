@@ -29,7 +29,7 @@ cat > config/mca.json <<'MCA_CONFIG'
   "version": 1,
   "tropelesChatDefaults": 2,
   "tropelesMinds": ["custom"],
-  "villagerChatAIEndpoint": "",
+  "villagerChatAIEndpoint": "http://127.0.0.1:1/v1/chat/completions",
   "enableOnlineTTS": false
 }
 MCA_CONFIG
